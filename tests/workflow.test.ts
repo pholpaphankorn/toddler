@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { assignments, reviewer, reviewReport } from "../policy.ts";
+import { assignments, localIssue, reviewer, reviewReport } from "../policy.ts";
 import { Quotas, codexUsage, claudeUsage, validateUsage, type Usage } from "../quota.ts";
 import { Runner, type Job, type RunnerOptions } from "../runner.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -84,10 +84,10 @@ test("review approval requires exactly one valid verdict without findings", () =
   assert.throws(() => reviewReport('<sandcastle-review>{"verdict":"approved","findings":["broken"]}</sandcastle-review>'));
 });
 
-function fixture() {
+function fixture(overrides: Partial<Config> = {}, root = fileURLToPath(new URL("../../", import.meta.url))) {
   const events: string[][] = [], state = { repository: config.repository, jobs: {} as Record<number, Job> };
   const quotas = { available: (_name: Provider) => true, refresh: async () => {} };
-  const runner = new Runner({ root: fileURLToPath(new URL("../../", import.meta.url)), config, quotas: fake(quotas),
+  const runner = new Runner({ root, config: { ...config, ...overrides }, quotas: fake(quotas),
     state, save: () => {}, git: async (_file, args = []) => {
       events.push(["git", ...args]);
       if (args[0] === "rev-parse") return args[1] === "origin/main" ? "base" : "reviewed";
@@ -113,6 +113,39 @@ test("implementation -> opposite-provider review -> push exact SHA -> PR, never 
   assert.ok(events.some((event) => event[0] === "gh" && event[1] === "pr" && event[2] === "create" && event.includes("--body-file")));
   assert.equal(state.jobs[1].status, "pr");
   assert.ok(!events.some((event) => event.includes("merge") || event.includes("close")));
+});
+test("local issue files parse frontmatter, and fall back to the file name", () => {
+  const parsed = localIssue("3-fix-login.md", "---\ntitle: Fix login\nlabels: [parallel-safe, blocked]\nblocked_by: [1, 2]\nstatus: closed\n---\nSteps here\n");
+  assert.deepEqual(parsed, { number: 3, title: "Fix login", body: "Steps here\n", labels: ["parallel-safe", "blocked"], blockedBy: [1, 2], closed: true });
+  assert.deepEqual(localIssue("4-add-logout.md", "Body only"), { number: 4, title: "add logout", body: "Body only", labels: [], blockedBy: [], closed: false });
+  assert.throws(() => localIssue("notes.md", ""), /issue number/);
+  assert.throws(() => localIssue("5.md", "---\nblocked_by: [x]\n---\n"), /blocked_by/);
+});
+test("local issues skip closed and blocked files, never call GitHub, and stop on a local branch when openPr is false", async () => {
+  const root = mkdtempSync(join(tmpdir(), "toddler-local-"));
+  try {
+    mkdirSync(join(root, ".sandcastle/issues"), { recursive: true });
+    const write = (name: string, text: string) => writeFileSync(join(root, ".sandcastle/issues", name), text);
+    write("1-done.md", "---\nstatus: closed\n---\n");
+    write("2-open.md", "---\nblocked_by: [1]\n---\nDo it");
+    write("3-waits.md", "---\nblocked_by: [2]\n---\n");
+    const { runner, events, state } = fixture({ issues: "local", openPr: false }, root);
+    const candidates = await runner.candidates();
+    assert.deepEqual(candidates.map((issue) => issue.number), [2]);
+    await runner.work(candidates[0], "codex", "main");
+    assert.equal(state.jobs[2].status, "done");
+    assert.equal(state.jobs[2].branch, "codex/sandcastle-local-2");
+    assert.ok(!events.some((event) => event[0] === "gh" || event[1] === "push"));
+    assert.deepEqual((await runner.candidates()).map((issue) => issue.number), []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+test("local issues with openPr open a PR that does not close a GitHub issue", async () => {
+  const { runner, events, state } = fixture({ issues: "local" });
+  await runner.work(issue(7), "codex", "main");
+  assert.equal(state.jobs[7].status, "pr");
+  const create = events.find((event) => event[1] === "pr" && event[2] === "create")!;
+  assert.ok(create.includes("Fix local issue 7: Issue 7"));
+  assert.ok(events.some((event) => event[1] === "push" && event[3] === "reviewed:refs/heads/codex/sandcastle-local-7"));
 });
 test("changes requested runs a fix then another review before publishing", async () => {
   const { runner, events } = fixture();
@@ -243,5 +276,11 @@ test("project config overrides defaults and must name a repository and verify co
     assert.equal(loaded.models.claude.review, "b");
     assert.equal(loaded.models.codex, defaults.models.codex);
     assert.equal(loaded.issueLabel, defaults.issueLabel);
+    assert.equal(loaded.issues, "github");
+    assert.equal(loaded.openPr, true);
+    write({ repository: "owner/repo", verify: "npm test", issues: "jira" });
+    assert.throws(() => loadConfig(root), /"issues"/);
+    write({ repository: "owner/repo", verify: "npm test", openPr: "no" });
+    assert.throws(() => loadConfig(root), /"openPr"/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

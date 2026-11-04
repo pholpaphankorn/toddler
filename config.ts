@@ -7,6 +7,10 @@ export const providers: Provider[] = ["codex", "claude"];
 
 export const defaults = {
   remote: "origin",
+  /** "github": labeled GitHub issues. "local": .sandcastle/issues/<number>-*.md files. */
+  issues: "github" as "github" | "local",
+  /** false: stop after review with the approved commit on a local branch; nothing is pushed. */
+  openPr: true,
   issueLabel: "Sandcastle",
   parallelLabel: "parallel-safe",
   blockedLabels: ["blocked", "on-hold"],
@@ -42,5 +46,7 @@ export function loadConfig(root: string): Config {
   if (typeof config.verify !== "string" || !config.verify.trim()) {
     throw new Error(`${path}: "verify" must be a shell command that checks the project (e.g. "npm test")`);
   }
+  if (!["github", "local"].includes(config.issues)) throw new Error(`${path}: "issues" must be "github" or "local"`);
+  if (typeof config.openPr !== "boolean") throw new Error(`${path}: "openPr" must be true or false`);
   return config;
 }

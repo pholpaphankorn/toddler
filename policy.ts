@@ -6,6 +6,9 @@ export interface Issue {
   body?: string | null;
   labels: (string | { name: string })[];
   pull_request?: unknown;
+  /** Local issues only. */
+  blockedBy?: number[];
+  closed?: boolean;
 }
 export interface ReviewReport {
   verdict: "approved" | "changes_requested";
@@ -45,4 +48,23 @@ export function reviewReport(text: string): ReviewReport {
       (value.verdict === "approved" && value.findings.length) ||
       (value.verdict === "changes_requested" && !value.findings.length)) throw new Error("Invalid review verdict");
   return value;
+}
+
+// .sandcastle/issues/<number>-<slug>.md, with optional "key: value" frontmatter
+// (title, labels: [a, b], blocked_by: [1, 2], status: closed).
+export function localIssue(file: string, text: string): Issue {
+  const number = Number(/^(\d+)[^/]*\.md$/.exec(file)?.[1]);
+  if (!number) throw new Error(`.sandcastle/issues/${file}: name must start with an issue number, e.g. 3-fix-login.md`);
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+  const fields: Record<string, string> = {};
+  for (const line of match?.[1].split(/\r?\n/) ?? []) {
+    const pair = /^(\w+):\s*(.*)$/.exec(line.trim());
+    if (pair) fields[pair[1]] = pair[2];
+  }
+  const list = (value = "") => value.replace(/^\[|\]$/g, "").split(",").map((item) => item.trim()).filter(Boolean);
+  const blockedBy = list(fields.blocked_by).map(Number);
+  if (blockedBy.some((value) => !Number.isInteger(value))) throw new Error(`.sandcastle/issues/${file}: blocked_by must list issue numbers`);
+  return { number, title: fields.title || file.replace(/^\d+-?|\.md$/g, "").replace(/-/g, " ") || `Issue ${number}`,
+    body: match ? text.slice(match[0].length) : text, labels: list(fields.labels), blockedBy,
+    closed: fields.status?.toLowerCase() === "closed" };
 }
