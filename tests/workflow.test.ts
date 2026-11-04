@@ -17,7 +17,7 @@ const now = Date.now();
 const usage = (remainingPercent: number): Usage => ({ remainingPercent, resetsAt: Math.floor(Date.now() / 1000) + 1000, observedAt: Date.now() });
 const issue = (number: number, labels: string[] = []) => ({ number, labels, title: `Issue ${number}`, body: "Fix the behavior" });
 const report = (verdict = "approved") => `<sandcastle-review>${JSON.stringify({ verdict,
-  findings: verdict === "approved" ? [] : ["Fix incorrect mapping"], summary: "Corrected the mapping", validation: "Lua syntax passed" })}</sandcastle-review>`;
+  findings: verdict === "approved" ? [] : ["Fix incorrect handling"], summary: "Corrected the handling", validation: "Checks passed" })}</sandcastle-review>`;
 
 test("one issue prefers Codex; fallback and explicit independent parallel issues", () => {
   assert.equal(assignments([issue(1)], () => true, config)[0].provider, "codex");
@@ -159,13 +159,13 @@ test("no available issue or quota terminates without starting agents", async () 
   assert.equal(events.length, 0);
 });
 
-test("Sandcastle stage uses the requested model, verifies Lua in Seatbelt, and always closes", async () => {
+test("Sandcastle stage uses the requested model, runs the verify command in Seatbelt, and always closes", async () => {
   for (const provider of providers) {
     let closed = false, captured: any;
     const commands: { cmd: string; options: any }[] = [];
     const root = fileURLToPath(new URL("../../", import.meta.url));
     const sandbox = { worktreePath: "/fixture", close: async () => { closed = true; return {}; },
-      exec: async (cmd: string, options: unknown) => { commands.push({ cmd, options }); return { exitCode: 0, stdout: "Lua syntax passed" }; },
+      exec: async (cmd: string, options: unknown) => { commands.push({ cmd, options }); return { exitCode: 0, stdout: "Checks passed" }; },
       run: async (options: unknown) => { captured = options; return { stdout: report() }; } };
     const factories: Record<string, unknown> = {};
     for (const name of ["codex", "claudeCode"]) factories[name] = (model: string, options: object) => ({ model, ...options,
@@ -182,7 +182,7 @@ test("Sandcastle stage uses the requested model, verifies Lua in Seatbelt, and a
     if (provider === "claude") assert.ok(captured.agent.buildPrintCommand({}).command.includes('CLAUDE_CODE_TMPDIR="$TMPDIR"'));
     assert.ok(commands.some(({ cmd, options }) => cmd === "make check" && !options));
     if (provider === "codex") assert.equal(commands[0].options.stdin, "fake-private-auth");
-    assert.equal(result.verification, "Lua syntax passed");
+    assert.equal(result.verification, "Checks passed");
     assert.equal(closed, true);
   }
 });

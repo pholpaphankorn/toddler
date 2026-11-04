@@ -42,12 +42,12 @@ toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
 | `verify` | yes | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. |
 | anything in `defaults` in `config.ts` | no | Overrides, e.g. `reservePercent`, `issueLabel`, `models`. |
 
-Example for a Neovim config:
+Example:
 
 ```json
 {
-  "repository": "pholpaphankorn/nvchad-starter",
-  "verify": "git ls-files -z -- '*.lua' | xargs -0 -n1 luac -p && echo 'Lua syntax passed.'"
+  "repository": "owner/name",
+  "verify": "npm test"
 }
 ```
 
@@ -70,8 +70,8 @@ Existing GitHub and Codex logins are retained. No API keys are needed or used.
   separate live usage reader. The runner reads native credentials for model and
   usage calls; it does not invoke any zsh token function. It does not mount your
   Keychain or home directory into Seatbelt.
-- **Codex:** `codex login` uses the ChatGPT subscription. On this computer it is
-  already authenticated and both requested models are advertised. The runner copies
+- **Codex:** `codex login` uses the ChatGPT subscription; `toddler doctor` checks the
+  requested models are advertised. The runner copies
   only subscription credentials from `~/.codex/auth.json` into the sandbox's private
   home; it does not copy host settings, history, or API keys. A file-backed ChatGPT
   login is required; a Keychain-only Codex login is not currently supported here.
@@ -189,16 +189,12 @@ The smoke test uses a disposable repository with no model calls or credentials.
 It checks private-home input, host tool access, worktree writes, and denied access
 outside the worktree. Tests cover scheduling, review gates, quota cancellation,
 fallback, and PR delivery using fake agents. Actual issue implementation still
-requires model calls and issue-specific verification; no live issue runs were made
-during setup because the labeled queue was empty.
+requires model calls and the project's own verification.
 
 `toddler smoke` explicitly makes four small subscription model calls
 in a disposable Seatbelt sandbox to check actual authentication and model access.
 Pass `claude` or `codex` to test only one provider. Claude's own temporary
 files are directed to Seatbelt's private temp directory with `CLAUDE_CODE_TMPDIR`.
-
-During setup, all four pinned models returned the expected response with subscription
-authentication inside Seatbelt. Both providers' five-hour quota queries also passed.
 
 References: [Sandcastle sandbox providers](https://github.com/mattpocock/sandcastle/blob/main/docs/guide/sandbox-providers.md),
 [Codex app-server quota API](https://learn.chatgpt.com/docs/app-server),
