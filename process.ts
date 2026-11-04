@@ -56,7 +56,7 @@ export function codexRpc<T>(method: string, params: object = {}, timeoutMs = 12_
       }
     });
     send({ id: 1, method: "initialize", params: {
-      clientInfo: { name: "sandcastle_nvim", version: "1.0.0" },
+      clientInfo: { name: "toddler", version: "1.0.0" },
     } });
   });
 }

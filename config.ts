@@ -1,9 +1,11 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 export type Provider = "codex" | "claude";
 export type Role = "implementation" | "review";
 export const providers: Provider[] = ["codex", "claude"];
 
-const config = {
-  repository: "pholpaphankorn/nvchad-starter",
+export const defaults = {
   remote: "origin",
   issueLabel: "Sandcastle",
   parallelLabel: "parallel-safe",
@@ -15,8 +17,30 @@ const config = {
   models: {
     codex: { implementation: "gpt-6.1-terra", review: "gpt-6.1-sol" },
     claude: { implementation: "claude-sonnet-5-5", review: "claude-opus-5-5" },
-  } satisfies Record<Provider, Record<Role, string>>,
+  } as Record<Provider, Record<Role, string>>,
   codexLimitId: "codex",
 };
-export type Config = typeof config;
-export default config;
+export type Defaults = typeof defaults;
+export interface Config extends Defaults {
+  /** GitHub owner/name whose issues are worked. */
+  repository: string;
+  /** Shell command run inside the sandbox worktree; must exit 0 before a stage is accepted. */
+  verify: string;
+}
+
+export function configPath(root: string): string { return join(root, ".sandcastle/config.json"); }
+
+// Project settings in <root>/.sandcastle/config.json override the defaults above.
+export function loadConfig(root: string): Config {
+  const path = configPath(root);
+  if (!existsSync(path)) throw new Error("No .sandcastle/config.json in this project; run toddler init");
+  const project = JSON.parse(readFileSync(path, "utf8"));
+  const config: Config = { ...defaults, ...project, models: { ...defaults.models, ...project.models } };
+  if (typeof config.repository !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(config.repository)) {
+    throw new Error(`${path}: "repository" must be "owner/name"`);
+  }
+  if (typeof config.verify !== "string" || !config.verify.trim()) {
+    throw new Error(`${path}: "verify" must be a shell command that checks the project (e.g. "npm test")`);
+  }
+  return config;
+}

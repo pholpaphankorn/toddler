@@ -1,20 +1,42 @@
+#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, open, rm, type FileHandle } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, open, rm, writeFile, type FileHandle } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import config, { providers } from "./config.ts";
+import { configPath, loadConfig, providers, type Config } from "./config.ts";
 import { command, codexRpc } from "./process.ts";
 import { readUsage, codexAuth, claudeToken, Quotas } from "./quota.ts";
 import { Runner, loadState, saveState } from "./runner.ts";
 import { assignments } from "./policy.ts";
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
-process.chdir(root);
-if (existsSync(join(root, ".sandcastle/.env"))) process.loadEnvFile(join(root, ".sandcastle/.env"));
+const usage = "Usage: toddler [init|setup|doctor|plan|run|smoke [codex|claude]]";
 // This runner uses subscriptions exclusively; avoid accidental metered API use.
 for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY"]) delete process.env[key];
 
-async function doctor() {
+// Run a script bundled with toddler from the current directory, passing its exit code through.
+function script(file: string, args: string[] = []) {
+  const path = fileURLToPath(new URL(file, import.meta.url));
+  const result = spawnSync(file.endsWith(".sh") ? "bash" : process.execPath, [path, ...args], { stdio: "inherit" });
+  process.exitCode = result.status ?? 1;
+}
+
+async function init(root: string) {
+  const path = configPath(root);
+  if (existsSync(path)) { console.log(`${path} already exists.`); return; }
+  const repository = await command("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
+  await mkdir(join(root, ".sandcastle"), { recursive: true });
+  await writeFile(path, `${JSON.stringify({ repository, verify: "" }, null, 2)}\n`);
+  const ignore = join(root, ".sandcastle/.gitignore");
+  if (!existsSync(ignore)) await writeFile(ignore, ".env\nlogs/\nworktrees/\nstate.json\nstate.json.tmp\nrunner.lock\n");
+  console.log(`Wrote ${path} for ${repository}.
+Next:
+  1. Set "verify" to a shell command that checks this project inside the sandbox (e.g. "npm test").
+  2. Optionally write stack-specific agent notes in .sandcastle/project.md.
+  3. Commit .sandcastle/, then run: toddler setup`);
+}
+
+async function doctor(config: Config) {
   let failures = 0;
   const check = async (name: string, action: () => Promise<string>) => {
     try { console.log(`OK   ${name}: ${await action()}`); }
@@ -57,8 +79,17 @@ async function doctor() {
 
 async function main() {
   const mode = process.argv[2] ?? "run";
-  if (mode === "doctor") return doctor();
-  if (!["run", "plan"].includes(mode)) throw new Error("Usage: npm run sandcastle -- [run|plan|doctor]");
+  if (mode === "smoke") return script("smoke-agents.ts", process.argv.slice(3));
+  if (!["init", "setup", "doctor", "plan", "run"].includes(mode)) throw new Error(usage);
+  let root: string;
+  try { root = await command("git", ["rev-parse", "--show-toplevel"]); }
+  catch { throw new Error("Run toddler inside the git repository it should work on"); }
+  process.chdir(root);
+  if (existsSync(join(root, ".sandcastle/.env"))) process.loadEnvFile(join(root, ".sandcastle/.env"));
+  if (mode === "init") return init(root);
+  if (mode === "setup") return script("setup.sh");
+  const config = loadConfig(root);
+  if (mode === "doctor") return doctor(config);
   const statePath = join(root, ".sandcastle/state.json");
   const state = loadState(statePath, config.repository);
   const quotas = new Quotas(config);

@@ -153,17 +153,21 @@ export class Runner {
         if (role === "review" && before !== after) throw new Error("Reviewer modified commits; approval rejected");
         await this.git(["merge-base", "--is-ancestor", job.baseSha, after], sandbox.worktreePath);
         if (after === job.baseSha) throw new Error("No implementation commits were produced");
-        // Run the trusted host copy even before this integration is merged to main.
-        const verification = await sandbox.exec("node --input-type=module-typescript", {
-          stdin: await readFile(own("check-lua.ts"), "utf8"),
-        });
-        if (verification.exitCode) throw new Error("Host-required Lua syntax verification failed");
+        // The command comes from the host config, not the agent-editable worktree.
+        const verification = await sandbox.exec(this.config.verify);
+        if (verification.exitCode) throw new Error(`Host-required verification failed: ${this.config.verify}`);
         return { stdout: result.stdout, sha: after, verification: verification.stdout.trim() };
       } finally {
         const closed = await sandbox.close();
         if (closed.preservedWorktreePath) console.log(`[issue #${job.number}] preserved ${closed.preservedWorktreePath}`);
       }
     });
+  }
+  // Workflow prompt from toddler, followed by optional stack-specific notes from the project.
+  async prompt(name: "prompt.md" | "review.md"): Promise<string> {
+    const notes = join(this.root, ".sandcastle/project.md");
+    return await readFile(own(name), "utf8") +
+      (existsSync(notes) ? `\nProject notes:\n${await readFile(notes, "utf8")}` : "");
   }
   async context(issue: Issue, job: Job): Promise<string> {
     const comments: { body: string }[] = JSON.parse(await this.gh(["api", "--paginate", "--slurp",
@@ -189,7 +193,7 @@ export class Runner {
           const provider = this.quotas.available(job.implementer) ? job.implementer :
             providers.find((name) => this.quotas.available(name));
           if (!provider) return;
-          const prompt = await readFile(own("prompt.md"), "utf8");
+          const prompt = await this.prompt("prompt.md");
           try {
             const result = await this.stage(job, provider, "implementation", prompt + context +
               (job.feedback ? `\nResolve these review findings:\n${JSON.stringify(job.feedback)}\n` : "") +
@@ -204,7 +208,7 @@ export class Runner {
         if (job.status === "review") {
           const provider = reviewer(job.implementer, (name) => this.quotas.available(name));
           if (!provider) return;
-          const prompt = await readFile(own("review.md"), "utf8");
+          const prompt = await this.prompt("review.md");
           let result;
           try { result = await this.stage(job, provider, "review", prompt + context); }
           catch (error) {
@@ -238,7 +242,7 @@ export class Runner {
     const directory = await mkdtemp(join(tmpdir(), "sandcastle-pr-"));
     try {
       const bodyFile = join(directory, "body.md");
-      await writeFile(bodyFile, `## Summary\n\nIssue #${issue.number} → implementation → review → pull request\n\n${job.report!.summary}\n\nCloses #${issue.number}\n\n## Evidence\n\n- **Before:** Issue #${issue.number} was open when assigned.\n- **After:** ${job.report!.validation}\n\nCoordinator verification: ${job.verification ?? "Lua syntax passed"}.\n\nReviewed by ${this.config.models[job.reviewer!].review} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** Neovim\n\nReview the diff and any manual QA limitations before merging.\n`, { mode: 0o600 });
+      await writeFile(bodyFile, `## Summary\n\nIssue #${issue.number} → implementation → review → pull request\n\n${job.report!.summary}\n\nCloses #${issue.number}\n\n## Evidence\n\n- **Before:** Issue #${issue.number} was open when assigned.\n- **After:** ${job.report!.validation}\n\nCoordinator verification (\`${this.config.verify}\`): ${job.verification || "passed"}.\n\nReviewed by ${this.config.models[job.reviewer!].review} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`, { mode: 0o600 });
       const url = await this.gh(["pr", "create", "--repo", this.config.repository,
         "--base", job.baseBranch, "--head", job.branch,
         "--title", `Fix #${issue.number}: ${issue.title}`.slice(0, 200), "--body-file", bodyFile]);

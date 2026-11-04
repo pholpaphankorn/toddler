@@ -7,11 +7,12 @@ import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
 import { command } from "./process.ts";
 import { codexAuth, claudeToken, Quotas } from "./quota.ts";
 import { privateHomeAgent } from "./agents.ts";
-import config, { providers as allProviders, type Provider } from "./config.ts";
+import { defaults as config, providers as allProviders, type Provider } from "./config.ts";
 
 const providers = process.argv[2] ? [process.argv[2] as Provider] : allProviders;
 if (providers.some((provider) => !allProviders.includes(provider))) throw new Error("Expected codex or claude");
 const root = await mkdtemp(join(tmpdir(), "sandcastle-model-smoke-"));
+// shortcut: smokes the default models, not a project's overrides; load the project config if overrides get used.
 const quotas = new Quotas(config);
 let sandbox: Sandbox | undefined;
 try {
@@ -19,8 +20,8 @@ try {
   await command("git", ["init", "-b", "main", root]);
   await command("git", ["-C", root, "config", "user.name", "Model smoke"]);
   await command("git", ["-C", root, "config", "user.email", "smoke@example.invalid"]);
-  await writeFile(join(root, "sample.lua"), "return {}\n");
-  await command("git", ["-C", root, "add", "sample.lua"]);
+  await writeFile(join(root, "sample.txt"), "sample\n");
+  await command("git", ["-C", root, "add", "sample.txt"]);
   await command("git", ["-C", root, "commit", "-m", "Smoke fixture"]);
   sandbox = await createSandbox({ cwd: root, branch: "codex/model-smoke", sandbox: seatbelt() });
   if (providers.includes("codex")) {

@@ -2,18 +2,18 @@
   "name": "toddler",
   "private": true,
   "type": "module",
+  "bin": {
+    "toddler": "main.ts"
+  },
   "scripts": {
-    "sandcastle": "node main.ts",
-    "sandcastle:doctor": "node main.ts doctor",
-    "sandcastle:plan": "node main.ts plan",
-    "sandcastle:setup": "bash setup.sh",
-    "sandcastle:smoke": "node smoke-agents.ts",
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc",
-    "check:lua": "node check-lua.ts"
+    "smoke:seatbelt": "node smoke-seatbelt.ts"
+  },
+  "dependencies": {
+    "@ai-hero/sandcastle": "file:../sandcastle"
   },
   "devDependencies": {
-    "@ai-hero/sandcastle": "file:../sandcastle",
     "@types/node": "^22.20.5",
     "typescript": "^7.0.2"
   },

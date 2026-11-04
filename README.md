@@ -1,24 +1,65 @@
-# Sandcastle workflow
+# toddler
+
+My personal agent workflow, built on [Sandcastle](https://github.com/mattpocock/sandcastle).
+toddler is a CLI: `cd` into a project and run it there. It works the project's labeled
+GitHub issues with Codex and Claude Code inside macOS Seatbelt sandboxes, has the
+other provider review, and opens PRs.
 
 Run from a normal macOS terminal. Seatbelt cannot nest inside the Codex app's own
 sandbox. The runner never falls back to unsandboxed execution.
 
-## Install and authenticate
+## Install
 
-This repository uses the existing local Sandcastle checkout at
-`~/Documents/agentic-workflow/sandcastle` (version 0.12.0, inspected at commit
-`85e8e6d3ab73ab0892242f01185464da713a7ef6`). `package.json` preserves that file
-dependency; the checkout needs its built `dist/` directory and installed dependencies.
-On another computer, clone/build Sandcastle at that path before running `npm install`
-here, or change the file dependency to the checkout's location.
+toddler depends on the local Sandcastle checkout at `../sandcastle` (it needs its
+built `dist/`). Node >= 22.18 runs the TypeScript directly; there is no build step.
 
 ```sh
 npm install
-npm run sandcastle:setup
-npm run sandcastle:doctor
-npm run sandcastle:plan
-npm run sandcastle
+npm link        # puts `toddler` on your PATH, pointing at this checkout
 ```
+
+Keep it linked rather than packed: Node does not strip types from files under
+`node_modules`, so a tarball install would not run.
+
+## Use it in a project
+
+```sh
+cd ~/some/project
+toddler init      # writes .sandcastle/config.json and .sandcastle/.gitignore
+# edit .sandcastle/config.json, optionally add .sandcastle/project.md, commit .sandcastle/
+toddler setup     # sign in to GitHub, Codex and Claude Code, then run doctor
+toddler doctor    # check sandbox, logins, quota and models
+toddler plan      # show the next assignments without starting agents
+toddler           # run (same as `toddler run`)
+toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
+```
+
+`.sandcastle/config.json` (committed in the project):
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `repository` | yes | GitHub `owner/name` whose issues are worked (`init` fills it in). |
+| `verify` | yes | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. |
+| anything in `defaults` in `config.ts` | no | Overrides, e.g. `reservePercent`, `issueLabel`, `models`. |
+
+Example for a Neovim config:
+
+```json
+{
+  "repository": "pholpaphankorn/nvchad-starter",
+  "verify": "git ls-files -z -- '*.lua' | xargs -0 -n1 luac -p && echo 'Lua syntax passed.'"
+}
+```
+
+`.sandcastle/project.md` (optional) is appended to the implementation and review
+prompts as "Project notes": stack, how to check changes, what not to do. The
+generic workflow rules stay in toddler's `prompt.md` and `review.md`.
+
+The project's `.sandcastle/` also holds the ignored runtime files: `.env`, `state.json`,
+`logs/`, `worktrees/` and `runner.lock`. The repo must have the `Sandcastle`,
+`parallel-safe` and `blocked` labels (`gh label create <name>`).
+
+## Authentication
 
 The setup wizard signs in through the native GitHub, Codex, and Claude Code CLIs.
 Existing GitHub and Codex logins are retained. No API keys are needed or used.
@@ -44,17 +85,14 @@ and worktrees are ignored by Git.
 
 ## Queue and roles
 
-GitHub Issues is enabled on `pholpaphankorn/nvchad-starter`. The setup created the
-`Sandcastle`, `parallel-safe`, and `blocked` labels.
-
 1. Add **Sandcastle** to an actionable issue. The coordinator assigns one issue
    per branch, starting with the oldest issue number.
 2. Add **parallel-safe** to each of two issues only after establishing that both
    can be implemented independently. Without that declaration work stays sequential.
    Add GitHub blocking dependencies or **blocked** / **on-hold** to defer an issue.
    The coordinator checks open GitHub blockers, including issues outside the queue.
-3. Run `npm run sandcastle:plan` to inspect the next assignments without starting agents.
-4. Run `npm run sandcastle` to implement, review, and open PRs automatically.
+3. Run `toddler plan` to inspect the next assignments without starting agents.
+4. Run `toddler` to implement, review, and open PRs automatically.
 
 | Provider | Implementation | Review |
 | --- | --- | --- |
@@ -74,7 +112,7 @@ remaining provider's appropriate role. Implementation and review are separate se
 
 Each issue branches from the fetched default branch (`origin/main` here), with its
 base SHA recorded in local state. Agents commit locally; the host verifies a clean
-worktree and Lua syntax. A structured approving review of the exact resulting SHA
+worktree and runs the project's `verify` command. A structured approving review of the exact resulting SHA
 is required before that SHA is pushed to `codex/sandcastle-issue-N` and a PR is opened.
 PRs reference the issue for closure on merge. The runner never merges PRs or closes
 issues itself. Human changes to a branch after approval cause publication to stop.
@@ -103,7 +141,7 @@ these conditions are reported rather than treated as completed issues.
 **Limits:** this is a polling guard, not a provider-enforced spending cap. Server
 reporting lag and in-flight calls can consume additional quota before cancellation.
 An exact guarantee of leaving 5% untouched is not possible. Increase `reservePercent`
-in `config.ts` if more headroom is needed. Seatbelt kills normal process groups;
+in `.sandcastle/config.json` if more headroom is needed. Seatbelt kills normal process groups;
 Sandcastle documents a macOS limitation for processes that deliberately detach.
 
 Codex usage is read through the documented `account/rateLimits/read` app-server API,
@@ -144,20 +182,19 @@ entry from `state.json`, then inspect/reuse its existing branch before restartin
 ```sh
 npm test
 npm run typecheck
-npm run check:lua
-node smoke-seatbelt.ts
+npm run smoke:seatbelt
 ```
 
 The smoke test uses a disposable repository with no model calls or credentials.
-It checks private-home input, host Lua access, worktree writes, and denied access
+It checks private-home input, host tool access, worktree writes, and denied access
 outside the worktree. Tests cover scheduling, review gates, quota cancellation,
 fallback, and PR delivery using fake agents. Actual issue implementation still
 requires model calls and issue-specific verification; no live issue runs were made
 during setup because the labeled queue was empty.
 
-`npm run sandcastle:smoke` explicitly makes four small subscription model calls
+`toddler smoke` explicitly makes four small subscription model calls
 in a disposable Seatbelt sandbox to check actual authentication and model access.
-Pass `-- claude` or `-- codex` to test only one provider. Claude's own temporary
+Pass `claude` or `codex` to test only one provider. Claude's own temporary
 files are directed to Seatbelt's private temp directory with `CLAUDE_CODE_TMPDIR`.
 
 During setup, all four pinned models returned the expected response with subscription

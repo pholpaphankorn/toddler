@@ -200,7 +200,7 @@ finish() {
 
 run_wizard() {
 TOTAL_STAGES=3
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+TODDLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE=".sandcastle/.env"
 banner "Sandcastle subscription logins"
 stage "GitHub: authorize this repository"
@@ -211,7 +211,7 @@ if gh auth status >/dev/null 2>&1; then
 else
   gh auth login --hostname github.com --web
 fi
-gh repo view pholpaphankorn/nvchad-starter --json nameWithOwner,viewerPermission
+gh repo view --json nameWithOwner,viewerPermission
 pause "Press Enter for Codex login."
 
 stage "Codex: sign in with ChatGPT"
@@ -234,7 +234,7 @@ else
 fi
 say "No API keys or GitHub secrets are needed."
 say "Checking Seatbelt, model availability, logins and usage reporting..."
-npm run sandcastle:doctor || warn "Resolve the FAIL lines before starting. See .sandcastle/README.md for quota adapters."
+node "$TODDLER_DIR/main.ts" doctor || warn "Resolve the FAIL lines before starting. See the toddler README for quota adapters."
 finish
 }
 

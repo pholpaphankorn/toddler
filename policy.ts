@@ -1,4 +1,4 @@
-import { providers, type Config, type Provider } from "./config.ts";
+import { providers, type Defaults, type Provider } from "./config.ts";
 
 export interface Issue {
   number: number;
@@ -17,10 +17,10 @@ export type Available = (provider: Provider) => boolean;
 export interface Assignment { issue: Issue; provider: Provider }
 
 export function labels(issue: Issue): string[] { return issue.labels.map((label) => typeof label === "string" ? label : label.name); }
-export function ready(issue: Issue, config: Config): boolean {
+export function ready(issue: Issue, config: Defaults): boolean {
   return !labels(issue).some((label) => config.blockedLabels.includes(label.toLowerCase()));
 }
-export function assignments(issues: Issue[], available: Available, config: Config): Assignment[] {
+export function assignments(issues: Issue[], available: Available, config: Defaults): Assignment[] {
   const candidates = issues.filter((issue) => ready(issue, config));
   const usable = providers.filter((provider) => available(provider));
   if (!candidates.length || !usable.length) return [];

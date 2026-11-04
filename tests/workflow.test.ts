@@ -4,10 +4,14 @@ import { fileURLToPath } from "node:url";
 import { assignments, reviewer, reviewReport } from "../policy.ts";
 import { Quotas, codexUsage, claudeUsage, validateUsage, type Usage } from "../quota.ts";
 import { Runner, type Job, type RunnerOptions } from "../runner.ts";
-import config, { providers, type Provider } from "../config.ts";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { defaults, loadConfig, providers, type Config, type Provider } from "../config.ts";
 
 // Test doubles implement only what each test exercises.
 const fake = <T,>(value: unknown) => value as T;
+const config: Config = { ...defaults, repository: "example/repo", verify: "make check" };
 
 const now = Date.now();
 const usage = (remainingPercent: number): Usage => ({ remainingPercent, resetsAt: Math.floor(Date.now() / 1000) + 1000, observedAt: Date.now() });
@@ -176,7 +180,7 @@ test("Sandcastle stage uses the requested model, verifies Lua in Seatbelt, and a
     assert.equal(captured.logging.type, "file");
     assert.match(captured.agent.buildPrintCommand({}).command, /^unset CODEX_HOME /);
     if (provider === "claude") assert.ok(captured.agent.buildPrintCommand({}).command.includes('CLAUDE_CODE_TMPDIR="$TMPDIR"'));
-    assert.ok(commands.some(({ cmd, options }) => cmd === "node --input-type=module-typescript" && options.stdin.includes("luac")));
+    assert.ok(commands.some(({ cmd, options }) => cmd === "make check" && !options));
     if (provider === "codex") assert.equal(commands[0].options.stdin, "fake-private-auth");
     assert.equal(result.verification, "Lua syntax passed");
     assert.equal(closed, true);
@@ -221,4 +225,23 @@ test("same provider/role sessions queue while distinct roles can proceed", async
   finishFirst();
   await Promise.all([first, second, review]);
   assert.equal(maximum, 1);
+});
+
+test("project config overrides defaults and must name a repository and verify command", () => {
+  const root = mkdtempSync(join(tmpdir(), "toddler-config-"));
+  try {
+    assert.throws(() => loadConfig(root), /toddler init/);
+    mkdirSync(join(root, ".sandcastle"));
+    const write = (value: object) => writeFileSync(join(root, ".sandcastle/config.json"), JSON.stringify(value));
+    write({ repository: "owner/repo", verify: "" });
+    assert.throws(() => loadConfig(root), /"verify"/);
+    write({ repository: "not a repo", verify: "npm test" });
+    assert.throws(() => loadConfig(root), /"repository"/);
+    write({ repository: "owner/repo", verify: "npm test", reservePercent: 10, models: { claude: { implementation: "a", review: "b" } } });
+    const loaded = loadConfig(root);
+    assert.equal(loaded.reservePercent, 10);
+    assert.equal(loaded.models.claude.review, "b");
+    assert.equal(loaded.models.codex, defaults.models.codex);
+    assert.equal(loaded.issueLabel, defaults.issueLabel);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

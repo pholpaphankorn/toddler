@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { providers, type Config, type Provider } from "./config.ts";
+import { providers, type Defaults, type Provider } from "./config.ts";
 import { adapter, codexRpc, command } from "./process.ts";
 
 export interface Usage { remainingPercent: number; resetsAt: number; observedAt: number }
@@ -10,7 +10,7 @@ interface CodexBucket { limitId?: string; primary?: CodexWindow | null; secondar
 export interface CodexRateLimits { rateLimits?: CodexBucket; rateLimitsByLimitId?: Record<string, CodexBucket> }
 interface ClaudeWindow { utilization: number; resets_at: string }
 export type ClaudeUsage = Record<string, ClaudeWindow | null | undefined>;
-export type ReadUsage = (provider: Provider, config: Config) => Promise<Usage>;
+export type ReadUsage = (provider: Provider, config: Defaults) => Promise<Usage>;
 
 export function validateUsage(value: Usage, now = Date.now()): Usage {
   const { remainingPercent, resetsAt, observedAt } = value;
@@ -44,7 +44,7 @@ export function claudeUsage(result: ClaudeUsage, now = Date.now()): Usage {
 export async function claudeToken(): Promise<string> {
   const native = await nativeClaudeToken();
   if (native) return native;
-  throw new Error("Claude subscription login unavailable; run npm run sandcastle:setup");
+  throw new Error("Claude subscription login unavailable; run toddler setup");
 }
 async function nativeClaudeToken(): Promise<string | undefined> {
   try {
@@ -75,7 +75,7 @@ export async function codexAuth(): Promise<string> {
   }
   return JSON.stringify({ auth_mode: "chatgpt", tokens: auth.tokens, last_refresh: auth.last_refresh });
 }
-export async function readUsage(provider: Provider, config: Config): Promise<Usage> {
+export async function readUsage(provider: Provider, config: Defaults): Promise<Usage> {
   const override = process.env[`${provider.toUpperCase()}_USAGE_COMMAND`];
   if (override) return validateUsage(JSON.parse(await adapter(override, config.quotaTimeoutMs)));
   if (provider === "codex") return codexUsage(
@@ -90,13 +90,13 @@ export async function readUsage(provider: Provider, config: Config): Promise<Usa
   return claudeUsage(await response.json() as ClaudeUsage);
 }
 export class Quotas {
-  config: Config;
+  config: Defaults;
   read: ReadUsage;
   disabled = new Map<Provider, string>();
   active = new Map<Provider, Set<AbortController>>();
   values = new Map<Provider, Usage>();
   refreshing: Promise<void[]> | null = null;
-  constructor(config: Config, read: ReadUsage = readUsage) {
+  constructor(config: Defaults, read: ReadUsage = readUsage) {
     this.config = config; this.read = read;
   }
   available(provider: Provider): boolean { return this.values.has(provider) && !this.disabled.has(provider); }
