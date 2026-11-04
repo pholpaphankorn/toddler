@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { configPath, loadConfig, providers, type Config } from "./config.ts";
+import { configPath, loadConfig, offline, providers, type Config } from "./config.ts";
 import { command, codexRpc } from "./process.ts";
 import { readUsage, codexAuth, claudeToken, Quotas } from "./quota.ts";
 import { Runner, loadState, saveState } from "./runner.ts";
@@ -24,13 +24,16 @@ function script(file: string, args: string[] = []) {
 async function init(root: string) {
   const path = configPath(root);
   if (existsSync(path)) { console.log(`${path} already exists.`); return; }
-  const repository = await command("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
+  let repository: string | undefined;
+  try { repository = await command("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]); }
+  catch { /* No GitHub repository: set up local issues on local branches. */ }
   await mkdir(join(root, ".sandcastle"), { recursive: true });
-  await writeFile(path, `${JSON.stringify({ repository, verify: "" }, null, 2)}\n`);
+  const project = repository ? { repository, verify: "" } : { issues: "local", openPr: false, verify: "" };
+  await writeFile(path, `${JSON.stringify(project, null, 2)}\n`);
   const ignore = join(root, ".sandcastle/.gitignore");
   if (!existsSync(ignore)) await writeFile(ignore, ".env\nlogs/\nworktrees/\nstate.json\nstate.json.tmp\nrunner.lock\n");
-  console.log(`Wrote ${path} for ${repository}.
-Next:
+  console.log(`Wrote ${path} for ${repository ?? "local issues (no GitHub repository found)"}.
+Next:${repository ? "" : "\n  0. Write issues as .sandcastle/issues/<number>-<slug>.md files."}
   1. Set "verify" to a shell command that checks this project inside the sandbox (e.g. "npm test").
   2. Optionally write stack-specific agent notes in .sandcastle/project.md.
   3. Commit .sandcastle/, then run: toddler setup`);
@@ -51,6 +54,7 @@ async function doctor(config: Config) {
     seatbelt(); return "available (never falls back to unsandboxed execution)";
   });
   await check("GitHub", async () => {
+    if (offline(config)) return "not used (local issues, openPr false)";
     const repo = JSON.parse(await command("gh", ["repo", "view", config.repository, "--json", "nameWithOwner,viewerPermission,defaultBranchRef"]));
     if (!["ADMIN", "MAINTAIN", "WRITE"].includes(repo.viewerPermission)) throw new Error("Repository write permission needed to push issue branches");
     return `${repo.nameWithOwner}, base ${repo.defaultBranchRef.name}, ${repo.viewerPermission}`;
@@ -106,9 +110,11 @@ async function main() {
   }
   const dirty = await command("git", ["status", "--porcelain"]);
   if (dirty) throw new Error("Commit or stash repository changes before starting Sandcastle");
-  const remote = await command("git", ["remote", "get-url", config.remote]);
-  if (!remote.endsWith(`${config.repository}.git`) && !remote.endsWith(config.repository)) {
-    throw new Error("Configured push remote does not match the GitHub repository");
+  if (!offline(config)) {
+    const remote = await command("git", ["remote", "get-url", config.remote]);
+    if (!remote.endsWith(`${config.repository}.git`) && !remote.endsWith(config.repository)) {
+      throw new Error("Configured push remote does not match the GitHub repository");
+    }
   }
   await mkdir(join(root, ".sandcastle/logs"), { recursive: true });
   const lockPath = join(root, ".sandcastle/runner.lock");
@@ -128,9 +134,16 @@ async function main() {
       OPENAI_API_KEY: "", CODEX_API_KEY: "", ANTHROPIC_API_KEY: "", GH_TOKEN: "", GITHUB_TOKEN: "",
     } });
     runner.sandcastle = await import("@ai-hero/sandcastle");
-    const repo = JSON.parse(await runner.gh(["repo", "view", config.repository, "--json", "defaultBranchRef"]));
-    const baseBranch = repo.defaultBranchRef.name;
-    await runner.git(["fetch", config.remote, baseBranch]);
+    let baseBranch: string;
+    if (offline(config)) {
+      // Offline jobs branch from the checked-out branch, as it is locally.
+      baseBranch = await runner.git(["branch", "--show-current"]);
+      if (!baseBranch) throw new Error("Check out a branch for local issues to start from");
+    } else {
+      const repo = JSON.parse(await runner.gh(["repo", "view", config.repository, "--json", "defaultBranchRef"]));
+      baseBranch = repo.defaultBranchRef.name;
+      await runner.git(["fetch", config.remote, baseBranch]);
+    }
     // Disable unavailable logins without taking the other provider down.
     for (const provider of providers) {
       try { if (provider === "codex") await codexAuth(); else await claudeToken(); }

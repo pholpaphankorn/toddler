@@ -135,6 +135,8 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
     await runner.work(candidates[0], "codex", "main");
     assert.equal(state.jobs[2].status, "done");
     assert.equal(state.jobs[2].branch, "codex/sandcastle-local-2");
+    assert.ok(events.some((event) => event[1] === "rev-parse" && event[2] === "main"), "offline jobs start from the local branch");
+    assert.ok(!events.some((event) => event.some((arg) => arg.startsWith("origin"))));
     assert.ok(!events.some((event) => event[0] === "gh" || event[1] === "push"));
     assert.deepEqual((await runner.candidates()).map((issue) => issue.number), []);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -278,6 +280,10 @@ test("project config overrides defaults and must name a repository and verify co
     assert.equal(loaded.issueLabel, defaults.issueLabel);
     assert.equal(loaded.issues, "github");
     assert.equal(loaded.openPr, true);
+    write({ verify: "npm test", issues: "local", openPr: false });
+    assert.equal(loadConfig(root).repository, "local");
+    write({ verify: "npm test", issues: "local" });
+    assert.throws(() => loadConfig(root), /"repository"/);
     write({ repository: "owner/repo", verify: "npm test", issues: "jira" });
     assert.throws(() => loadConfig(root), /"issues"/);
     write({ repository: "owner/repo", verify: "npm test", openPr: "no" });

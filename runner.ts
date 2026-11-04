@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type * as SandcastleModule from "@ai-hero/sandcastle";
 import type { AgentProvider, CreateSandboxOptions } from "@ai-hero/sandcastle";
-import { providers, type Config, type Provider, type Role } from "./config.ts";
+import { offline, providers, type Config, type Provider, type Role } from "./config.ts";
 import { assignments, localIssue, reviewer, reviewReport, type Issue, type ReviewReport } from "./policy.ts";
 import { command, type Command } from "./process.ts";
 import { claudeToken, codexAuth, type Quotas } from "./quota.ts";
@@ -200,7 +200,7 @@ export class Runner {
     let job = this.state.jobs[issue.number];
     if (!job) {
       job = { number: issue.number, branch: this.branch(issue.number),
-        baseBranch, baseSha: await this.git(["rev-parse", `${this.config.remote}/${baseBranch}`]),
+        baseBranch, baseSha: await this.git(["rev-parse", offline(this.config) ? baseBranch : `${this.config.remote}/${baseBranch}`]),
         status: "implementation", rounds: 0, implementer: initialProvider };
       this.state.jobs[issue.number] = job; this.save();
     }

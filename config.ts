@@ -32,6 +32,9 @@ export interface Config extends Defaults {
   verify: string;
 }
 
+/** Local issues kept on local branches: no GitHub repository or git remote is used. */
+export function offline(config: Pick<Defaults, "issues" | "openPr">): boolean { return config.issues === "local" && !config.openPr; }
+
 export function configPath(root: string): string { return join(root, ".sandcastle/config.json"); }
 
 // Project settings in <root>/.sandcastle/config.json override the defaults above.
@@ -40,8 +43,10 @@ export function loadConfig(root: string): Config {
   if (!existsSync(path)) throw new Error("No .sandcastle/config.json in this project; run toddler init");
   const project = JSON.parse(readFileSync(path, "utf8"));
   const config: Config = { ...defaults, ...project, models: { ...defaults.models, ...project.models } };
-  if (typeof config.repository !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(config.repository)) {
-    throw new Error(`${path}: "repository" must be "owner/name"`);
+  // Offline projects have no repository; the placeholder only keys .sandcastle/state.json.
+  if (offline(config) && config.repository === undefined) config.repository = "local";
+  else if (typeof config.repository !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(config.repository)) {
+    throw new Error(`${path}: "repository" must be "owner/name" (optional only with "issues": "local" and "openPr": false)`);
   }
   if (typeof config.verify !== "string" || !config.verify.trim()) {
     throw new Error(`${path}: "verify" must be a shell command that checks the project (e.g. "npm test")`);

@@ -38,7 +38,7 @@ toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
 
 | Key | Required | Meaning |
 | --- | --- | --- |
-| `repository` | yes | GitHub `owner/name` whose issues are worked (`init` fills it in). |
+| `repository` | yes, unless offline | GitHub `owner/name` whose issues are worked (`init` fills it in). |
 | `verify` | yes | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. |
 | `issues` | no | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/issues/`. |
 | `openPr` | no | `true` (default): push the reviewed branch and open a PR. `false`: stop with the approved commit on a local branch; nothing is pushed. |
@@ -71,7 +71,12 @@ What is wrong and what done looks like.
 The title falls back to the file name. Set `status: closed` (or delete the file) once
 the work is merged; until then it still blocks any issue that lists it in `blocked_by`.
 Local issues work on `codex/sandcastle-local-<number>` branches, and their PRs do not
-say `Closes #N`. GitHub is still used for the base branch and, with `openPr`, the PR.
+say `Closes #N`.
+
+With `"issues": "local"` and `"openPr": false` toddler runs offline: no GitHub login,
+`repository` or git remote is needed. Jobs branch from the branch you have checked out.
+`toddler init` writes this setup when the repository has no GitHub remote. Otherwise
+GitHub is still used for the base branch and, with `openPr`, the PR.
 
 `.sandcastle/project.md` (optional) is appended to the implementation and review
 prompts as "Project notes": stack, how to check changes, what not to do. The

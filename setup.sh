@@ -204,6 +204,9 @@ TODDLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE=".sandcastle/.env"
 banner "Sandcastle subscription logins"
 stage "GitHub: authorize this repository"
+if [ -z "$(git remote)" ]; then
+  say "This repository has no git remote, so GitHub is not needed (local issues on local branches)."
+else
 say "The runner reads issues, pushes branches and opens pull requests as you."
 say "Authentication stays in gh's native credential store; no GitHub token is copied to agents."
 if gh auth status >/dev/null 2>&1; then
@@ -212,6 +215,7 @@ else
   gh auth login --hostname github.com --web
 fi
 gh repo view --json nameWithOwner,viewerPermission
+fi
 pause "Press Enter for Codex login."
 
 stage "Codex: sign in with ChatGPT"
