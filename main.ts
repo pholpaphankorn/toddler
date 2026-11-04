@@ -44,7 +44,7 @@ async function doctor(config: Config) {
   };
   await check("Sandcastle", async () => {
     await import("@ai-hero/sandcastle");
-    return "local checkout linked";
+    return "installed";
   });
   await check("Seatbelt", async () => {
     const { seatbelt } = await import("@ai-hero/sandcastle/sandboxes/seatbelt");

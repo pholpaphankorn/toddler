@@ -10,8 +10,8 @@ sandbox. The runner never falls back to unsandboxed execution.
 
 ## Install
 
-toddler depends on the local Sandcastle checkout at `../sandcastle` (it needs its
-built `dist/`). Node >= 22.18 runs the TypeScript directly; there is no build step.
+toddler uses `@ai-hero/sandcastle` 0.14.0 from npm (pinned exactly). Node >= 22.18
+runs the TypeScript directly; there is no build step.
 
 ```sh
 npm install
