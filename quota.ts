@@ -1,9 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { adapter, codexRpc, command } from "./process.mjs";
+import { providers, type Config, type Provider } from "./config.ts";
+import { adapter, codexRpc, command } from "./process.ts";
 
-export function validateUsage(value, now = Date.now()) {
+export interface Usage { remainingPercent: number; resetsAt: number; observedAt: number }
+interface CodexWindow { usedPercent: number; resetsAt: number; windowDurationMins?: number }
+interface CodexBucket { limitId?: string; primary?: CodexWindow | null; secondary?: CodexWindow | null }
+export interface CodexRateLimits { rateLimits?: CodexBucket; rateLimitsByLimitId?: Record<string, CodexBucket> }
+interface ClaudeWindow { utilization: number; resets_at: string }
+export type ClaudeUsage = Record<string, ClaudeWindow | null | undefined>;
+export type ReadUsage = (provider: Provider, config: Config) => Promise<Usage>;
+
+export function validateUsage(value: Usage, now = Date.now()): Usage {
   const { remainingPercent, resetsAt, observedAt } = value;
   if (!Number.isFinite(remainingPercent) || remainingPercent < 0 || remainingPercent > 100 ||
       !Number.isFinite(resetsAt) || resetsAt <= now / 1000 ||
@@ -12,11 +21,11 @@ export function validateUsage(value, now = Date.now()) {
   }
   return { remainingPercent, resetsAt, observedAt };
 }
-export function codexUsage(result, limitId, now = Date.now()) {
+export function codexUsage(result: CodexRateLimits, limitId: string, now = Date.now()): Usage {
   const bucket = result.rateLimitsByLimitId?.[limitId] ??
     (result.rateLimits?.limitId === limitId ? result.rateLimits : undefined);
   if (!bucket) throw new Error(`Codex quota bucket '${limitId}' was not returned`);
-  const windows = [bucket.primary, bucket.secondary].filter(Boolean);
+  const windows = [bucket.primary, bucket.secondary].filter((window): window is CodexWindow => !!window);
   const fiveHour = windows.find((window) => window.windowDurationMins === 300);
   if (!fiveHour) throw new Error("Codex did not return a five-hour quota window");
   if (!Number.isFinite(fiveHour.usedPercent)) throw new Error("Invalid Codex usage percentage");
@@ -24,20 +33,20 @@ export function codexUsage(result, limitId, now = Date.now()) {
   return validateUsage({ remainingPercent: exhausted ? 0 : 100 - fiveHour.usedPercent,
     resetsAt: fiveHour.resetsAt, observedAt: now }, now);
 }
-export function claudeUsage(result, now = Date.now()) {
+export function claudeUsage(result: ClaudeUsage, now = Date.now()): Usage {
   const window = result.five_hour;
-  if (!Number.isFinite(window?.utilization)) throw new Error("Claude did not return five-hour usage");
+  if (!window || !Number.isFinite(window.utilization)) throw new Error("Claude did not return five-hour usage");
   const exhausted = Object.entries(result).some(([key, value]) =>
-    key.startsWith("seven_day") && value?.utilization >= 100 && Date.parse(value.resets_at) > now);
+    key.startsWith("seven_day") && value && value.utilization >= 100 && Date.parse(value.resets_at) > now);
   return validateUsage({ remainingPercent: exhausted ? 0 : 100 - window.utilization,
     resetsAt: Date.parse(window.resets_at) / 1000, observedAt: now }, now);
 }
-export async function claudeToken() {
+export async function claudeToken(): Promise<string> {
   const native = await nativeClaudeToken();
   if (native) return native;
   throw new Error("Claude subscription login unavailable; run npm run sandcastle:setup");
 }
-async function nativeClaudeToken() {
+async function nativeClaudeToken(): Promise<string | undefined> {
   try {
     const raw = await command("/usr/bin/security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"], { timeout: 5_000 });
     const token = JSON.parse(raw).claudeAiOauth?.accessToken;
@@ -50,7 +59,7 @@ async function nativeClaudeToken() {
   } catch {}
   return undefined;
 }
-async function claudeUsageToken() {
+async function claudeUsageToken(): Promise<string> {
   if (process.env.CLAUDE_USAGE_TOKEN_COMMAND) {
     const token = (await adapter(process.env.CLAUDE_USAGE_TOKEN_COMMAND, 10_000)).trim();
     if (/^sk-ant-[A-Za-z0-9_-]+$/.test(token)) return token;
@@ -58,7 +67,7 @@ async function claudeUsageToken() {
   }
   return claudeToken();
 }
-export async function codexAuth() {
+export async function codexAuth(): Promise<string> {
   const root = process.env.CODEX_HOME ?? join(homedir(), ".codex");
   const auth = JSON.parse(await readFile(join(root, "auth.json"), "utf8"));
   if (!auth.tokens?.access_token || auth.auth_mode === "apikey") {
@@ -66,11 +75,11 @@ export async function codexAuth() {
   }
   return JSON.stringify({ auth_mode: "chatgpt", tokens: auth.tokens, last_refresh: auth.last_refresh });
 }
-export async function readUsage(provider, config) {
+export async function readUsage(provider: Provider, config: Config): Promise<Usage> {
   const override = process.env[`${provider.toUpperCase()}_USAGE_COMMAND`];
   if (override) return validateUsage(JSON.parse(await adapter(override, config.quotaTimeoutMs)));
   if (provider === "codex") return codexUsage(
-    await codexRpc("account/rateLimits/read", {}, config.quotaTimeoutMs), config.codexLimitId);
+    await codexRpc<CodexRateLimits>("account/rateLimits/read", {}, config.quotaTimeoutMs), config.codexLimitId);
   const token = await claudeUsageToken();
   // Undocumented Claude /usage endpoint: stop this provider if it changes.
   const response = await fetch("https://api.anthropic.com/api/oauth/usage", {
@@ -78,23 +87,28 @@ export async function readUsage(provider, config) {
     signal: AbortSignal.timeout(config.quotaTimeoutMs),
   });
   if (!response.ok) throw new Error(`Claude usage query returned HTTP ${response.status}; run claude auth login for user:profile scope, or configure CLAUDE_USAGE_COMMAND`);
-  return claudeUsage(await response.json());
+  return claudeUsage(await response.json() as ClaudeUsage);
 }
 export class Quotas {
-  constructor(config, read = readUsage) {
+  config: Config;
+  read: ReadUsage;
+  disabled = new Map<Provider, string>();
+  active = new Map<Provider, Set<AbortController>>();
+  values = new Map<Provider, Usage>();
+  refreshing: Promise<void[]> | null = null;
+  constructor(config: Config, read: ReadUsage = readUsage) {
     this.config = config; this.read = read;
-    this.disabled = new Map(); this.active = new Map(); this.values = new Map(); this.refreshing = null;
   }
-  available(provider) { return this.values.has(provider) && !this.disabled.has(provider); }
-  disable(provider, reason) {
+  available(provider: Provider): boolean { return this.values.has(provider) && !this.disabled.has(provider); }
+  disable(provider: Provider, reason: string): void {
     if (this.disabled.has(provider)) return;
     this.disabled.set(provider, reason);
     console.log(`[quota] ${provider} stopped: ${reason}`);
     for (const controller of this.active.get(provider) ?? []) controller.abort(new Error(reason));
   }
-  async refresh() {
+  async refresh(): Promise<void[]> {
     if (this.refreshing) return this.refreshing;
-    this.refreshing = Promise.all(["codex", "claude"].map(async (provider) => {
+    this.refreshing = Promise.all(providers.map(async (provider) => {
       if (this.disabled.has(provider)) return;
       try {
         const usage = validateUsage(await this.read(provider, this.config));
@@ -104,7 +118,7 @@ export class Quotas {
     })).finally(() => { this.refreshing = null; });
     return this.refreshing;
   }
-  async run(provider, action) {
+  async run<T>(provider: Provider, action: (signal: AbortSignal) => Promise<T>): Promise<T> {
     await this.refresh();
     if (!this.available(provider)) throw new Error(`${provider} is unavailable`);
     const controller = new AbortController();
@@ -114,5 +128,5 @@ export class Quotas {
     try { return await action(controller.signal); }
     finally { clearInterval(timer); active.delete(controller); }
   }
-  stop() { for (const provider of ["codex", "claude"]) this.disable(provider, "runner interrupted"); }
+  stop(): void { for (const provider of providers) this.disable(provider, "runner interrupted"); }
 }

@@ -1,5 +1,8 @@
+import type { AgentProvider } from "@ai-hero/sandcastle";
+import type { Provider } from "./config.ts";
+
 // Sandcastle supplies HOME and TMPDIR for each private Seatbelt sandbox.
-export function privateHomeAgent(baseAgent, provider) {
+export function privateHomeAgent(baseAgent: AgentProvider, provider: Provider): AgentProvider {
   return { ...baseAgent, buildPrintCommand(options) {
     const print = baseAgent.buildPrintCommand(options);
     const hostOnly = "CODEX_HOME CLAUDE_CONFIG_DIR OPENAI_API_KEY CODEX_API_KEY ANTHROPIC_API_KEY GH_TOKEN GITHUB_TOKEN CODEX_USAGE_COMMAND CLAUDE_USAGE_COMMAND CLAUDE_USAGE_TOKEN_COMMAND";

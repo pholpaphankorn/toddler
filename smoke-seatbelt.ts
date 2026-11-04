@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSandbox } from "@ai-hero/sandcastle";
 import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
-import { command } from "./process.mjs";
+import { command } from "./process.ts";
 
 const directory = await mkdtemp(join(tmpdir(), "nvim-seatbelt-smoke-"));
 const root = join(directory, "repo");
@@ -26,7 +26,7 @@ try {
     if (allowed.exitCode) throw new Error("Sandbox could not use host Lua or write its worktree");
     const denied = await sandbox.exec("cat ../outside.txt");
     // Check a real outside path, rather than a missing relative path.
-    const quote = (text) => `'${text.replaceAll("'", "'\\''")}'`;
+    const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
     const hostRead = await sandbox.exec(`cat ${quote(join(directory, "outside.txt"))}`);
     const hostWrite = await sandbox.exec(`touch ${quote(join(directory, "forbidden.txt"))}`);
     if (!hostRead.exitCode || !hostWrite.exitCode) throw new Error("Sandbox allowed access outside the worktree");

@@ -2,18 +2,18 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSandbox, codex, claudeCode } from "@ai-hero/sandcastle";
+import { createSandbox, codex, claudeCode, type Sandbox } from "@ai-hero/sandcastle";
 import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
-import { command } from "./process.mjs";
-import { codexAuth, claudeToken, Quotas } from "./quota.mjs";
-import { privateHomeAgent } from "./agents.mjs";
-import config from "./config.mjs";
+import { command } from "./process.ts";
+import { codexAuth, claudeToken, Quotas } from "./quota.ts";
+import { privateHomeAgent } from "./agents.ts";
+import config, { providers as allProviders, type Provider } from "./config.ts";
 
-const providers = process.argv[2] ? [process.argv[2]] : ["codex", "claude"];
-if (providers.some((provider) => !["codex", "claude"].includes(provider))) throw new Error("Expected codex or claude");
+const providers = process.argv[2] ? [process.argv[2] as Provider] : allProviders;
+if (providers.some((provider) => !allProviders.includes(provider))) throw new Error("Expected codex or claude");
 const root = await mkdtemp(join(tmpdir(), "sandcastle-model-smoke-"));
 const quotas = new Quotas(config);
-let sandbox;
+let sandbox: Sandbox | undefined;
 try {
   await mkdir(join(root, ".sandcastle/logs"), { recursive: true });
   await command("git", ["init", "-b", "main", root]);
@@ -28,13 +28,13 @@ try {
     if (setup.exitCode) throw new Error("Private Codex auth setup failed");
   }
   for (const provider of providers) {
-    for (const role of ["implementation", "review"]) {
+    for (const role of ["implementation", "review"] as const) {
       const model = config.models[provider][role];
       const base = provider === "codex" ? codex(model, { captureSessions: false }) : claudeCode(model, {
         captureSessions: false, env: { CLAUDE_CODE_OAUTH_TOKEN: await claudeToken(), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
       });
       await quotas.run(provider, async (signal) => {
-        const result = await sandbox.run({ agent: privateHomeAgent(base, provider), maxIterations: 1, signal,
+        const result = await sandbox!.run({ agent: privateHomeAgent(base, provider), maxIterations: 1, signal,
           name: `${provider}-${role}-smoke`,
           prompt: "This is a connection smoke test in a disposable repository. Do not use tools, edit files, or delegate. Reply with exactly READY and end your turn.",
           logging: { type: "file", path: join(root, ".sandcastle/logs", `${provider}-${role}.log`) },

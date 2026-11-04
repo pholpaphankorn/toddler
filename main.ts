@@ -1,12 +1,12 @@
 import { existsSync } from "node:fs";
-import { mkdir, open, rm } from "node:fs/promises";
+import { mkdir, open, rm, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import config from "./config.mjs";
-import { command, codexRpc } from "./process.mjs";
-import { readUsage, codexAuth, claudeToken, Quotas } from "./quota.mjs";
-import { Runner, loadState, saveState } from "./runner.mjs";
-import { assignments } from "./policy.mjs";
+import config, { providers } from "./config.ts";
+import { command, codexRpc } from "./process.ts";
+import { readUsage, codexAuth, claudeToken, Quotas } from "./quota.ts";
+import { Runner, loadState, saveState } from "./runner.ts";
+import { assignments } from "./policy.ts";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 process.chdir(root);
@@ -16,9 +16,9 @@ for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY"]) dele
 
 async function doctor() {
   let failures = 0;
-  const check = async (name, action) => {
+  const check = async (name: string, action: () => Promise<string>) => {
     try { console.log(`OK   ${name}: ${await action()}`); }
-    catch (error) { failures++; console.log(`FAIL ${name}: ${error.message}`); }
+    catch (error) { failures++; console.log(`FAIL ${name}: ${(error as Error).message}`); }
   };
   await check("Sandcastle", async () => {
     await import("@ai-hero/sandcastle");
@@ -33,7 +33,7 @@ async function doctor() {
     if (!["ADMIN", "MAINTAIN", "WRITE"].includes(repo.viewerPermission)) throw new Error("Repository write permission needed to push issue branches");
     return `${repo.nameWithOwner}, base ${repo.defaultBranchRef.name}, ${repo.viewerPermission}`;
   });
-  for (const provider of ["codex", "claude"]) {
+  for (const provider of providers) {
     await check(`${provider} login`, async () => {
       if (provider === "codex") await codexAuth(); else await claudeToken();
       return "subscription credentials available (not displayed)";
@@ -45,7 +45,7 @@ async function doctor() {
     await check(`${provider} CLI`, () => command(provider === "claude" ? "claude" : "codex", ["--version"]));
   }
   await check("Codex requested models", async () => {
-    const response = await codexRpc("model/list", { limit: 100 });
+    const response = await codexRpc<{ data: { model: string }[] }>("model/list", { limit: 100 });
     const names = response.data.map((entry) => entry.model);
     const missing = Object.values(config.models.codex).filter((name) => !names.includes(name));
     if (missing.length) throw new Error(`Not advertised by this account/CLI: ${missing.join(", ")}`);
@@ -81,7 +81,7 @@ async function main() {
   }
   await mkdir(join(root, ".sandcastle/logs"), { recursive: true });
   const lockPath = join(root, ".sandcastle/runner.lock");
-  let lock;
+  let lock: FileHandle;
   try { lock = await open(lockPath, "wx", 0o600); }
   catch { throw new Error("Runner lock exists. Check the PID in .sandcastle/runner.lock before removing a stale lock"); }
   const stop = () => { runner.interrupted = true; quotas.stop(); process.exitCode = 130; };
@@ -101,7 +101,7 @@ async function main() {
     const baseBranch = repo.defaultBranchRef.name;
     await runner.git(["fetch", config.remote, baseBranch]);
     // Disable unavailable logins without taking the other provider down.
-    for (const provider of ["codex", "claude"]) {
+    for (const provider of providers) {
       try { if (provider === "codex") await codexAuth(); else await claudeToken(); }
       catch { quotas.disable(provider, "subscription login unavailable"); }
     }
@@ -111,4 +111,4 @@ async function main() {
     await lock.close(); await rm(lockPath, { force: true });
   }
 }
-main().catch((error) => { console.error(error.message); process.exitCode = 1; });
+main().catch((error: Error) => { console.error(error.message); process.exitCode = 1; });

@@ -103,7 +103,7 @@ these conditions are reported rather than treated as completed issues.
 **Limits:** this is a polling guard, not a provider-enforced spending cap. Server
 reporting lag and in-flight calls can consume additional quota before cancellation.
 An exact guarantee of leaving 5% untouched is not possible. Increase `reservePercent`
-in `config.mjs` if more headroom is needed. Seatbelt kills normal process groups;
+in `config.ts` if more headroom is needed. Seatbelt kills normal process groups;
 Sandcastle documents a macOS limitation for processes that deliberately detach.
 
 Codex usage is read through the documented `account/rateLimits/read` app-server API,
@@ -142,9 +142,10 @@ entry from `state.json`, then inspect/reuse its existing branch before restartin
 ## Verification
 
 ```sh
-npm run test:sandcastle
+npm test
+npm run typecheck
 npm run check:lua
-node .sandcastle/smoke-seatbelt.mjs
+node smoke-seatbelt.ts
 ```
 
 The smoke test uses a disposable repository with no model calls or credentials.

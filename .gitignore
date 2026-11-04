@@ -4,3 +4,4 @@ worktrees/
 state.json
 state.json.tmp
 runner.lock
+node_modules/
