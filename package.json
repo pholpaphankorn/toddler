@@ -1,0 +1,17 @@
+{
+  "name": "nvchad-sandcastle-workflow",
+  "private": true,
+  "scripts": {
+    "sandcastle": "node .sandcastle/main.mjs",
+    "sandcastle:doctor": "node .sandcastle/main.mjs doctor",
+    "sandcastle:plan": "node .sandcastle/main.mjs plan",
+    "sandcastle:setup": "bash .sandcastle/setup.sh",
+    "sandcastle:smoke": "node .sandcastle/smoke-agents.mjs",
+    "test:sandcastle": "node --test .sandcastle/tests/*.test.mjs",
+    "check:lua": "node .sandcastle/check-lua.mjs"
+  },
+  "devDependencies": {
+    "@ai-hero/sandcastle": "file:../../Documents/agentic-workflow/sandcastle"
+  },
+  "engines": { "node": ">=22" }
+}

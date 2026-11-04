@@ -1,0 +1,6 @@
+.env
+logs/
+worktrees/
+state.json
+state.json.tmp
+runner.lock

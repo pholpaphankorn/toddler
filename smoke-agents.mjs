@@ -1,0 +1,50 @@
+// Explicit opt-in: makes one tiny subscription model call per configured role.
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createSandbox, codex, claudeCode } from "@ai-hero/sandcastle";
+import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
+import { command } from "./process.mjs";
+import { codexAuth, claudeToken, Quotas } from "./quota.mjs";
+import { privateHomeAgent } from "./agents.mjs";
+import config from "./config.mjs";
+
+const providers = process.argv[2] ? [process.argv[2]] : ["codex", "claude"];
+if (providers.some((provider) => !["codex", "claude"].includes(provider))) throw new Error("Expected codex or claude");
+const root = await mkdtemp(join(tmpdir(), "sandcastle-model-smoke-"));
+const quotas = new Quotas(config);
+let sandbox;
+try {
+  await mkdir(join(root, ".sandcastle/logs"), { recursive: true });
+  await command("git", ["init", "-b", "main", root]);
+  await command("git", ["-C", root, "config", "user.name", "Model smoke"]);
+  await command("git", ["-C", root, "config", "user.email", "smoke@example.invalid"]);
+  await writeFile(join(root, "sample.lua"), "return {}\n");
+  await command("git", ["-C", root, "add", "sample.lua"]);
+  await command("git", ["-C", root, "commit", "-m", "Smoke fixture"]);
+  sandbox = await createSandbox({ cwd: root, branch: "codex/model-smoke", sandbox: seatbelt() });
+  if (providers.includes("codex")) {
+    const setup = await sandbox.exec('umask 077; mkdir -p "$HOME/.codex"; cat > "$HOME/.codex/auth.json"', { stdin: await codexAuth() });
+    if (setup.exitCode) throw new Error("Private Codex auth setup failed");
+  }
+  for (const provider of providers) {
+    for (const role of ["implementation", "review"]) {
+      const model = config.models[provider][role];
+      const base = provider === "codex" ? codex(model, { captureSessions: false }) : claudeCode(model, {
+        captureSessions: false, env: { CLAUDE_CODE_OAUTH_TOKEN: await claudeToken(), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
+      });
+      await quotas.run(provider, async (signal) => {
+        const result = await sandbox.run({ agent: privateHomeAgent(base, provider), maxIterations: 1, signal,
+          name: `${provider}-${role}-smoke`,
+          prompt: "This is a connection smoke test in a disposable repository. Do not use tools, edit files, or delegate. Reply with exactly READY and end your turn.",
+          logging: { type: "file", path: join(root, ".sandcastle/logs", `${provider}-${role}.log`) },
+        });
+        if (!result.stdout.includes("READY")) throw new Error(`${model} did not return the expected smoke response`);
+        console.log(`PASS: ${provider} ${role}, ${model}, subscription auth inside Seatbelt`);
+      });
+    }
+  }
+} finally {
+  if (sandbox) await sandbox.close();
+  await rm(root, { recursive: true, force: true });
+}
