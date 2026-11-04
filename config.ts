@@ -28,7 +28,7 @@ export type Defaults = typeof defaults;
 export interface Config extends Defaults {
   /** GitHub owner/name whose issues are worked. */
   repository: string;
-  /** Shell command run inside the sandbox worktree; must exit 0 before a stage is accepted. */
+  /** Shell command run inside the sandbox worktree; must exit 0 before a stage is accepted. Empty: no check. */
   verify: string;
 }
 
@@ -48,7 +48,8 @@ export function loadConfig(root: string): Config {
   else if (typeof config.repository !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(config.repository)) {
     throw new Error(`${path}: "repository" must be "owner/name" (optional only with "issues": "local" and "openPr": false)`);
   }
-  if (typeof config.verify !== "string" || !config.verify.trim()) {
+  config.verify ??= "";
+  if (typeof config.verify !== "string") {
     throw new Error(`${path}: "verify" must be a shell command that checks the project (e.g. "npm test")`);
   }
   if (!["github", "local"].includes(config.issues)) throw new Error(`${path}: "issues" must be "github" or "local"`);

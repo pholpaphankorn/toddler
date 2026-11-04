@@ -174,6 +174,7 @@ export class Runner {
         await this.git(["merge-base", "--is-ancestor", job.baseSha, after], sandbox.worktreePath);
         if (after === job.baseSha) throw new Error("No implementation commits were produced");
         // The command comes from the host config, not the agent-editable worktree.
+        if (!this.config.verify.trim()) return { stdout: result.stdout, sha: after, verification: "" };
         const verification = await sandbox.exec(this.config.verify);
         if (verification.exitCode) throw new Error(`Host-required verification failed: ${this.config.verify}`);
         return { stdout: result.stdout, sha: after, verification: verification.stdout.trim() };
@@ -267,7 +268,7 @@ export class Runner {
     const directory = await mkdtemp(join(tmpdir(), "sandcastle-pr-"));
     try {
       const bodyFile = join(directory, "body.md");
-      await writeFile(bodyFile, `## Summary\n\nIssue ${ref} → implementation → review → pull request\n\n${job.report!.summary}\n\n${this.local() ? "" : `Closes #${issue.number}\n\n`}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\nCoordinator verification (\`${this.config.verify}\`): ${job.verification || "passed"}.\n\nReviewed by ${this.config.models[job.reviewer!].review} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`, { mode: 0o600 });
+      await writeFile(bodyFile, `## Summary\n\nIssue ${ref} → implementation → review → pull request\n\n${job.report!.summary}\n\n${this.local() ? "" : `Closes #${issue.number}\n\n`}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\n${this.config.verify.trim() ? `Coordinator verification (\`${this.config.verify}\`): ${job.verification || "passed"}.` : "Coordinator verification: none configured."}\n\nReviewed by ${this.config.models[job.reviewer!].review} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`, { mode: 0o600 });
       const url = await this.gh(["pr", "create", "--repo", this.config.repository,
         "--base", job.baseBranch, "--head", job.branch,
         "--title", `Fix ${ref}: ${issue.title}`.slice(0, 200), "--body-file", bodyFile]);

@@ -39,7 +39,7 @@ toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
 | Key | Required | Meaning |
 | --- | --- | --- |
 | `repository` | yes, unless offline | GitHub `owner/name` whose issues are worked (`init` fills it in). |
-| `verify` | yes | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. |
+| `verify` | no | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. Empty or missing: no check, and only the review gates the work. |
 | `issues` | no | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/issues/`. |
 | `openPr` | no | `true` (default): push the reviewed branch and open a PR. `false`: stop with the approved commit on a local branch; nothing is pushed. |
 | anything in `defaults` in `config.ts` | no | Overrides, e.g. `reservePercent`, `issueLabel`, `models`. |
@@ -139,7 +139,7 @@ remaining provider's appropriate role. Implementation and review are separate se
 
 Each issue branches from the fetched default branch (`origin/main` here), with its
 base SHA recorded in local state. Agents commit locally; the host verifies a clean
-worktree and runs the project's `verify` command. A structured approving review of the exact resulting SHA
+worktree and runs the project's `verify` command, if set. A structured approving review of the exact resulting SHA
 is required before that SHA is pushed to `codex/sandcastle-issue-N` and a PR is opened.
 PRs reference the issue for closure on merge. The runner never merges PRs or closes
 issues itself. Human changes to a branch after approval cause publication to stop.

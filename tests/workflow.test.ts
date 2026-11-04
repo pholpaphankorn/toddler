@@ -219,6 +219,12 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
     if (provider === "codex") assert.equal(commands[0].options.stdin, "fake-private-auth");
     assert.equal(result.verification, "Checks passed");
     assert.equal(closed, true);
+    runner.config = { ...config, verify: "" };
+    commands.length = 0; closed = false;
+    const unverified = await runner.stage(fake<Job>({ number: 1, branch: "codex/fixture", baseSha: "base" }), provider, "review", "task");
+    assert.ok(!commands.some(({ options }) => !options), "no verify command runs when verify is empty");
+    assert.equal(unverified.verification, "");
+    assert.equal(closed, true);
   }
 });
 
@@ -262,13 +268,15 @@ test("same provider/role sessions queue while distinct roles can proceed", async
   assert.equal(maximum, 1);
 });
 
-test("project config overrides defaults and must name a repository and verify command", () => {
+test("project config overrides defaults, must name a repository, and verify is optional", () => {
   const root = mkdtempSync(join(tmpdir(), "toddler-config-"));
   try {
     assert.throws(() => loadConfig(root), /toddler init/);
     mkdirSync(join(root, ".sandcastle"));
     const write = (value: object) => writeFileSync(join(root, ".sandcastle/config.json"), JSON.stringify(value));
-    write({ repository: "owner/repo", verify: "" });
+    write({ repository: "owner/repo" });
+    assert.equal(loadConfig(root).verify, "");
+    write({ repository: "owner/repo", verify: 5 });
     assert.throws(() => loadConfig(root), /"verify"/);
     write({ repository: "not a repo", verify: "npm test" });
     assert.throws(() => loadConfig(root), /"repository"/);
