@@ -70,7 +70,7 @@ What is wrong and what done looks like.
 
 The title falls back to the file name. Set `status: closed` (or delete the file) once
 the work is merged; until then it still blocks any issue that lists it in `blocked_by`.
-Local issues work on `codex/sandcastle-local-<number>` branches, and their PRs do not
+Local issues work on `toddler/local-<number>` branches, and their PRs do not
 say `Closes #N`.
 
 With `"issues": "local"` and `"openPr": false` toddler runs offline: no GitHub login,
@@ -140,7 +140,7 @@ remaining provider's appropriate role. Implementation and review are separate se
 Each issue branches from the fetched default branch (`origin/main` here), with its
 base SHA recorded in local state. Agents commit locally; the host verifies a clean
 worktree and runs the project's `verify` command, if set. A structured approving review of the exact resulting SHA
-is required before that SHA is pushed to `codex/sandcastle-issue-N` and a PR is opened.
+is required before that SHA is pushed to `toddler/issue-N` and a PR is opened.
 PRs reference the issue for closure on merge. The runner never merges PRs or closes
 issues itself. Human changes to a branch after approval cause publication to stop.
 

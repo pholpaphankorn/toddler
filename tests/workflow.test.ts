@@ -109,7 +109,7 @@ test("implementation -> opposite-provider review -> push exact SHA -> PR, never 
   await runner.work(issue(1), "codex", "main");
   assert.deepEqual(events.filter((event) => event[0] === "stage"),
     [["stage", "codex", "implementation"], ["stage", "claude", "review"]]);
-  assert.ok(events.some((event) => event[1] === "push" && event[3] === "reviewed:refs/heads/codex/sandcastle-issue-1"));
+  assert.ok(events.some((event) => event[1] === "push" && event[3] === "reviewed:refs/heads/toddler/issue-1"));
   assert.ok(events.some((event) => event[0] === "gh" && event[1] === "pr" && event[2] === "create" && event.includes("--body-file")));
   assert.equal(state.jobs[1].status, "pr");
   assert.ok(!events.some((event) => event.includes("merge") || event.includes("close")));
@@ -134,7 +134,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
     assert.deepEqual(candidates.map((issue) => issue.number), [2]);
     await runner.work(candidates[0], "codex", "main");
     assert.equal(state.jobs[2].status, "done");
-    assert.equal(state.jobs[2].branch, "codex/sandcastle-local-2");
+    assert.equal(state.jobs[2].branch, "toddler/local-2");
     assert.ok(events.some((event) => event[1] === "rev-parse" && event[2] === "main"), "offline jobs start from the local branch");
     assert.ok(!events.some((event) => event.some((arg) => arg.startsWith("origin"))));
     assert.ok(!events.some((event) => event[0] === "gh" || event[1] === "push"));
@@ -147,7 +147,7 @@ test("local issues with openPr open a PR that does not close a GitHub issue", as
   assert.equal(state.jobs[7].status, "pr");
   const create = events.find((event) => event[1] === "pr" && event[2] === "create")!;
   assert.ok(create.includes("Fix local issue 7: Issue 7"));
-  assert.ok(events.some((event) => event[1] === "push" && event[3] === "reviewed:refs/heads/codex/sandcastle-local-7"));
+  assert.ok(events.some((event) => event[1] === "push" && event[3] === "reviewed:refs/heads/toddler/local-7"));
 });
 test("changes requested runs a fix then another review before publishing", async () => {
   const { runner, events } = fixture();
@@ -174,6 +174,7 @@ test("quota interruption transfers unfinished implementation and uses remaining 
     ["stage", "codex", "implementation"], ["stage", "claude", "implementation"], ["stage", "claude", "review"],
   ]);
   assert.equal(state.jobs[1].status, "pr");
+  assert.equal(state.jobs[1].branch, "toddler/issue-1");
 });
 test("malformed review and changed reviewed SHA cannot push or open a PR", async () => {
   for (const changedSha of [false, true]) {

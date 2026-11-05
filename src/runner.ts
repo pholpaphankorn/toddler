@@ -84,7 +84,7 @@ export class Runner {
   gh(args: string[]): Promise<string> { return this.ghCommand("gh", args, { cwd: this.root }); }
   persist(job: Job, changes: Partial<Job>): void { Object.assign(job, changes); this.save(); }
   local(): boolean { return this.config.issues === "local"; }
-  branch(number: number): string { return `codex/sandcastle-${this.local() ? "local" : "issue"}-${number}`; }
+  branch(number: number): string { return `toddler/${this.local() ? "local" : "issue"}-${number}`; }
   finished(number: number): boolean { return ["pr", "done"].includes(this.state.jobs[number]?.status ?? ""); }
   async localIssues(): Promise<Issue[]> {
     const directory = join(this.root, ".sandcastle/issues");
@@ -108,8 +108,10 @@ export class Runner {
     for (const issue of issues) {
       if (this.attempted.has(issue.number) || this.finished(issue.number)) continue;
       if (this.config.openPr) {
+        // Jobs started before the rename keep their stored branch name.
+        const head = this.state.jobs[issue.number]?.branch ?? this.branch(issue.number);
         const prs: { url: string; state: string }[] = JSON.parse(await this.gh(["pr", "list", "--repo", this.config.repository,
-          "--head", this.branch(issue.number), "--state", "all", "--json", "url,state"]));
+          "--head", head, "--state", "all", "--json", "url,state"]));
         if (prs.some((pr) => pr.state !== "CLOSED")) continue;
       }
       if (this.local()) {
