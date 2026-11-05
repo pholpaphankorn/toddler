@@ -6,7 +6,7 @@ status: open
 ---
 Prove for real that Codex and Claude load skills from inside Seatbelt using toddler's exact mechanism.
 
-In `smoke-agents.ts`:
+In `scripts/smoke-agents.ts`:
 - Write a **canary skill** to a temp dir: a `SKILL.md` whose body holds a fresh random code each run. It is a test fixture, not in `vendor/skills`.
 - Mount that dir read-only and link the canary the same way real stages do.
 - Replace the current smoke prompt with the **same generated load line** real stages use (Codex path-qualified `$name`, Claude "read and follow these skill files"), naming only the canary. Ask for READY plus the code. The code must never appear in the prompt.

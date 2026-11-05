@@ -28,3 +28,5 @@ Inputs: the inventory flags 19 skills that wait for a human, plus `git-guardrail
 - **Risky skills.** All skills are vendored, with no deny list. `git-guardrails-claude-code` (installs a hook), `retro` (host logs) and `claude-handoff` (needs the `claude` command) stay out of every default set. A project may opt in at its own risk.
 
 _Updated after prompt triggers was revised:_ every skill in a set is loaded explicitly at stage start, including user-invoked-only skills.
+
+_Revised: only used skills are vendored._ The risky skills (`git-guardrails-claude-code`, `retro`, `claude-handoff`) are not vendored at all. A project's `skills` config can only name vendored skills. An unknown name fails with the hint "add it to vendor/skills.json and re-run scripts/vendor-skills.sh".
