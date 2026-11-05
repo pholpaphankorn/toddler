@@ -42,7 +42,7 @@ toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
 | `verify` | no | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. Empty or missing: no check, and only the review gates the work. |
 | `issues` | no | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/issues/`. |
 | `openPr` | no | `true` (default): push the reviewed branch and open a PR. `false`: stop with the approved commit on a local branch; nothing is pushed. |
-| anything in `defaults` in `config.ts` | no | Overrides, e.g. `reservePercent`, `issueLabel`, `models`. |
+| anything in `defaults` in `src/config.ts` | no | Overrides, e.g. `reservePercent`, `issueLabel`, `models`. |
 
 Example:
 
@@ -80,7 +80,7 @@ GitHub is still used for the base branch and, with `openPr`, the PR.
 
 `.sandcastle/project.md` (optional) is appended to the implementation and review
 prompts as "Project notes": stack, how to check changes, what not to do. The
-generic workflow rules stay in toddler's `prompt.md` and `review.md`.
+generic workflow rules stay in toddler's `prompts/prompt.md` and `prompts/review.md`.
 
 The project's `.sandcastle/` also holds the ignored runtime files: `.env`, `state.json`,
 `logs/`, `worktrees/` and `runner.lock`. The repo must have the `Sandcastle`,

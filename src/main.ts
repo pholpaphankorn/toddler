@@ -16,7 +16,7 @@ for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY"]) dele
 
 // Run a script bundled with toddler from the current directory, passing its exit code through.
 function script(file: string, args: string[] = []) {
-  const path = fileURLToPath(new URL(file, import.meta.url));
+  const path = fileURLToPath(new URL(`../scripts/${file}`, import.meta.url));
   const result = spawnSync(file.endsWith(".sh") ? "bash" : process.execPath, [path, ...args], { stdio: "inherit" });
   process.exitCode = result.status ?? 1;
 }

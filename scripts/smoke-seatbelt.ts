@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSandbox } from "@ai-hero/sandcastle";
 import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
-import { command } from "./process.ts";
+import { command } from "../src/process.ts";
 
 const directory = await mkdtemp(join(tmpdir(), "toddler-seatbelt-smoke-"));
 const root = join(directory, "repo");

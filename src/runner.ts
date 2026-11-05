@@ -47,7 +47,7 @@ export interface RunnerOptions {
 }
 
 // Workflow files ship next to this module; runtime files live under root.
-const own = (name: string) => fileURLToPath(new URL(name, import.meta.url));
+const own = (name: string) => fileURLToPath(new URL(`../prompts/${name}`, import.meta.url));
 
 export function loadState(path: string, repository: string): State {
   if (!existsSync(path)) return { repository, jobs: {} };

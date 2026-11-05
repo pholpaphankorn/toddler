@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSandbox, codex, claudeCode, type Sandbox } from "@ai-hero/sandcastle";
 import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
-import { command } from "./process.ts";
-import { codexAuth, claudeToken, Quotas } from "./quota.ts";
-import { privateHomeAgent } from "./agents.ts";
-import { defaults as config, providers as allProviders, type Provider } from "./config.ts";
+import { command } from "../src/process.ts";
+import { codexAuth, claudeToken, Quotas } from "../src/quota.ts";
+import { privateHomeAgent } from "../src/agents.ts";
+import { defaults as config, providers as allProviders, type Provider } from "../src/config.ts";
 
 const providers = process.argv[2] ? [process.argv[2] as Provider] : allProviders;
 if (providers.some((provider) => !allProviders.includes(provider))) throw new Error("Expected codex or claude");

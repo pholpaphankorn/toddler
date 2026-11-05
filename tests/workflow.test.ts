@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { assignments, localIssue, reviewer, reviewReport } from "../policy.ts";
-import { Quotas, codexUsage, claudeUsage, validateUsage, type Usage } from "../quota.ts";
-import { Runner, type Job, type RunnerOptions } from "../runner.ts";
+import { assignments, localIssue, reviewer, reviewReport } from "../src/policy.ts";
+import { Quotas, codexUsage, claudeUsage, validateUsage, type Usage } from "../src/quota.ts";
+import { Runner, type Job, type RunnerOptions } from "../src/runner.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaults, loadConfig, providers, type Config, type Provider } from "../config.ts";
+import { defaults, loadConfig, providers, type Config, type Provider } from "../src/config.ts";
 
 // Test doubles implement only what each test exercises.
 const fake = <T,>(value: unknown) => value as T;
