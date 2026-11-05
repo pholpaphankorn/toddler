@@ -1,0 +1,51 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+test("vendors selected nested skills from a local git repository", () => {
+  const root = mkdtempSync(join(tmpdir(), "toddler-vendor-test-"));
+  try {
+    const upstream = join(root, "upstream"), checkout = join(root, "checkout");
+    mkdirSync(join(upstream, "skills", "category", "first"), { recursive: true });
+    mkdirSync(join(upstream, "skills", "other", "second"), { recursive: true });
+    writeFileSync(join(upstream, "skills/category/first/SKILL.md"), "first\n");
+    writeFileSync(join(upstream, "skills/category/first/data.bin"), Buffer.from([0, 255, 42]));
+    writeFileSync(join(upstream, "skills/other/second/SKILL.md"), "second\n");
+    writeFileSync(join(upstream, "LICENSE"), "fixture license\n");
+    writeFileSync(join(upstream, "package.json"), '{"version":"1.2.3"}');
+    const git = (...args: string[]) => execFileSync("git", ["-C", upstream, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    git("init");
+    git("add", ".");
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-m", "fixture");
+    git("tag", "v1");
+    const commit = git("rev-parse", "HEAD");
+    mkdirSync(join(checkout, "scripts"), { recursive: true });
+    const script = join(checkout, "scripts/vendor-skills.sh");
+    cpSync(fileURLToPath(new URL("../scripts/vendor-skills.sh", import.meta.url)), script);
+    const manifest = join(root, "manifest.json");
+    const writeManifest = (skills: string[]) => writeFileSync(manifest, JSON.stringify({ fixture: { repo: `file://${upstream}`, ref: "v1", skills } }));
+    const run = () => spawnSync("sh", [script], { env: { ...process.env, SKILLS_MANIFEST: manifest }, encoding: "utf8" });
+    const dest = join(checkout, "vendor/skills/fixture");
+    writeManifest(["first", "second"]);
+    let result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(readFileSync(join(dest, "first/data.bin")), Buffer.from([0, 255, 42]));
+    assert.equal(readFileSync(join(dest, "second/SKILL.md"), "utf8"), "second\n");
+    assert.equal(existsSync(join(dest, "category")), false);
+    assert.equal(readFileSync(join(dest, "LICENSE"), "utf8"), "fixture license\n");
+    assert.deepEqual(JSON.parse(readFileSync(join(dest, "UPSTREAM.json"), "utf8")), { repo: `file://${upstream}`, ref: "v1", version: "1.2.3", commit });
+    writeManifest(["first", "missing"]);
+    result = run();
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /missing.*found 0/);
+    assert.equal(existsSync(join(dest, "second/SKILL.md")), true);
+    writeManifest(["first"]);
+    result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(existsSync(join(dest, "second")), false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

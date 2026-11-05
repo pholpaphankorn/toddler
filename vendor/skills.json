@@ -1,0 +1,12 @@
+{
+  "mattpocock-skills": {
+    "repo": "https://github.com/mattpocock/skills",
+    "ref": "v1.3.1",
+    "skills": ["tdd", "diagnosing-bugs", "codebase-design", "code-review"]
+  },
+  "ponytail": {
+    "repo": "https://github.com/DietrichGebert/ponytail",
+    "ref": "v5.3.3",
+    "skills": ["ponytail", "ponytail-review"]
+  }
+}

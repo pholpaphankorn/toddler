@@ -204,6 +204,13 @@ Only one coordinator may run in this checkout. A crash can leave
 To retry a deliberately closed PR, stop the runner and remove only that issue's job
 entry from `state.json`, then inspect/reuse its existing branch before restarting.
 
+## Vendored skills
+
+To add a skill or bump a version, edit `vendor/skills.json`. Check which other
+skills it refers to and add those too. Run `scripts/vendor-skills.sh` (network
+access is needed for the upstream repositories), review the diff, and commit it.
+Vendored files are copies of upstream files and should not be edited locally.
+
 ## Verification
 
 ```sh
