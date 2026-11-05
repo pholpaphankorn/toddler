@@ -2,7 +2,7 @@
 title: Vendor the skills toddler uses from a manifest
 labels: []
 blocked_by: []
-status: open
+status: closed 
 ---
 Toddler ships third-party skills as vendored copies so sandboxed agents never read skills from the host. It vendors only the skills it uses, plus every skill those refer to.
 
