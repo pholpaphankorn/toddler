@@ -1,0 +1,16 @@
+---
+title: toddler doctor checks vendored skills and skill sets
+labels: []
+blocked_by: [13]
+status: open
+---
+Add skill checks to `doctor()` in `main.ts`. No model calls.
+
+- **Vendored folder.** `vendor/skills` exists and the skill index builds, with no duplicate names.
+- **Upstream files.** Each upstream folder has `LICENSE` and `UPSTREAM.json`. Print each upstream's version and short commit.
+- **Skill sets.** Every name in each role's skill set resolves. Print each role's set.
+- **Project clashes (informational).** List project skills committed at HEAD under `.claude/skills/` or `.agents/skills/` whose name matches a skill in a role's set. This is not a failure: toddler loads bundled skills by path.
+
+Done when tests cover the failure messages and the clash listing with fixtures.
+
+Decision record: `.sandcastle/issues/9-skill-load-checks.md`.

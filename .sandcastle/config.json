@@ -1,0 +1,5 @@
+{
+  "issues": "local",
+  "openPr": false,
+  "verify": "npm test"
+}
