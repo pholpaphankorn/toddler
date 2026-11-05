@@ -1,6 +1,6 @@
 ---
 title: Load each role's skills explicitly from the stage prompt
-labels: []
+labels: [parallel-safe]
 blocked_by: [13]
 status: open
 ---

@@ -1,6 +1,6 @@
 ---
 title: toddler doctor checks vendored skills and skill sets
-labels: []
+labels: [parallel-safe]
 blocked_by: [13]
 status: open
 ---
