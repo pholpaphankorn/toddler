@@ -19,4 +19,4 @@ Make a stage's skill set available inside its Seatbelt sandbox without reading a
 
 Done when `npm test` and `npm run smoke:seatbelt` pass. The smoke test must be run by the human on the host, because Seatbelt cannot nest. If the agent cannot run it, say so in the summary.
 
-Decision record: `.sandcastle/issues/6-skill-delivery.md`.
+Decision record: `.sandcastle/specs/1-skills-in-the-sandbox/issues/6-skill-delivery.md`.

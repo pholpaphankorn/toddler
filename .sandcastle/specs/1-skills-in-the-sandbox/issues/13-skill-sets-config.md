@@ -19,4 +19,4 @@ Needs `vendor/skills/` populated by `scripts/vendor-skills.sh` from the previous
 
 Done when tests cover the index (frontmatter name, folder fallback, duplicate error) using a fixture `vendor/skills`, plus the override and unknown-name rules. Document the `skills` key in the README config table.
 
-Decision record: `.sandcastle/issues/7-role-skill-sets.md`.
+Decision record: `.sandcastle/specs/1-skills-in-the-sandbox/issues/7-role-skill-sets.md`.

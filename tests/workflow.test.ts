@@ -115,20 +115,24 @@ test("implementation -> opposite-provider review -> push exact SHA -> PR, never 
   assert.ok(!events.some((event) => event.includes("merge") || event.includes("close")));
 });
 test("local issue files parse frontmatter, and fall back to the file name", () => {
-  const parsed = localIssue("3-fix-login.md", "---\ntitle: Fix login\nlabels: [parallel-safe, blocked]\nblocked_by: [1, 2]\nstatus: closed\n---\nSteps here\n");
+  const parsed = localIssue("1-auth/issues/3-fix-login.md", "---\ntitle: Fix login\nlabels: [parallel-safe, blocked]\nblocked_by: [1, 2]\nstatus: closed\n---\nSteps here\n");
   assert.deepEqual(parsed, { number: 3, title: "Fix login", body: "Steps here\n", labels: ["parallel-safe", "blocked"], blockedBy: [1, 2], closed: true });
-  assert.deepEqual(localIssue("4-add-logout.md", "Body only"), { number: 4, title: "add logout", body: "Body only", labels: [], blockedBy: [], closed: false });
-  assert.throws(() => localIssue("notes.md", ""), /issue number/);
-  assert.throws(() => localIssue("5.md", "---\nblocked_by: [x]\n---\n"), /blocked_by/);
+  assert.deepEqual(localIssue("1-auth/issues/4-add-logout.md", "Body only"), { number: 4, title: "add logout", body: "Body only", labels: [], blockedBy: [], closed: false });
+  assert.throws(() => localIssue("1-auth/issues/notes.md", ""), /issue-number/);
+  assert.throws(() => localIssue("3-fix-login.md", ""), /spec-number/);
+  assert.throws(() => localIssue("1-auth/3-fix-login.md", ""), /issues\//);
+  assert.throws(() => localIssue("1-auth/issues/5.md", "---\nblocked_by: [x]\n---\n"), /blocked_by/);
 });
 test("local issues skip closed and blocked files, never call GitHub, and stop on a local branch when openPr is false", async () => {
   const root = mkdtempSync(join(tmpdir(), "toddler-local-"));
   try {
-    mkdirSync(join(root, ".sandcastle/issues"), { recursive: true });
-    const write = (name: string, text: string) => writeFileSync(join(root, ".sandcastle/issues", name), text);
-    write("1-done.md", "---\nstatus: closed\n---\n");
-    write("2-open.md", "---\nblocked_by: [1]\n---\nDo it");
-    write("3-waits.md", "---\nblocked_by: [2]\n---\n");
+    mkdirSync(join(root, ".sandcastle/specs/1-a/issues"), { recursive: true });
+    mkdirSync(join(root, ".sandcastle/specs/2-b/issues"), { recursive: true });
+    const write = (name: string, text: string) => writeFileSync(join(root, ".sandcastle/specs", name), text);
+    write("1-a/spec.md", "The spec, not an issue");
+    write("1-a/issues/1-done.md", "---\nstatus: closed\n---\n");
+    write("2-b/issues/2-open.md", "---\nblocked_by: [1]\n---\nDo it");
+    write("1-a/issues/3-waits.md", "---\nblocked_by: [2]\n---\n");
     const { runner, events, state } = fixture({ issues: "local", openPr: false }, root);
     const candidates = await runner.candidates();
     assert.deepEqual(candidates.map((issue) => issue.number), [2]);

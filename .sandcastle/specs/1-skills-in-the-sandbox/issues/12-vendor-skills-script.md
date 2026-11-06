@@ -29,4 +29,4 @@ Toddler ships third-party skills as vendored copies so sandboxed agents never re
 
 After this lands, the human runs `scripts/vendor-skills.sh` (it needs network) and commits `vendor/` before the next skills issue starts.
 
-Decision record: `.sandcastle/issues/8-vendored-layout.md` (see its revision note).
+Decision record: `.sandcastle/specs/1-skills-in-the-sandbox/issues/8-vendored-layout.md` (see its revision note).

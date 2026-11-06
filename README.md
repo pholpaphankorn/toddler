@@ -40,7 +40,7 @@ toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
 | --- | --- | --- |
 | `repository` | yes, unless offline | GitHub `owner/name` whose issues are worked (`init` fills it in). |
 | `verify` | no | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. Empty or missing: no check, and only the review gates the work. |
-| `issues` | no | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/issues/`. |
+| `issues` | no | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/specs/<spec>/issues/`. |
 | `openPr` | no | `true` (default): push the reviewed branch and open a PR. `false`: stop with the approved commit on a local branch; nothing is pushed. |
 | anything in `defaults` in `src/config.ts` | no | Overrides, e.g. `reservePercent`, `issueLabel`, `models`. |
 
@@ -55,8 +55,17 @@ Example:
 
 ### Local issues
 
-With `"issues": "local"`, each `.sandcastle/issues/<number>-<slug>.md` file is one
-issue. Frontmatter is optional:
+With `"issues": "local"`, issues are grouped by spec:
+
+```text
+.sandcastle/specs/<spec-number>-<slug>/
+  spec.md                  the spec (not worked as an issue)
+  issues/<number>-<slug>.md one file per issue
+```
+
+Spec and issue numbers are both required; issue numbers must be unique across all
+specs. Other files in the spec folder are ignored.
+Frontmatter is optional:
 
 ```md
 ---

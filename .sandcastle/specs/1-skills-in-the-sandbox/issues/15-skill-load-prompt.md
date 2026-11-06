@@ -20,4 +20,4 @@ Done when tests with the existing fake agents (`tests/workflow.test.ts`) assert:
 - the no-human line;
 - the code-review line, present only when that skill is in the set.
 
-Decision records: `.sandcastle/issues/10-prompt-skill-triggers.md`, `.sandcastle/issues/11-tracker-setup-for-skills.md`.
+Decision records: `.sandcastle/specs/1-skills-in-the-sandbox/issues/10-prompt-skill-triggers.md`, `.sandcastle/specs/1-skills-in-the-sandbox/issues/11-tracker-setup-for-skills.md`.

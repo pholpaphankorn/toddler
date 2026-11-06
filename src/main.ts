@@ -33,7 +33,7 @@ async function init(root: string) {
   const ignore = join(root, ".sandcastle/.gitignore");
   if (!existsSync(ignore)) await writeFile(ignore, ".env\nlogs/\nworktrees/\nstate.json\nstate.json.tmp\nrunner.lock\n");
   console.log(`Wrote ${path} for ${repository ?? "local issues (no GitHub repository found)"}.
-Next:${repository ? "" : "\n  0. Write issues as .sandcastle/issues/<number>-<slug>.md files."}
+Next:${repository ? "" : "\n  0. Write issues as .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files (spec in spec.md beside issues/)."}
   1. Optionally set "verify" to a shell command that checks this project inside the sandbox (e.g. "npm test").
   2. Optionally write stack-specific agent notes in .sandcastle/project.md.
   3. Commit .sandcastle/, then run: toddler setup`);

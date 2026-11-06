@@ -7,7 +7,7 @@ export const providers: Provider[] = ["codex", "claude"];
 
 export const defaults = {
   remote: "origin",
-  /** "github": labeled GitHub issues. "local": .sandcastle/issues/<number>-*.md files. */
+  /** "github": labeled GitHub issues. "local": .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files. */
   issues: "github" as "github" | "local",
   /** false: stop after review with the approved commit on a local branch; nothing is pushed. */
   openPr: true,

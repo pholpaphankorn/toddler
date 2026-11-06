@@ -87,12 +87,12 @@ export class Runner {
   branch(number: number): string { return `toddler/${this.local() ? "local" : "issue"}-${number}`; }
   finished(number: number): boolean { return ["pr", "done"].includes(this.state.jobs[number]?.status ?? ""); }
   async localIssues(): Promise<Issue[]> {
-    const directory = join(this.root, ".sandcastle/issues");
+    const directory = join(this.root, ".sandcastle/specs");
     if (!existsSync(directory)) return [];
-    const files = (await readdir(directory)).filter((file) => file.endsWith(".md"));
+    const files = (await readdir(directory, { recursive: true })).filter((file) => /^[^/]+\/issues\/[^/]+\.md$/.test(file));
     const issues = await Promise.all(files.map(async (file) => localIssue(file, await readFile(join(directory, file), "utf8"))));
     const duplicate = issues.find((issue, index) => issues.findIndex((other) => other.number === issue.number) !== index);
-    if (duplicate) throw new Error(`.sandcastle/issues: more than one file for issue ${duplicate.number}`);
+    if (duplicate) throw new Error(`.sandcastle/specs: more than one file for issue ${duplicate.number}`);
     return issues;
   }
   async issues(): Promise<Issue[]> {

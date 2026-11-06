@@ -14,4 +14,4 @@ Add skill checks to `doctor()` in `src/main.ts`. No model calls.
 
 Done when tests cover the failure messages and the clash listing with fixtures.
 
-Decision record: `.sandcastle/issues/9-skill-load-checks.md`.
+Decision record: `.sandcastle/specs/1-skills-in-the-sandbox/issues/9-skill-load-checks.md`.

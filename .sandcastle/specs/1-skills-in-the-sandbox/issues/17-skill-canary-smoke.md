@@ -16,4 +16,4 @@ In `scripts/smoke-agents.ts`:
 
 The human runs `toddler smoke` on the host; it needs subscription auth and spends a little quota. If a provider fails, a follow-up issue switches that provider to copying skills in with tar over exec stdin.
 
-Decision records: `.sandcastle/issues/9-skill-load-checks.md`, `.sandcastle/issues/6-skill-delivery.md`.
+Decision records: `.sandcastle/specs/1-skills-in-the-sandbox/issues/9-skill-load-checks.md`, `.sandcastle/specs/1-skills-in-the-sandbox/issues/6-skill-delivery.md`.
