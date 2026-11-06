@@ -5,3 +5,4 @@ state.json
 state.json.tmp
 runner.lock
 node_modules/
+.DS_Store
