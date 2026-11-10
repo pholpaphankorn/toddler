@@ -28,6 +28,7 @@ A spec for how toddler chooses providers by quota: config lists the enabled prov
 - [The shape of a quota reading](issues/19-quota-reading-shape.md): `Reading` = `{ observedAt, fiveHour, weekly, weeklyByModel }`, null window = no limit (100%); `weeklyLeft(reading, model)` takes the tighter; Claude from `limits[]` only, Codex main bucket fixed to `"codex"` (`codexLimitId` removed), windows by duration; override commands print a `Reading`, old shape rejected. Prototype is replaced outright: no fallbacks, no migration.
 
 - [Weekly and five-hour stop thresholds](issues/22-stop-thresholds.md): per-provider `stopAt: { <provider>: { fiveHour, weekly } }` in percent left (defaults 5 / 10), replacing `reservePercent`; a hit stops that provider, or only that provider and model for a per-model weekly bucket; stopped stays stopped for the invocation.
+- [Which scheduling choices the ranking drives](issues/21-where-ranking-applies.md): ranking picks a new job's implementer, orders a parallel pair (both providers still run, even under `"order"`), and picks the fallback when an implementer stops; review always goes to the other provider when available (else same provider, fresh session); implementer is sticky per job; computed per decision, checked per provider and role model.
 
 ## Not yet specified
 

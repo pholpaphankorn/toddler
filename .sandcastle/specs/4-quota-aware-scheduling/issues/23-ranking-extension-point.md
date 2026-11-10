@@ -8,3 +8,5 @@ status: open
 ## Question
 
 "Make agent prioritization extendable": what does a ranker receive (providers, their quota readings, the role and issue?) and return (an ordered list? a single pick?), and how does a project choose one: a named built-in in config (`"ranking": "quota"`), a module path under `.sandcastle/`, or code-level extension only inside toddler? The built-in quota ranking and the preference list should both be expressible through the same interface.
+
+From [Which scheduling choices the ranking drives](21-where-ranking-applies.md): a ranker is consulted only for a new job's implementer, the order of a parallel pair, and the fallback when an implementer stops, never for review. It runs per decision and must rank by availability of the provider **and the role's model**.
