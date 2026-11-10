@@ -2,7 +2,6 @@
 title: Built-in thresholds as a stop condition, plus stopConditions modules
 labels: []
 blocked_by: [26, 28]
-parent: 4
 status: open
 ---
 Make stopping extensible the same way as ranking.
