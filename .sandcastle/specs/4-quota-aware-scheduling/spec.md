@@ -30,12 +30,15 @@ A spec for how toddler chooses providers by quota: config lists the enabled prov
 - [Weekly and five-hour stop thresholds](issues/22-stop-thresholds.md): per-provider `stopAt: { <provider>: { fiveHour, weekly } }` in percent left (defaults 5 / 10), replacing `reservePercent`; a hit stops that provider, or only that provider and model for a per-model weekly bucket; stopped stays stopped for the invocation.
 - [Which scheduling choices the ranking drives](issues/21-where-ranking-applies.md): ranking picks a new job's implementer, orders a parallel pair (both providers still run, even under `"order"`), and picks the fallback when an implementer stops; review always goes to the other provider when available (else same provider, fresh session); implementer is sticky per job; computed per decision, checked per provider and role model.
 - [How a project plugs in its own ranking](issues/23-ranking-extension-point.md): `ranking` = `"quota"`, `"order"`, or a module path; a ranker is a sync `({ role, issue, candidates: [{ provider, model, reading }] }) => Provider[]` that reorders only already-available candidates; built-ins share the type (made from config, random injected); bad output or throw stops the run.
+- [How a project plugs in its own stop conditions](issues/24-stop-condition-extension-point.md): built-in `stopAt` thresholds always run, plus optional `stopConditions` module paths; a stop condition is a sync `({ provider, reading, models }) => { reason, model? }[]` run on every fresh reading; all run, any hit stops, first reason kept; bad output or throw stops the run.
 
 ## Not yet specified
 
 - How `toddler plan` and `doctor` explain why a provider was ranked first or stopped.
-- Whether toddler exports helpers (quota ranking, `weeklyLeft`) for custom rankers to compose with, once a project needs it.
+- Whether toddler exports helpers (quota ranking, `weeklyLeft`) for custom rankers and stop conditions to compose with, once a project needs it.
 - Whether a role can be limited to certain providers, and how that combines with ranking (shared with [Roles in config](../2-roles-in-config/spec.md)).
+
+- Whether `Reading` should carry Codex's `ordinaryUsageAllowed` (a backend yes/no its source trusts over percentages) as a built-in stop condition; reopens [The shape of a quota reading](issues/19-quota-reading-shape.md).
 
 ## Out of scope
 
