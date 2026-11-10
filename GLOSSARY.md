@@ -17,5 +17,8 @@ _Avoid_: agent, persona
 **Stop threshold**: the least quota left, per provider and per window (five-hour or weekly), at which toddler stops using that provider, or that provider for one model, for the rest of a run.
 _Avoid_: reserve, limit
 
+**Ranking**: the order in which toddler prefers the providers still available for a choice of implementer. Either built in (by quota left, or a fixed preference order) or supplied by the project.
+_Avoid_: priority, prioritization
+
 **Tracker**: where a project's specs and issues live: local files, GitHub or GitLab.
 _Avoid_: issue source, backend
