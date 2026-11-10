@@ -27,6 +27,8 @@ A spec for how toddler chooses providers by quota: config lists the enabled prov
 
 - [The shape of a quota reading](issues/19-quota-reading-shape.md): `Reading` = `{ observedAt, fiveHour, weekly, weeklyByModel }`, null window = no limit (100%); `weeklyLeft(reading, model)` takes the tighter; Claude from `limits[]` only, Codex main bucket fixed to `"codex"` (`codexLimitId` removed), windows by duration; override commands print a `Reading`, old shape rejected. Prototype is replaced outright: no fallbacks, no migration.
 
+- [Weekly and five-hour stop thresholds](issues/22-stop-thresholds.md): per-provider `stopAt: { <provider>: { fiveHour, weekly } }` in percent left (defaults 5 / 10), replacing `reservePercent`; a hit stops that provider, or only that provider and model for a per-model weekly bucket; stopped stays stopped for the invocation.
+
 ## Not yet specified
 
 - How `toddler plan` and `doctor` explain why a provider was ranked first or stopped.
@@ -37,3 +39,4 @@ A spec for how toddler chooses providers by quota: config lists the enabled prov
 
 - New provider adapters.
 - Provider-enforced spending caps: the polling guard's limits (README "Five-hour reserve and stopping") stay as they are.
+- Pausing a stopped provider and resuming it after its window resets, including re-queueing work a stop cancelled: user's call to add later as its own effort ([Weekly and five-hour stop thresholds](issues/22-stop-thresholds.md)).

@@ -10,3 +10,5 @@ status: open
 "Stop condition code is extendable": what does a stop condition receive and return (stop / keep going, with a reason for the log?), when is it evaluated (before each stage, every poll, both?), and how do several combine (any one hit stops)? Should it use the same plug-in mechanism the ranking ticket settles on?
 
 From [What weekly usage each provider reports](18-weekly-usage-data.md): Codex returns `ordinaryUsageAllowed`, a backend yes/no flag its source trusts over percentages, which is a candidate built-in stop condition.
+
+From [Weekly and five-hour stop thresholds](22-stop-thresholds.md): built-in thresholds are per provider (`stopAt`), and a hit can stop a whole provider or only one provider and model. A stop lasts for the invocation, but pausing and resuming after a reset is planned as a later effort, so the interface should not rule it out.
