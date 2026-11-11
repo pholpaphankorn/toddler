@@ -1,5 +1,6 @@
 {
   "issues": "local",
   "openPr": false,
+  "install": "npm ci",
   "verify": "npm test"
 }

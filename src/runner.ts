@@ -147,6 +147,10 @@ export class Runner {
       });
       try {
         signal.throwIfAborted();
+        // Each stage gets a fresh worktree without ignored files such as node_modules, so install from the committed lockfile.
+        if (this.config.install.trim() && (await sandbox.exec(this.config.install)).exitCode) {
+          throw new Error(`Sandbox install failed: ${this.config.install}`);
+        }
         let agent: AgentProvider;
         const model = this.config.models[provider][role];
         if (provider === "codex") {

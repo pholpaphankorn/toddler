@@ -28,13 +28,14 @@ async function init(root: string) {
   try { repository = await command("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]); }
   catch { /* No GitHub repository: set up local issues on local branches. */ }
   await mkdir(join(root, ".sandcastle"), { recursive: true });
-  const project = repository ? { repository, verify: "" } : { issues: "local", openPr: false, verify: "" };
+  const project = repository ? { repository, install: "", verify: "" } : { issues: "local", openPr: false, install: "", verify: "" };
   await writeFile(path, `${JSON.stringify(project, null, 2)}\n`);
   const ignore = join(root, ".sandcastle/.gitignore");
   if (!existsSync(ignore)) await writeFile(ignore, ".env\nlogs/\nworktrees/\nstate.json\nstate.json.tmp\nrunner.lock\n");
   console.log(`Wrote ${path} for ${repository ?? "local issues (no GitHub repository found)"}.
 Next:${repository ? "" : "\n  0. Write issues as .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files (spec in spec.md beside issues/)."}
-  1. Optionally set "verify" to a shell command that checks this project inside the sandbox (e.g. "npm test").
+  1. Optionally set "install" to a shell command that installs dependencies in each new sandbox (e.g. "npm ci"),
+     and "verify" to a shell command that checks this project inside the sandbox (e.g. "npm test").
   2. Optionally write stack-specific agent notes in .sandcastle/project.md.
   3. Commit .sandcastle/, then run: toddler setup`);
 }

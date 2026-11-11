@@ -35,6 +35,8 @@ export interface Config extends Defaults {
   repository: string;
   /** Shell command run inside the sandbox worktree; must exit 0 before a stage is accepted. Empty: no check. */
   verify: string;
+  /** Shell command run in each new sandbox before the agent starts (e.g. "npm ci"); must exit 0. Empty: nothing installed. */
+  install: string;
 }
 
 /** Local issues kept on local branches: no GitHub repository or git remote is used. */
@@ -56,6 +58,10 @@ export function loadConfig(root: string): Config {
   config.verify ??= "";
   if (typeof config.verify !== "string") {
     throw new Error(`${path}: "verify" must be a shell command that checks the project (e.g. "npm test")`);
+  }
+  config.install ??= "";
+  if (typeof config.install !== "string") {
+    throw new Error(`${path}: "install" must be a shell command that installs dependencies (e.g. "npm ci")`);
   }
   if (!["github", "local"].includes(config.issues)) throw new Error(`${path}: "issues" must be "github" or "local"`);
   if (typeof config.openPr !== "boolean") throw new Error(`${path}: "openPr" must be true or false`);

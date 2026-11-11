@@ -11,7 +11,7 @@ import { defaults, loadConfig, providers, type Config, type Provider } from "../
 
 // Test doubles implement only what each test exercises.
 const fake = <T,>(value: unknown) => value as T;
-const config: Config = { ...defaults, repository: "example/repo", verify: "make check" };
+const config: Config = { ...defaults, repository: "example/repo", verify: "make check", install: "" };
 
 const now = Date.now();
 const usage = (remainingPercent: number): Usage => ({ remainingPercent, resetsAt: Math.floor(Date.now() / 1000) + 1000, observedAt: Date.now() });
@@ -224,6 +224,15 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
     if (provider === "codex") assert.equal(commands[0].options.stdin, "fake-private-auth");
     assert.equal(result.verification, "Checks passed");
     assert.equal(closed, true);
+    runner.config = { ...config, install: "npm ci" };
+    commands.length = 0;
+    await runner.stage(fake<Job>({ number: 1, branch: "codex/fixture", baseSha: "base" }), provider, "review", "task");
+    assert.equal(commands.filter(({ options }) => !options)[0].cmd, "npm ci", "install runs before verify");
+    sandbox.exec = async (cmd: string, options: unknown) => ({ exitCode: cmd === "npm ci" ? 1 : 0, stdout: "" });
+    closed = false;
+    await assert.rejects(runner.stage(fake<Job>({ number: 1, branch: "codex/fixture", baseSha: "base" }), provider, "review", "task"), /Sandbox install failed: npm ci/);
+    assert.equal(closed, true);
+    sandbox.exec = async (cmd: string, options: unknown) => { commands.push({ cmd, options }); return { exitCode: 0, stdout: "Checks passed" }; };
     runner.config = { ...config, verify: "" };
     commands.length = 0; closed = false;
     const unverified = await runner.stage(fake<Job>({ number: 1, branch: "codex/fixture", baseSha: "base" }), provider, "review", "task");
@@ -281,6 +290,9 @@ test("project config overrides defaults, must name a repository, and verify is o
     const write = (value: object) => writeFileSync(join(root, ".sandcastle/config.json"), JSON.stringify(value));
     write({ repository: "owner/repo" });
     assert.equal(loadConfig(root).verify, "");
+    assert.equal(loadConfig(root).install, "");
+    write({ repository: "owner/repo", install: ["npm ci"] });
+    assert.throws(() => loadConfig(root), /"install"/);
     write({ repository: "owner/repo", verify: 5 });
     assert.throws(() => loadConfig(root), /"verify"/);
     write({ repository: "not a repo", verify: "npm test" });
