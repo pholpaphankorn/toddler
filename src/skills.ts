@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse } from "yaml";
 
 export const bundledSkillsPath = fileURLToPath(new URL("../vendor/skills", import.meta.url));
 
@@ -18,9 +17,9 @@ export function indexSkills(root: string = bundledSkillsPath): Map<string, strin
       if (!existsSync(path)) continue;
       const content = readFileSync(path, "utf8");
       const frontmatter = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|\s*$)/)?.[1];
-      const metadata = frontmatter === undefined ? undefined : parse(frontmatter);
-      const rawName = metadata && typeof metadata === "object" ? metadata.name : undefined;
-      const name = typeof rawName === "string" && rawName.trim() ? rawName : skill.name;
+      // Only `name` is read; a full YAML parser would throw on common unquoted colons in other fields.
+      const raw = /^name:[ \t]*(.*)$/m.exec(frontmatter ?? "")?.[1].trim() ?? "";
+      const name = (/^(["'])(.*)\1/.exec(raw)?.[2] ?? raw.replace(/\s+#.*$/, "")).trim() || skill.name;
       if (index.has(name)) throw new Error(`Duplicate skill name "${name}" in ${index.get(name)} and ${folder}`);
       index.set(name, folder);
     }

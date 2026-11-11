@@ -11,8 +11,7 @@
     "smoke:seatbelt": "node scripts/smoke-seatbelt.ts"
   },
   "dependencies": {
-    "@ai-hero/sandcastle": "0.14.0",
-    "yaml": "^2.9.1"
+    "@ai-hero/sandcastle": "0.14.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
