@@ -40,11 +40,16 @@ test("doctor reports skill failures and committed project clashes", async () => 
       mkdirSync(join(project, path), { recursive: true });
       writeFileSync(join(project, path, "SKILL.md"), "fixture");
     }
+    mkdirSync(join(project, ".agents/skills/custom"), { recursive: true });
+    writeFileSync(join(project, ".agents/skills/custom/SKILL.md"), "---\nname: tdd\n---\n");
+    mkdirSync(join(project, ".agents/skills/tdd"), { recursive: true });
+    writeFileSync(join(project, ".agents/skills/tdd/SKILL.md"), "---\nname: unrelated\n---\n");
     git("add", ".claude", ".agents");
     git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "-m", "fixture");
     rmSync(join(project, ".claude/skills/tdd"), { recursive: true });
     mkdirSync(join(project, ".claude/skills/other"), { recursive: true });
     writeFileSync(join(project, ".claude/skills/other/SKILL.md"), "uncommitted");
-    assert.equal(await run("skills project clashes"), ".agents/skills/other/SKILL.md, .claude/skills/tdd/SKILL.md (informational; bundled skills load by path)");
+    writeFileSync(join(project, ".agents/skills/custom/SKILL.md"), "---\nname: unrelated\n---\n");
+    assert.equal(await run("skills project clashes"), ".agents/skills/custom/SKILL.md, .agents/skills/other/SKILL.md, .claude/skills/tdd/SKILL.md (informational; bundled skills load by path)");
   } finally { rmSync(project, { recursive: true, force: true }); }
 });

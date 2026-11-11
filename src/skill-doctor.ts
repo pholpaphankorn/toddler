@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { command } from "./process.ts";
-import { bundledSkillsPath, indexSkills } from "./skills.ts";
+import { bundledSkillsPath, indexSkills, skillName } from "./skills.ts";
 import type { Role } from "./config.ts";
 
 const manifestPath = fileURLToPath(new URL("../vendor/skills.json", import.meta.url));
@@ -54,10 +54,13 @@ export function skillDoctorChecks(project: string, sets: Record<Role, string[]>,
     ["skills project clashes", async () => {
       const output = await command("git", ["ls-tree", "-r", "--name-only", "-z", "HEAD", "--", ".claude/skills", ".agents/skills"], { cwd: project });
       const names = new Set(Object.values(sets).flat());
-      const clashes = output.split("\0").filter(path => {
+      const clashes: string[] = [];
+      for (const path of output.split("\0")) {
         const match = /^\.(?:claude|agents)\/skills\/([^/]+)\/SKILL\.md$/.exec(path);
-        return match && names.has(match[1]);
-      });
+        if (!match) continue;
+        const content = await command("git", ["show", `HEAD:${path}`], { cwd: project });
+        if (names.has(skillName(content, match[1]))) clashes.push(path);
+      }
       return clashes.length ? `${clashes.join(", ")} (informational; bundled skills load by path)` : "none";
     }],
   ];
