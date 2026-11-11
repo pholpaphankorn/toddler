@@ -1,10 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { indexSkills } from "../src/skills.ts";
+import { indexSkills, skillLinks } from "../src/skills.ts";
 import { defaults, loadConfig } from "../src/config.ts";
+
+test("skill links expose only the selected names in both private home layouts", () => {
+  const home = mkdtempSync(join(tmpdir(), "skill links '"));
+  try {
+    const folder = join(home, "source ' skill");
+    mkdirSync(folder);
+    writeFileSync(join(folder, "SKILL.md"), "fixture");
+    const index = new Map([["selected ' skill", folder], ["other", folder]]);
+    execFileSync("sh", ["-c", skillLinks(["selected ' skill"], index)], { env: { ...process.env, HOME: home } });
+    for (const provider of [".claude", ".agents"]) {
+      assert.equal(readFileSync(join(home, provider, "skills", "selected ' skill", "SKILL.md"), "utf8"), "fixture");
+      assert.equal(existsSync(join(home, provider, "skills", "other")), false);
+    }
+    assert.throws(() => skillLinks(["../bad"], new Map([["../bad", folder]])), /Invalid skill name/);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
 
 test("skill index uses frontmatter names, falls back to folder names, and rejects duplicates", () => {
   const root = mkdtempSync(join(tmpdir(), "skill-index-"));

@@ -4,6 +4,20 @@ import { fileURLToPath } from "node:url";
 
 export const bundledSkillsPath = fileURLToPath(new URL("../vendor/skills", import.meta.url));
 
+/** Shell commands to expose only the selected bundled skills in the private home. */
+export function skillLinks(names: string[], index = indexSkills()): string {
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const commands = ['mkdir -p "$HOME/.claude/skills" "$HOME/.agents/skills"'];
+  for (const name of names) {
+    const folder = index.get(name);
+    if (!folder || name === "." || name === ".." || name.includes("/")) throw new Error(`Invalid skill name: ${name}`);
+    for (const provider of [".claude", ".agents"]) {
+      commands.push(`ln -s ${quote(folder)} "$HOME/${provider}/skills/"${quote(name)}`);
+    }
+  }
+  return commands.join(" && ");
+}
+
 /** Index skill names by their vendored folder. */
 export function indexSkills(root: string = bundledSkillsPath): Map<string, string> {
   const index = new Map<string, string>();

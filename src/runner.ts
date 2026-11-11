@@ -10,6 +10,7 @@ import { assignments, localIssue, reviewer, reviewReport, type Issue, type Revie
 import { command, type Command } from "./process.ts";
 import { claudeToken, codexAuth, type Quotas } from "./quota.ts";
 import { privateHomeAgent } from "./agents.ts";
+import { skillLinks } from "./skills.ts";
 
 export interface Job {
   number: number;
@@ -153,10 +154,12 @@ export class Runner {
         }
         let agent: AgentProvider;
         const model = this.config.models[provider][role];
+        const auth = provider === "codex" ? await this.authentication.codex() : undefined;
+        const setupCommand = `umask 077; ${skillLinks(this.config.skills[role])}` +
+          (provider === "codex" ? ' && mkdir -p "$HOME/.codex" && cat > "$HOME/.codex/auth.json"' : "");
+        const setup = await sandbox.exec(setupCommand, auth === undefined ? {} : { stdin: auth });
+        if (setup.exitCode) throw new Error("Could not initialize isolated skills and login");
         if (provider === "codex") {
-          const auth = await this.authentication.codex();
-          const setup = await sandbox.exec('umask 077; mkdir -p "$HOME/.codex"; cat > "$HOME/.codex/auth.json"', { stdin: auth });
-          if (setup.exitCode) throw new Error("Could not initialize isolated Codex login");
           agent = sandcastle.codex(model, { captureSessions: false });
         } else {
           agent = sandcastle.claudeCode(model, { captureSessions: false, env: {

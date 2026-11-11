@@ -9,6 +9,7 @@ import { command, codexRpc } from "./process.ts";
 import { readUsage, codexAuth, claudeToken, Quotas } from "./quota.ts";
 import { Runner, loadState, saveState } from "./runner.ts";
 import { assignments } from "./policy.ts";
+import { bundledSkillsPath } from "./skills.ts";
 
 const usage = "Usage: toddler [init|setup|doctor|plan|run|smoke [codex|claude]]";
 // This runner uses subscriptions exclusively; avoid accidental metered API use.
@@ -129,7 +130,7 @@ async function main() {
     const { seatbelt } = await import("@ai-hero/sandcastle/sandboxes/seatbelt");
     // Sandcastle imports declared .env keys into the sandbox. These belong to
     // the host only; agents use their private homes and subscription credentials.
-    runner.sandboxProvider = seatbelt({ env: {
+    runner.sandboxProvider = seatbelt({ mounts: [{ hostPath: bundledSkillsPath, sandboxPath: bundledSkillsPath, readonly: true }], env: {
       CODEX_HOME: "", CLAUDE_CONFIG_DIR: "", CODEX_USAGE_COMMAND: "", CLAUDE_USAGE_COMMAND: "",
       CLAUDE_USAGE_TOKEN_COMMAND: "",
       OPENAI_API_KEY: "", CODEX_API_KEY: "", ANTHROPIC_API_KEY: "", GH_TOKEN: "", GITHUB_TOKEN: "",

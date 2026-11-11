@@ -221,6 +221,12 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
     assert.match(captured.agent.buildPrintCommand({}).command, /^unset CODEX_HOME /);
     if (provider === "claude") assert.ok(captured.agent.buildPrintCommand({}).command.includes('CLAUDE_CODE_TMPDIR="$TMPDIR"'));
     assert.ok(commands.some(({ cmd, options }) => cmd === "make check" && !options));
+    const setup = commands.find(({ cmd }) => cmd.includes('"$HOME/.claude/skills"'))!;
+    assert.ok(setup.cmd.includes('"$HOME/.agents/skills"'));
+    for (const name of config.skills.review) assert.ok(setup.cmd.includes(`'${name}'`));
+    for (const name of config.skills.implementation.filter((name) => !config.skills.review.includes(name))) {
+      assert.ok(!setup.cmd.includes(`'${name}'`));
+    }
     if (provider === "codex") assert.equal(commands[0].options.stdin, "fake-private-auth");
     assert.equal(result.verification, "Checks passed");
     assert.equal(closed, true);
@@ -250,6 +256,7 @@ test("reviewer commit mutation is rejected and sandbox is closed", async () => {
     sandcastle: {
       claudeCode: () => ({ buildPrintCommand: () => ({ command: "native-cli" }) }),
       createSandbox: async () => ({ worktreePath: "/fixture", run: async () => ({ stdout: report() }),
+        exec: async () => ({ exitCode: 0, stdout: "" }),
         close: async () => { closed = true; return {}; } }),
     }, git: async (_file: string, args: string[]) => args[0] === "branch" ? "codex/fixture" :
       args[0] === "rev-parse" ? (++reads === 1 ? "before" : "after") : "" }));
