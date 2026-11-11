@@ -2,7 +2,7 @@
 title: Skill index and per-role skill sets in config
 labels: []
 blocked_by: [12]
-status: open
+status: closed 
 ---
 Needs `vendor/skills/` populated by `scripts/vendor-skills.sh` from the previous issue (layout `vendor/skills/<upstream>/<skill>/`).
 
