@@ -45,7 +45,7 @@ export function offline(config: Pick<Defaults, "issues" | "openPr">): boolean { 
 export function configPath(root: string): string { return join(root, ".sandcastle/config.json"); }
 
 // Project settings in <root>/.sandcastle/config.json override the defaults above.
-export function loadConfig(root: string): Config {
+export function loadConfig(root: string, options: { checkSkillNames?: boolean } = {}): Config {
   const path = configPath(root);
   if (!existsSync(path)) throw new Error("No .sandcastle/config.json in this project; run toddler init");
   const project = JSON.parse(readFileSync(path, "utf8"));
@@ -65,13 +65,13 @@ export function loadConfig(root: string): Config {
   }
   if (!["github", "local"].includes(config.issues)) throw new Error(`${path}: "issues" must be "github" or "local"`);
   if (typeof config.openPr !== "boolean") throw new Error(`${path}: "openPr" must be true or false`);
-  const skills = indexSkills();
+  const skills = options.checkSkillNames === false ? undefined : indexSkills();
   for (const [role, names] of Object.entries(config.skills)) {
     if (!Array.isArray(names) || names.some(name => typeof name !== "string")) {
       throw new Error(`${path}: skills: ${role} set must be an array of names`);
     }
     for (const name of names) {
-      if (!skills.has(name)) throw new Error(`skills: "${name}" in ${role} set is not in vendor/skills; add it to vendor/skills.json and re-run scripts/vendor-skills.sh`);
+      if (skills && !skills.has(name)) throw new Error(`skills: "${name}" in ${role} set is not in vendor/skills; add it to vendor/skills.json and re-run scripts/vendor-skills.sh`);
     }
   }
   return config;
