@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { indexSkills } from "./skills.ts";
 
 export type Provider = "codex" | "claude";
 export type Role = "implementation" | "review";
@@ -22,6 +23,10 @@ export const defaults = {
     codex: { implementation: "gpt-6.1-terra", review: "gpt-6.1-sol" },
     claude: { implementation: "claude-sonnet-5-5", review: "claude-opus-5-5" },
   } as Record<Provider, Record<Role, string>>,
+  skills: {
+    implementation: ["tdd", "diagnosing-bugs", "codebase-design", "ponytail"],
+    review: ["code-review", "ponytail-review", "codebase-design"],
+  } as Record<Role, string[]>,
   codexLimitId: "codex",
 };
 export type Defaults = typeof defaults;
@@ -42,7 +47,7 @@ export function loadConfig(root: string): Config {
   const path = configPath(root);
   if (!existsSync(path)) throw new Error("No .sandcastle/config.json in this project; run toddler init");
   const project = JSON.parse(readFileSync(path, "utf8"));
-  const config: Config = { ...defaults, ...project, models: { ...defaults.models, ...project.models } };
+  const config: Config = { ...defaults, ...project, models: { ...defaults.models, ...project.models }, skills: { ...defaults.skills, ...project.skills } };
   // Offline projects have no repository; the placeholder only keys .sandcastle/state.json.
   if (offline(config) && config.repository === undefined) config.repository = "local";
   else if (typeof config.repository !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(config.repository)) {
@@ -54,5 +59,14 @@ export function loadConfig(root: string): Config {
   }
   if (!["github", "local"].includes(config.issues)) throw new Error(`${path}: "issues" must be "github" or "local"`);
   if (typeof config.openPr !== "boolean") throw new Error(`${path}: "openPr" must be true or false`);
+  const skills = indexSkills();
+  for (const [role, names] of Object.entries(config.skills)) {
+    if (!Array.isArray(names) || names.some(name => typeof name !== "string")) {
+      throw new Error(`${path}: skills: ${role} set must be an array of names`);
+    }
+    for (const name of names) {
+      if (!skills.has(name)) throw new Error(`skills: "${name}" in ${role} set is not in vendor/skills; add it to vendor/skills.json and re-run scripts/vendor-skills.sh`);
+    }
+  }
   return config;
 }

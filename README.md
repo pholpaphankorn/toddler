@@ -42,6 +42,7 @@ toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
 | `verify` | no | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. Empty or missing: no check, and only the review gates the work. |
 | `issues` | no | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/specs/<spec>/issues/`. |
 | `openPr` | no | `true` (default): push the reviewed branch and open a PR. `false`: stop with the approved commit on a local branch; nothing is pushed. |
+| `skills` | no | Role-to-list mapping of vendored skill names. A listed role replaces its default list; omitted roles keep their defaults and `[]` disables skills for that role. The same sets apply to both providers. |
 | anything in `defaults` in `src/config.ts` | no | Overrides, e.g. `reservePercent`, `issueLabel`, `models`. |
 
 Example:
