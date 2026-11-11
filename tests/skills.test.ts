@@ -15,10 +15,14 @@ test("skill index uses frontmatter names, falls back to folder names, and reject
       writeFileSync(join(dir, "SKILL.md"), content);
       return dir;
     };
-    const named = add("one", "folder", '---\nname: "custom"\n---\nbody\n');
+    const named = add("one", "folder", '---\nname: custom # comment\n---\nbody\n');
     const fallback = add("one", "fallback", "# No frontmatter\n");
+    const empty = add("one", "empty", "---\nname:\ndescription: A skill\n---\n");
+    const quoted = add("one", "quoted", '---\nname: "quoted # name"\n---\n');
     assert.equal(indexSkills(root).get("custom"), named);
     assert.equal(indexSkills(root).get("fallback"), fallback);
+    assert.equal(indexSkills(root).get("empty"), empty);
+    assert.equal(indexSkills(root).get("quoted # name"), quoted);
     add("two", "other", "---\nname: custom\n---\n");
     assert.throws(() => indexSkills(root), /Duplicate skill name "custom"/);
   } finally { rmSync(root, { recursive: true, force: true }); }
