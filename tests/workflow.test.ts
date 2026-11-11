@@ -8,6 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaults, loadConfig, providers, type Config, type Provider } from "../src/config.ts";
+import { indexSkills } from "../src/skills.ts";
 
 // Test doubles implement only what each test exercises.
 const fake = <T,>(value: unknown) => value as T;
@@ -104,6 +105,37 @@ function fixture(overrides: Partial<Config> = {}, root = fileURLToPath(new URL("
   };
   return { runner, events, state, quotas };
 }
+test("stage prompts explicitly load each role's skills for the selected provider", async () => {
+  const paths = indexSkills();
+  const skillPath = (name: string) => join(paths.get(name)!, "SKILL.md");
+  const noHuman = "No human is available during this stage. Where a skill says to ask the user or wait for an answer, pick the recommended option yourself and list each such choice in your summary.";
+  for (const initial of providers) {
+    const { runner } = fixture({ openPr: false, skills: { implementation: ["tdd", "ponytail"], review: ["code-review", "ponytail-review"] } });
+    const prompts: string[] = [];
+    runner.stage = async (_job, _provider, role, prompt) => {
+      prompts.push(prompt);
+      return { sha: "reviewed", stdout: role === "review" ? report() : "done", verification: "" };
+    };
+    await runner.work(issue(1), initial, "main");
+    const load = (provider: Provider, names: string[]) => provider === "codex"
+      ? `Load these skills: ${names.map((name) => `[$${name}](${skillPath(name)})`).join(" ")}`
+      : `Before doing anything else, read and follow these skill files: ${names.map(skillPath).join(", ")}`;
+    assert.ok(prompts[0].includes(load(initial, ["tdd", "ponytail"])));
+    assert.ok(prompts[1].includes(load(initial === "codex" ? "claude" : "codex", ["code-review", "ponytail-review"])));
+    assert.ok(prompts.every((prompt) => prompt.includes(noHuman)));
+    assert.ok(!prompts[0].includes("For code-review:"));
+    assert.ok(prompts[1].includes("For code-review: the fixed point is `base`; the spec is the issue text in this prompt. Do not look up an issue tracker."));
+  }
+  const { runner } = fixture({ openPr: false, skills: { implementation: [], review: ["tdd"] } });
+  const prompts: string[] = [];
+  runner.stage = async (_job, _provider, role, prompt) => {
+    prompts.push(prompt);
+    return { sha: "reviewed", stdout: role === "review" ? report() : "done", verification: "" };
+  };
+  await runner.work(issue(1), "codex", "main");
+  assert.ok(!prompts[0].includes("Load these skills:") && !prompts[0].includes("Before doing anything else, read and follow these skill files:"));
+  assert.ok(!prompts[1].includes("For code-review:"));
+});
 test("implementation -> opposite-provider review -> push exact SHA -> PR, never issue close or merge", async () => {
   const { runner, events, state } = fixture();
   await runner.work(issue(1), "codex", "main");

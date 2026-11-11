@@ -14,3 +14,5 @@ state. If interrupted, leave changes intact for a replacement agent.
 
 Commit the finished implementation with a clear message referencing the issue.
 End with a short summary, actual validation evidence, and remaining limitations.
+
+No human is available during this stage. Where a skill says to ask the user or wait for an answer, pick the recommended option yourself and list each such choice in your summary.
