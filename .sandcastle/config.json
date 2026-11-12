@@ -2,5 +2,5 @@
   "issues": "local",
   "openPr": false,
   "install": "npm ci",
-  "verify": "npm test"
+  "verify": "npm run format:check && npm test"
 }

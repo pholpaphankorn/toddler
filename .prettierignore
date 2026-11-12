@@ -1,0 +1,5 @@
+node_modules/
+vendor/
+.sandcastle/
+.claude/
+package-lock.json
