@@ -2,7 +2,7 @@
 title: Weekly-aware quota readings with per-provider stopAt
 labels: []
 blocked_by: [13, 16]
-status: open
+status: closed
 ---
 Today a quota reading is only the five-hour window, with weekly folded in as an "exhausted" flag. Weekly-only plans (Codex Pro, Claude Ultra) are disabled for having no five-hour window, and Claude's weekly check counts `seven_day_oauth_apps` but misses `weekly_scoped` limits. Replace the reading and the single `reservePercent` threshold outright: no old-format fallbacks, no config migration.
 
