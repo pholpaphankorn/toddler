@@ -2,7 +2,7 @@
 title: toddler doctor checks vendored skills and skill sets
 labels: [parallel-safe]
 blocked_by: [13]
-status: open
+status: closed
 ---
 Add skill checks to `doctor()` in `src/main.ts`. No model calls.
 
