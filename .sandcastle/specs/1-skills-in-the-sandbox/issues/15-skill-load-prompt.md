@@ -2,7 +2,7 @@
 title: Load each role's skills explicitly from the stage prompt
 labels: [parallel-safe]
 blocked_by: [13]
-status: open
+status: closed
 ---
 Every skill in the role's set is loaded explicitly at stage start; nothing relies on implicit invocation. Extend the prompt built by `Runner.prompt`/`context` in `src/runner.ts`:
 
