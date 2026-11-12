@@ -155,6 +155,12 @@ export function claudeUsage(result: ClaudeUsage, now = Date.now()): Reading {
   const weeklyByModel: Record<string, Window> = {};
   for (const row of result.limits) {
     if (row.scope?.surface) continue;
+    if (
+      row.kind !== "session" &&
+      row.kind !== "weekly_all" &&
+      !(row.kind === "weekly_scoped" && row.scope?.model?.display_name)
+    )
+      continue;
     const percent = row.percent ?? row.utilization;
     if (percent == null) continue;
     if (!Number.isFinite(percent))

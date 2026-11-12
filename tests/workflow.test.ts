@@ -152,6 +152,20 @@ test("Claude parses limits and ignores unrelated and surface rows", () => {
   assert.throws(() => claudeUsage({}, now));
   assert.throws(() => claudeUsage({ limits: [] }, now));
 });
+test("Claude ignores invalid percentages in unrelated and unscoped rows", () => {
+  const reading = claudeUsage(
+    fake({
+      limits: [
+        { kind: "weekly_all", percent: 20 },
+        { kind: "seven_day_oauth_apps", percent: "unknown" },
+        { kind: "weekly_scoped", percent: "unknown", scope: {} },
+      ],
+    }),
+    now,
+  );
+  assert.equal(reading.weekly?.remainingPercent, 80);
+  assert.deepEqual(reading.weeklyByModel, {});
+});
 test("Codex identifies windows and per-model weekly buckets", () => {
   const weekly = { windowDurationMins: 10080, usedPercent: 25, resetsAt: null };
   const reading = codexUsage(
