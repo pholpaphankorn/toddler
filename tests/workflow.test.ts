@@ -12,7 +12,9 @@ import {
   codexUsage,
   claudeUsage,
   validateUsage,
-  type Usage,
+  weeklyLeft,
+  readUsage,
+  type Reading,
 } from "../src/quota.ts";
 import { Runner, type Job, type RunnerOptions } from "../src/runner.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -37,9 +39,13 @@ const config: Config = {
 };
 
 const now = Date.now();
-const usage = (remainingPercent: number): Usage => ({
-  remainingPercent,
-  resetsAt: Math.floor(Date.now() / 1000) + 1000,
+const usage = (remainingPercent: number): Reading => ({
+  fiveHour: {
+    remainingPercent,
+    resetsAt: Math.floor(Date.now() / 1000) + 1000,
+  },
+  weekly: null,
+  weeklyByModel: {},
   observedAt: Date.now(),
 });
 const issue = (number: number, labels: string[] = []) => ({
@@ -102,68 +108,139 @@ test("opposite-provider review, same-provider fallback, no reviewer when exhaust
     undefined,
   );
 });
-test("quota windows must be five hours, fresh, numeric and from the configured bucket", () => {
-  const bucket = {
-    limitId: "codex",
-    primary: {
-      windowDurationMins: 300,
-      usedPercent: 94,
-      resetsAt: now / 1000 + 1000,
-    },
-  };
-  assert.equal(
-    codexUsage({ rateLimits: bucket }, "codex", now).remainingPercent,
-    6,
-  );
-  assert.throws(() => codexUsage({ rateLimits: bucket }, "unrelated", now));
-  assert.throws(() =>
-    codexUsage(
-      {
-        rateLimits: {
-          ...bucket,
-          primary: { ...bucket.primary, windowDurationMins: 60 },
+test("Claude parses limits and ignores unrelated and surface rows", () => {
+  const reset = new Date(now + 100000).toISOString();
+  const reading = claudeUsage(
+    {
+      limits: [
+        { kind: "session", percent: 20, resets_at: reset },
+        { kind: "weekly_all", percent: 30, resets_at: null },
+        {
+          kind: "weekly_scoped",
+          percent: 80,
+          resets_at: reset,
+          scope: { model: { display_name: "Fable 5" } },
         },
+        {
+          kind: "weekly_scoped",
+          percent: 100,
+          scope: { surface: {}, model: { display_name: "ignored" } },
+        },
+        { kind: "seven_day_oauth_apps", percent: 100 },
+      ],
+    },
+    now,
+  );
+  assert.equal(reading.fiveHour?.remainingPercent, 80);
+  assert.equal(reading.fiveHour?.resetsAt, (now + 100000) / 1000);
+  assert.equal(reading.weekly?.remainingPercent, 70);
+  assert.deepEqual(Object.keys(reading.weeklyByModel), ["Fable 5"]);
+  assert.equal(weeklyLeft(reading, "claude-fable-5", "claude"), 20);
+  assert.equal(weeklyLeft(reading, "claude-other", "claude"), 70);
+  assert.equal(
+    claudeUsage(
+      {
+        limits: [
+          { kind: "weekly_all", percent: 25 },
+          { kind: "session", percent: null },
+        ],
       },
-      "codex",
+      now,
+    ).fiveHour,
+    null,
+  );
+  assert.throws(() => claudeUsage({}, now));
+  assert.throws(() => claudeUsage({ limits: [] }, now));
+});
+test("Codex identifies windows and per-model weekly buckets", () => {
+  const weekly = { windowDurationMins: 10080, usedPercent: 25, resetsAt: null };
+  const reading = codexUsage(
+    {
+      rateLimitsByLimitId: {
+        codex: { primary: weekly },
+        other: {
+          normalModelSlug: "GPT-X",
+          secondary: { ...weekly, usedPercent: 90 },
+        },
+        empty: { normalModelSlug: "ignored" },
+      },
+    },
+    now,
+  );
+  assert.equal(reading.fiveHour, null);
+  assert.equal(reading.weekly?.remainingPercent, 75);
+  assert.equal(weeklyLeft(reading, "gpt-x", "codex"), 10);
+  assert.equal(weeklyLeft(reading, "gpt-x-extra", "codex"), 75);
+  assert.deepEqual(
+    codexUsage({ rateLimits: { limitId: "codex" } }, now).weekly,
+    null,
+  );
+  assert.throws(() => codexUsage({}, now));
+});
+test("quota validation rejects stale and invalid data and resets past windows", () => {
+  assert.throws(() =>
+    validateUsage({ ...usage(50), observedAt: now - 61000 }, now),
+  );
+  assert.throws(() =>
+    validateUsage(
+      { ...usage(50), fiveHour: { remainingPercent: NaN, resetsAt: null } },
       now,
     ),
   );
   assert.throws(() =>
-    validateUsage({ ...usage(50), observedAt: now - 61_000 }, now),
+    validateUsage(
+      { ...usage(50), weekly: { remainingPercent: 101, resetsAt: null } },
+      now,
+    ),
   );
   assert.throws(() =>
-    validateUsage({ ...usage(50), resetsAt: now / 1000 - 1 }, now),
-  );
-  assert.throws(() =>
-    validateUsage({ ...usage(50), remainingPercent: fake<number>("50") }, now),
+    validateUsage(
+      { ...usage(50), weekly: { remainingPercent: 50, resetsAt: NaN } },
+      now,
+    ),
   );
   assert.equal(
-    claudeUsage(
+    validateUsage(
       {
-        five_hour: {
-          utilization: 94,
-          resets_at: new Date(now + 100000).toISOString(),
-        },
+        ...usage(50),
+        fiveHour: { remainingPercent: 0, resetsAt: now / 1000 - 1 },
       },
       now,
-    ).remainingPercent,
-    6,
+    ).fiveHour?.remainingPercent,
+    100,
   );
-  assert.equal(
-    codexUsage(
-      {
-        rateLimits: {
-          ...bucket,
-          secondary: { usedPercent: 100, resetsAt: now / 1000 + 2000 },
-        },
-      },
-      "codex",
-      now,
-    ).remainingPercent,
-    0,
+  assert.throws(
+    () =>
+      validateUsage(
+        { remainingPercent: 50, resetsAt: 1, observedAt: now } as never,
+        now,
+      ),
+    /README/,
   );
 });
-test("at 5% reserve both roles stop; no automatic reset/restart within a run", async () => {
+test("old override JSON is rejected with README guidance", async () => {
+  const previous = process.env.CODEX_USAGE_COMMAND;
+  process.env.CODEX_USAGE_COMMAND = `printf '%s' '{"remainingPercent":50,"resetsAt":1,"observedAt":${Date.now()}}'`;
+  try {
+    await assert.rejects(readUsage("codex", config), /README/);
+  } finally {
+    if (previous === undefined) delete process.env.CODEX_USAGE_COMMAND;
+    else process.env.CODEX_USAGE_COMMAND = previous;
+  }
+});
+test("weekly stop affects only its provider", async () => {
+  const quotas = new Quotas(config, async (provider) => ({
+    ...usage(50),
+    weekly: {
+      remainingPercent: provider === "claude" ? 10 : 11,
+      resetsAt: null,
+    },
+  }));
+  await quotas.refresh();
+  assert.equal(quotas.available("claude"), false);
+  assert.equal(quotas.available("codex"), true);
+});
+test("at 5% both roles stop; no automatic reset/restart within a run", async () => {
   let remaining = 5;
   const quotas = new Quotas(config, async () => usage(remaining));
   await quotas.refresh();
@@ -779,11 +856,22 @@ test("project config overrides defaults, must name a repository, and verify is o
     write({
       repository: "owner/repo",
       verify: "npm test",
-      reservePercent: 10,
+      stopAt: { codex: { weekly: 20 } },
       models: { claude: { implementation: "a", review: "b" } },
     });
     const loaded = loadConfig(root);
-    assert.equal(loaded.reservePercent, 10);
+    assert.deepEqual(loaded.stopAt.codex, { fiveHour: 5, weekly: 20 });
+    assert.deepEqual(loaded.stopAt.claude, { fiveHour: 5, weekly: 10 });
+    for (const stopAt of [
+      { other: { weekly: 10 } },
+      { codex: { weekly: -1 } },
+      { claude: { fiveHour: 101 } },
+      { claude: { weekly: "10" } },
+      { codex: { unknown: 1 } },
+    ]) {
+      write({ repository: "owner/repo", stopAt });
+      assert.throws(() => loadConfig(root), /stopAt/);
+    }
     assert.equal(loaded.models.claude.review, "b");
     assert.equal(loaded.models.codex, defaults.models.codex);
     assert.equal(loaded.issueLabel, defaults.issueLabel);

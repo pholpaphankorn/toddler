@@ -603,7 +603,7 @@ export class Runner {
       await this.quotas.refresh();
       if (!providers.some((name) => this.quotas.available(name))) {
         console.log(
-          "Stopped: no provider has verified quota above the reserve.",
+          "Stopped: no provider has verified quota above its stop thresholds.",
         );
         return;
       }

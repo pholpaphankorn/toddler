@@ -44,7 +44,7 @@ toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
 | `issues`                                  | no                  | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/specs/<spec>/issues/`.                                                                                                                                                                                                   |
 | `openPr`                                  | no                  | `true` (default): push the reviewed branch and open a PR. `false`: stop with the approved commit on a local branch; nothing is pushed.                                                                                                                                                                          |
 | `skills`                                  | no                  | Role-to-list mapping of vendored skill names. A listed role replaces its default list; omitted roles keep their defaults and `[]` disables skills for that role. The same sets apply to both providers.                                                                                                         |
-| anything in `defaults` in `src/config.ts` | no                  | Overrides, e.g. `reservePercent`, `issueLabel`, `models`.                                                                                                                                                                                                                                                       |
+| anything in `defaults` in `src/config.ts` | no                  | Overrides, e.g. `stopAt`, `issueLabel`, `models`.                                                                                                                                                                                                                                                               |
 
 Example:
 
@@ -161,16 +161,16 @@ After requested changes, implementation and review repeat up to three rounds per
 invocation. Failed tasks pause for human inspection while other issues can continue.
 Already-open or merged workflow PRs are not assigned again.
 
-## Five-hour reserve and stopping
+## Quota thresholds and stopping
 
 Each subscription is a shared budget: implementation, review, subagents, and other
 usage on that account consume it. Four roles do not provide four separate allowances.
 
 The runner checks remaining quota before each stage and every 15 seconds during
-model work. At **5% or less**, all active sessions for that provider are cancelled.
+model work. By default, at **5% five-hour** or **10% weekly** remaining, all active sessions for that provider are cancelled.
 Its unfinished work remains on disk; the other provider can continue. A stopped
 provider stays stopped for the rest of that invocation, even if its window resets.
-An exhausted weekly window also disables that provider.
+Per-model weekly buckets are displayed by doctor but do not stop a provider yet.
 
 The runner exits when both providers are unavailable or no actionable issues remain.
 Blocked issues, issues with workflow PRs, and tasks already attempted unsuccessfully
@@ -180,12 +180,17 @@ these conditions are reported rather than treated as completed issues.
 
 **Limits:** this is a polling guard, not a provider-enforced spending cap. Server
 reporting lag and in-flight calls can consume additional quota before cancellation.
-An exact guarantee of leaving 5% untouched is not possible. Increase `reservePercent`
-in `.sandcastle/config.json` if more headroom is needed. Seatbelt kills normal process groups;
+An exact guarantee of leaving quota untouched is not possible. Configure percent-left stop thresholds in `.sandcastle/config.json` if more headroom is needed:
+
+```json
+{ "stopAt": { "claude": { "weekly": 20 }, "codex": { "fiveHour": 10 } } }
+```
+
+Each provider and window is optional; defaults are 5% for five-hour and 10% for weekly. Values must be between 0 and 100. A missing window does not trigger a stop. Seatbelt kills normal process groups;
 Sandcastle documents a macOS limitation for processes that deliberately detach.
 
 Codex usage is read through the documented `account/rateLimits/read` app-server API,
-selecting a 300-minute window in the configured `codex` bucket. Claude's usage
+selecting five-hour and weekly windows in the `codex` bucket. Claude's usage
 endpoint is undocumented and can change; unknown, stale, or failed quota readings
 disable that provider. A setup-token with inference-only scope cannot query it.
 
@@ -194,13 +199,17 @@ To use another live usage reader, set `CLAUDE_USAGE_COMMAND` or
 must fetch current subscription usage and print only JSON:
 
 ```json
-{ "remainingPercent": 42, "resetsAt": 1893456000, "observedAt": 1893452400000 }
+{
+  "observedAt": 1893452400000,
+  "fiveHour": { "remainingPercent": 42, "resetsAt": 1893456000 },
+  "weekly": { "remainingPercent": 75, "resetsAt": null },
+  "weeklyByModel": {
+    "model-label": { "remainingPercent": 60, "resetsAt": null }
+  }
+}
 ```
 
-`resetsAt` is the five-hour window reset in Unix **seconds**; `observedAt` is the
-actual measurement time in Unix **milliseconds**, at most 60 seconds old. The numbers
-above illustrate the shape, not usable quota data. Include weekly exhaustion as
-zero remaining. Never use a static percentage to bypass the reserve. Alternatively,
+`resetsAt` is Unix **seconds** or null; `observedAt` is the actual measurement time in Unix **milliseconds**, at most 60 seconds old. Use null for an absent five-hour or weekly window and an empty object for no per-model buckets. Percentages must be finite and between 0 and 100. The example illustrates the shape, not usable quota data. Never use a static percentage to bypass the stop thresholds. Alternatively,
 `CLAUDE_USAGE_TOKEN_COMMAND` can return a profile-scoped OAuth token for the default
 Claude usage reader; model calls continue to use the native Claude login.
 

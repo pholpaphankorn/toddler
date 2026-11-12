@@ -12,7 +12,14 @@ import {
   type Config,
 } from "./config.ts";
 import { command, codexRpc } from "./process.ts";
-import { readUsage, codexAuth, claudeToken, Quotas } from "./quota.ts";
+import {
+  readUsage,
+  codexAuth,
+  claudeToken,
+  Quotas,
+  modelMatches,
+  type Window,
+} from "./quota.ts";
 import { Runner, loadState, saveState } from "./runner.ts";
 import { assignments } from "./policy.ts";
 import { bundledSkillsPath } from "./skills.ts";
@@ -117,9 +124,21 @@ async function doctor(config: Config, root: string) {
       else await claudeToken();
       return "subscription credentials available (not displayed)";
     });
-    await check(`${provider} five-hour quota`, async () => {
-      const usage = await readUsage(provider, config);
-      return `${usage.remainingPercent}% remaining, resets ${new Date(usage.resetsAt * 1000).toISOString()}`;
+    await check(`${provider} quota`, async () => {
+      const reading = await readUsage(provider, config);
+      const describe = (window: Window | null) =>
+        window
+          ? `${window.remainingPercent}% remaining, resets ${window.resetsAt === null ? "unknown" : new Date(window.resetsAt * 1000).toISOString()}`
+          : "no limit";
+      const buckets = Object.entries(reading.weeklyByModel).map(
+        ([label, window]) =>
+          `${label}: ${describe(window)}${Object.values(config.models[provider]).some((model) => modelMatches(provider, label, model)) ? "" : " (no configured model matches)"}`,
+      );
+      return [
+        `five-hour: ${describe(reading.fiveHour)}`,
+        `weekly: ${describe(reading.weekly)}`,
+        ...buckets,
+      ].join("; ");
     });
     await check(`${provider} CLI`, () =>
       command(provider === "claude" ? "claude" : "codex", ["--version"]),

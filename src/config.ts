@@ -15,7 +15,10 @@ export const defaults = {
   issueLabel: "Sandcastle",
   parallelLabel: "parallel-safe",
   blockedLabels: ["blocked", "on-hold"],
-  reservePercent: 5,
+  stopAt: {
+    codex: { fiveHour: 5, weekly: 10 },
+    claude: { fiveHour: 5, weekly: 10 },
+  } as Record<Provider, { fiveHour: number; weekly: number }>,
   pollIntervalMs: 15_000,
   quotaTimeoutMs: 12_000,
   maxReviewRounds: 3,
@@ -27,7 +30,6 @@ export const defaults = {
     implementation: ["tdd", "diagnosing-bugs", "codebase-design", "ponytail"],
     review: ["code-review", "ponytail-review", "codebase-design"],
   } as Record<Role, string[]>,
-  codexLimitId: "codex",
 };
 export type Defaults = typeof defaults;
 export interface Config extends Defaults {
@@ -64,7 +66,44 @@ export function loadConfig(
     ...project,
     models: { ...defaults.models, ...project.models },
     skills: { ...defaults.skills, ...project.skills },
+    stopAt: Object.fromEntries(
+      providers.map((provider) => [
+        provider,
+        { ...defaults.stopAt[provider], ...project.stopAt?.[provider] },
+      ]),
+    ) as Defaults["stopAt"],
   };
+  if (project.stopAt !== undefined) {
+    if (
+      !project.stopAt ||
+      typeof project.stopAt !== "object" ||
+      Array.isArray(project.stopAt)
+    )
+      throw new Error(`${path}: invalid stopAt`);
+    for (const [provider, thresholds] of Object.entries(project.stopAt)) {
+      if (
+        !providers.includes(provider as Provider) ||
+        !thresholds ||
+        typeof thresholds !== "object" ||
+        Array.isArray(thresholds)
+      )
+        throw new Error(`${path}: invalid stopAt provider ${provider}`);
+      for (const [name, value] of Object.entries(thresholds)) {
+        if (
+          !["fiveHour", "weekly"].includes(name) ||
+          typeof value !== "number" ||
+          !Number.isFinite(value) ||
+          value < 0 ||
+          value > 100
+        )
+          throw new Error(
+            `${path}: invalid stopAt threshold ${provider}.${name}`,
+          );
+      }
+    }
+  }
+  if ("reservePercent" in project || "codexLimitId" in project)
+    throw new Error(`${path}: obsolete quota setting; see README`);
   // Offline projects have no repository; the placeholder only keys .sandcastle/state.json.
   if (offline(config) && config.repository === undefined)
     config.repository = "local";

@@ -4,18 +4,24 @@ import { join } from "node:path";
 import { providers, type Defaults, type Provider } from "./config.ts";
 import { adapter, codexRpc, command } from "./process.ts";
 
-export interface Usage {
+export interface Window {
   remainingPercent: number;
-  resetsAt: number;
+  resetsAt: number | null;
+}
+export interface Reading {
   observedAt: number;
+  fiveHour: Window | null;
+  weekly: Window | null;
+  weeklyByModel: Record<string, Window>;
 }
 interface CodexWindow {
   usedPercent: number;
-  resetsAt: number;
+  resetsAt: number | null;
   windowDurationMins?: number;
 }
 interface CodexBucket {
   limitId?: string;
+  normalModelSlug?: string | null;
   primary?: CodexWindow | null;
   secondary?: CodexWindow | null;
 }
@@ -23,79 +29,148 @@ export interface CodexRateLimits {
   rateLimits?: CodexBucket;
   rateLimitsByLimitId?: Record<string, CodexBucket>;
 }
-interface ClaudeWindow {
-  utilization: number;
-  resets_at: string;
+interface ClaudeLimit {
+  kind: string;
+  percent?: number | null;
+  utilization?: number | null;
+  resets_at?: string | null;
+  scope?: { model?: { display_name?: string }; surface?: unknown } | null;
 }
-export type ClaudeUsage = Record<string, ClaudeWindow | null | undefined>;
+export interface ClaudeUsage {
+  limits?: ClaudeLimit[] | null;
+}
 export type ReadUsage = (
   provider: Provider,
   config: Defaults,
-) => Promise<Usage>;
+) => Promise<Reading>;
 
-export function validateUsage(value: Usage, now = Date.now()): Usage {
-  const { remainingPercent, resetsAt, observedAt } = value;
+export function validateUsage(value: Reading, now = Date.now()): Reading {
   if (
-    !Number.isFinite(remainingPercent) ||
-    remainingPercent < 0 ||
-    remainingPercent > 100 ||
-    !Number.isFinite(resetsAt) ||
-    resetsAt <= now / 1000 ||
-    !Number.isFinite(observedAt) ||
-    observedAt > now + 5_000 ||
-    now - observedAt > 60_000
-  ) {
-    throw new Error("Missing, expired, stale, or invalid five-hour usage data");
-  }
-  return { remainingPercent, resetsAt, observedAt };
+    !value ||
+    typeof value !== "object" ||
+    !Number.isFinite(value.observedAt) ||
+    value.observedAt > now + 5_000 ||
+    now - value.observedAt > 60_000 ||
+    !("fiveHour" in value) ||
+    !("weekly" in value) ||
+    !value.weeklyByModel ||
+    typeof value.weeklyByModel !== "object" ||
+    Array.isArray(value.weeklyByModel)
+  )
+    throw new Error(
+      "Invalid quota reading; see README for the override JSON contract",
+    );
+  const window = (entry: Window | null): Window | null => {
+    if (entry === null) return null;
+    if (
+      !entry ||
+      !Number.isFinite(entry.remainingPercent) ||
+      entry.remainingPercent < 0 ||
+      entry.remainingPercent > 100 ||
+      (entry.resetsAt !== null && !Number.isFinite(entry.resetsAt))
+    )
+      throw new Error(
+        "Invalid quota window; see README for the override JSON contract",
+      );
+    return entry.resetsAt !== null && entry.resetsAt <= now / 1000
+      ? { ...entry, remainingPercent: 100 }
+      : entry;
+  };
+  return {
+    observedAt: value.observedAt,
+    fiveHour: window(value.fiveHour),
+    weekly: window(value.weekly),
+    weeklyByModel: Object.fromEntries(
+      Object.entries(value.weeklyByModel).map(([key, entry]) => {
+        const checked = window(entry);
+        if (!checked) throw new Error("Invalid per-model quota window");
+        return [key, checked];
+      }),
+    ),
+  };
 }
-export function codexUsage(
-  result: CodexRateLimits,
-  limitId: string,
-  now = Date.now(),
-): Usage {
+export function modelMatches(
+  provider: Provider,
+  label: string,
+  model: string,
+): boolean {
+  return provider === "codex"
+    ? label.toLowerCase() === model.toLowerCase()
+    : !!label.trim() &&
+        model
+          .toLowerCase()
+          .includes(label.trim().split(/\s+/)[0].toLowerCase());
+}
+export function weeklyLeft(
+  reading: Reading,
+  model: string,
+  provider: Provider,
+): number {
+  return Math.min(
+    reading.weekly?.remainingPercent ?? 100,
+    ...Object.entries(reading.weeklyByModel)
+      .filter(([label]) => modelMatches(provider, label, model))
+      .map(([, window]) => window.remainingPercent),
+  );
+}
+export function codexUsage(result: CodexRateLimits, now = Date.now()): Reading {
   const bucket =
-    result.rateLimitsByLimitId?.[limitId] ??
-    (result.rateLimits?.limitId === limitId ? result.rateLimits : undefined);
-  if (!bucket)
-    throw new Error(`Codex quota bucket '${limitId}' was not returned`);
-  const windows = [bucket.primary, bucket.secondary].filter(
-    (window): window is CodexWindow => !!window,
-  );
-  const fiveHour = windows.find((window) => window.windowDurationMins === 300);
-  if (!fiveHour)
-    throw new Error("Codex did not return a five-hour quota window");
-  if (!Number.isFinite(fiveHour.usedPercent))
-    throw new Error("Invalid Codex usage percentage");
-  const exhausted = windows.some(
-    (window) => window.usedPercent >= 100 && window.resetsAt > now / 1000,
-  );
+    result.rateLimitsByLimitId?.codex ??
+    (result.rateLimits?.limitId === "codex" ? result.rateLimits : undefined);
+  if (!bucket) throw new Error("Codex quota bucket 'codex' was not returned");
+  const find = (b: CodexBucket, duration: number): Window | null => {
+    const entry = [b.primary, b.secondary].find(
+      (w) =>
+        w &&
+        typeof w.windowDurationMins === "number" &&
+        Math.abs(w.windowDurationMins - duration) <= duration * 0.05,
+    );
+    if (entry && !Number.isFinite(entry.usedPercent))
+      throw new Error("Invalid Codex usage percentage");
+    return entry
+      ? { remainingPercent: 100 - entry.usedPercent, resetsAt: entry.resetsAt }
+      : null;
+  };
+  const weeklyByModel: Record<string, Window> = {};
+  for (const [id, b] of Object.entries(result.rateLimitsByLimitId ?? {})) {
+    const weekly = find(b, 10080);
+    if (id !== "codex" && b.normalModelSlug && weekly)
+      weeklyByModel[b.normalModelSlug] = weekly;
+  }
   return validateUsage(
     {
-      remainingPercent: exhausted ? 0 : 100 - fiveHour.usedPercent,
-      resetsAt: fiveHour.resetsAt,
       observedAt: now,
+      fiveHour: find(bucket, 300),
+      weekly: find(bucket, 10080),
+      weeklyByModel,
     },
     now,
   );
 }
-export function claudeUsage(result: ClaudeUsage, now = Date.now()): Usage {
-  const window = result.five_hour;
-  if (!window || !Number.isFinite(window.utilization))
-    throw new Error("Claude did not return five-hour usage");
-  const exhausted = Object.entries(result).some(
-    ([key, value]) =>
-      key.startsWith("seven_day") &&
-      value &&
-      value.utilization >= 100 &&
-      Date.parse(value.resets_at) > now,
-  );
+export function claudeUsage(result: ClaudeUsage, now = Date.now()): Reading {
+  if (!Array.isArray(result.limits))
+    throw new Error("Claude did not return limits");
+  let fiveHour: Window | null = null,
+    weekly: Window | null = null;
+  const weeklyByModel: Record<string, Window> = {};
+  for (const row of result.limits) {
+    if (row.scope?.surface) continue;
+    const percent = row.percent ?? row.utilization;
+    if (percent == null) continue;
+    if (!Number.isFinite(percent))
+      throw new Error("Invalid Claude usage percentage");
+    const window = {
+      remainingPercent: 100 - percent,
+      resetsAt: row.resets_at == null ? null : Date.parse(row.resets_at) / 1000,
+    };
+    if (row.kind === "session") fiveHour = window;
+    else if (row.kind === "weekly_all") weekly = window;
+    else if (row.kind === "weekly_scoped" && row.scope?.model?.display_name)
+      weeklyByModel[row.scope.model.display_name] = window;
+  }
+  if (!weekly) throw new Error("Claude did not return weekly usage");
   return validateUsage(
-    {
-      remainingPercent: exhausted ? 0 : 100 - window.utilization,
-      resetsAt: Date.parse(window.resets_at) / 1000,
-      observedAt: now,
-    },
+    { observedAt: now, fiveHour, weekly, weeklyByModel },
     now,
   );
 }
@@ -148,7 +223,7 @@ export async function codexAuth(): Promise<string> {
 export async function readUsage(
   provider: Provider,
   config: Defaults,
-): Promise<Usage> {
+): Promise<Reading> {
   const override = process.env[`${provider.toUpperCase()}_USAGE_COMMAND`];
   if (override)
     return validateUsage(
@@ -161,7 +236,6 @@ export async function readUsage(
         {},
         config.quotaTimeoutMs,
       ),
-      config.codexLimitId,
     );
   const token = await claudeUsageToken();
   // Undocumented Claude /usage endpoint: stop this provider if it changes.
@@ -183,7 +257,7 @@ export class Quotas {
   read: ReadUsage;
   disabled = new Map<Provider, string>();
   active = new Map<Provider, Set<AbortController>>();
-  values = new Map<Provider, Usage>();
+  values = new Map<Provider, Reading>();
   refreshing: Promise<void[]> | null = null;
   constructor(config: Defaults, read: ReadUsage = readUsage) {
     this.config = config;
@@ -207,11 +281,19 @@ export class Quotas {
         try {
           const usage = validateUsage(await this.read(provider, this.config));
           this.values.set(provider, usage);
-          if (usage.remainingPercent <= this.config.reservePercent)
-            this.disable(
-              provider,
-              `five-hour remaining ${usage.remainingPercent}% (reserve ${this.config.reservePercent}%)`,
-            );
+          for (const [name, window] of [
+            ["fiveHour", usage.fiveHour],
+            ["weekly", usage.weekly],
+          ] as const) {
+            const threshold = this.config.stopAt[provider][name];
+            if (window && window.remainingPercent <= threshold) {
+              this.disable(
+                provider,
+                `${name} remaining ${window.remainingPercent}% (stop at ${threshold}%)`,
+              );
+              break;
+            }
+          }
         } catch {
           this.disable(
             provider,
