@@ -40,38 +40,71 @@ export interface Config extends Defaults {
 }
 
 /** Local issues kept on local branches: no GitHub repository or git remote is used. */
-export function offline(config: Pick<Defaults, "issues" | "openPr">): boolean { return config.issues === "local" && !config.openPr; }
+export function offline(config: Pick<Defaults, "issues" | "openPr">): boolean {
+  return config.issues === "local" && !config.openPr;
+}
 
-export function configPath(root: string): string { return join(root, ".sandcastle/config.json"); }
+export function configPath(root: string): string {
+  return join(root, ".sandcastle/config.json");
+}
 
 // Project settings in <root>/.sandcastle/config.json override the defaults above.
-export function loadConfig(root: string, options: { checkSkillNames?: boolean } = {}): Config {
+export function loadConfig(
+  root: string,
+  options: { checkSkillNames?: boolean } = {},
+): Config {
   const path = configPath(root);
-  if (!existsSync(path)) throw new Error("No .sandcastle/config.json in this project; run toddler init");
+  if (!existsSync(path))
+    throw new Error(
+      "No .sandcastle/config.json in this project; run toddler init",
+    );
   const project = JSON.parse(readFileSync(path, "utf8"));
-  const config: Config = { ...defaults, ...project, models: { ...defaults.models, ...project.models }, skills: { ...defaults.skills, ...project.skills } };
+  const config: Config = {
+    ...defaults,
+    ...project,
+    models: { ...defaults.models, ...project.models },
+    skills: { ...defaults.skills, ...project.skills },
+  };
   // Offline projects have no repository; the placeholder only keys .sandcastle/state.json.
-  if (offline(config) && config.repository === undefined) config.repository = "local";
-  else if (typeof config.repository !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(config.repository)) {
-    throw new Error(`${path}: "repository" must be "owner/name" (optional only with "issues": "local" and "openPr": false)`);
+  if (offline(config) && config.repository === undefined)
+    config.repository = "local";
+  else if (
+    typeof config.repository !== "string" ||
+    !/^[\w.-]+\/[\w.-]+$/.test(config.repository)
+  ) {
+    throw new Error(
+      `${path}: "repository" must be "owner/name" (optional only with "issues": "local" and "openPr": false)`,
+    );
   }
   config.verify ??= "";
   if (typeof config.verify !== "string") {
-    throw new Error(`${path}: "verify" must be a shell command that checks the project (e.g. "npm test")`);
+    throw new Error(
+      `${path}: "verify" must be a shell command that checks the project (e.g. "npm test")`,
+    );
   }
   config.install ??= "";
   if (typeof config.install !== "string") {
-    throw new Error(`${path}: "install" must be a shell command that installs dependencies (e.g. "npm ci")`);
+    throw new Error(
+      `${path}: "install" must be a shell command that installs dependencies (e.g. "npm ci")`,
+    );
   }
-  if (!["github", "local"].includes(config.issues)) throw new Error(`${path}: "issues" must be "github" or "local"`);
-  if (typeof config.openPr !== "boolean") throw new Error(`${path}: "openPr" must be true or false`);
+  if (!["github", "local"].includes(config.issues))
+    throw new Error(`${path}: "issues" must be "github" or "local"`);
+  if (typeof config.openPr !== "boolean")
+    throw new Error(`${path}: "openPr" must be true or false`);
   const skills = options.checkSkillNames === false ? undefined : indexSkills();
   for (const [role, names] of Object.entries(config.skills)) {
-    if (!Array.isArray(names) || names.some(name => typeof name !== "string")) {
+    if (
+      !Array.isArray(names) ||
+      names.some((name) => typeof name !== "string")
+    ) {
       throw new Error(`${path}: skills: ${role} set must be an array of names`);
     }
     for (const name of names) {
-      if (skills && !skills.has(name)) throw new Error(`skills: "${name}" in ${role} set is not in vendor/skills; add it to vendor/skills.json and re-run scripts/vendor-skills.sh`);
+      if (skills && !skills.has(name))
+        throw new Error(
+          `skills: "${name}" in ${role} set is not in vendor/skills; add it to vendor/skills.json and re-run scripts/vendor-skills.sh`,
+        );
     }
   }
   return config;

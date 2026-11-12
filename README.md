@@ -36,15 +36,15 @@ toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
 
 `.sandcastle/config.json` (committed in the project):
 
-| Key | Required | Meaning |
-| --- | --- | --- |
-| `repository` | yes, unless offline | GitHub `owner/name` whose issues are worked (`init` fills it in). |
-| `verify` | no | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. Empty or missing: no check, and only the review gates the work. |
-| `install` | no | Shell command run in each new sandbox worktree before the agent starts, e.g. `npm ci`; must exit 0. Every stage starts from a fresh worktree with only committed files, so dependencies (including ones an earlier stage added to the lockfile) must be installed here. Empty or missing: nothing is installed. |
-| `issues` | no | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/specs/<spec>/issues/`. |
-| `openPr` | no | `true` (default): push the reviewed branch and open a PR. `false`: stop with the approved commit on a local branch; nothing is pushed. |
-| `skills` | no | Role-to-list mapping of vendored skill names. A listed role replaces its default list; omitted roles keep their defaults and `[]` disables skills for that role. The same sets apply to both providers. |
-| anything in `defaults` in `src/config.ts` | no | Overrides, e.g. `reservePercent`, `issueLabel`, `models`. |
+| Key                                       | Required            | Meaning                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repository`                              | yes, unless offline | GitHub `owner/name` whose issues are worked (`init` fills it in).                                                                                                                                                                                                                                               |
+| `verify`                                  | no                  | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. Empty or missing: no check, and only the review gates the work.                                                                                                         |
+| `install`                                 | no                  | Shell command run in each new sandbox worktree before the agent starts, e.g. `npm ci`; must exit 0. Every stage starts from a fresh worktree with only committed files, so dependencies (including ones an earlier stage added to the lockfile) must be installed here. Empty or missing: nothing is installed. |
+| `issues`                                  | no                  | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/specs/<spec>/issues/`.                                                                                                                                                                                                   |
+| `openPr`                                  | no                  | `true` (default): push the reviewed branch and open a PR. `false`: stop with the approved commit on a local branch; nothing is pushed.                                                                                                                                                                          |
+| `skills`                                  | no                  | Role-to-list mapping of vendored skill names. A listed role replaces its default list; omitted roles keep their defaults and `[]` disables skills for that role. The same sets apply to both providers.                                                                                                         |
+| anything in `defaults` in `src/config.ts` | no                  | Overrides, e.g. `reservePercent`, `issueLabel`, `models`.                                                                                                                                                                                                                                                       |
 
 Example:
 
@@ -77,6 +77,7 @@ labels: [parallel-safe]
 blocked_by: [2]
 status: open
 ---
+
 What is wrong and what done looks like.
 ```
 
@@ -133,9 +134,9 @@ and worktrees are ignored by Git.
 3. Run `toddler plan` to inspect the next assignments without starting agents.
 4. Run `toddler` to implement, review, and open PRs automatically.
 
-| Provider | Implementation | Review |
-| --- | --- | --- |
-| Codex | `gpt-6.1-terra` | `gpt-6.1-sol` |
+| Provider    | Implementation      | Review            |
+| ----------- | ------------------- | ----------------- |
+| Codex       | `gpt-6.1-terra`     | `gpt-6.1-sol`     |
 | Claude Code | `claude-sonnet-5-5` | `claude-opus-5-5` |
 
 These are four logical roles, invoked as native CLI sessions. The coordinator runs
@@ -193,7 +194,7 @@ To use another live usage reader, set `CLAUDE_USAGE_COMMAND` or
 must fetch current subscription usage and print only JSON:
 
 ```json
-{"remainingPercent":42,"resetsAt":1893456000,"observedAt":1893452400000}
+{ "remainingPercent": 42, "resetsAt": 1893456000, "observedAt": 1893452400000 }
 ```
 
 `resetsAt` is the five-hour window reset in Unix **seconds**; `observedAt` is the
@@ -201,7 +202,7 @@ actual measurement time in Unix **milliseconds**, at most 60 seconds old. The nu
 above illustrate the shape, not usable quota data. Include weekly exhaustion as
 zero remaining. Never use a static percentage to bypass the reserve. Alternatively,
 `CLAUDE_USAGE_TOKEN_COMMAND` can return a profile-scoped OAuth token for the default
-  Claude usage reader; model calls continue to use the native Claude login.
+Claude usage reader; model calls continue to use the native Claude login.
 
 ## Resume and inspect
 
