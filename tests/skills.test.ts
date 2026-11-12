@@ -106,3 +106,16 @@ test("skill overrides replace individual role defaults and reject unknown names"
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("skill load instructions name the selected file for each provider", async () => {
+  const { skillLoadLine } = await import("../src/skills.ts");
+  const index = new Map([["canary", "/fixture/canary"]]);
+  assert.equal(
+    skillLoadLine("codex", ["canary"], index),
+    "\nLoad these skills: [$canary](/fixture/canary/SKILL.md)\n",
+  );
+  assert.equal(
+    skillLoadLine("claude", ["canary"], index),
+    "\nBefore doing anything else, read and follow these skill files: /fixture/canary/SKILL.md\n",
+  );
+});

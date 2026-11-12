@@ -23,7 +23,7 @@ import {
 import { command, type Command } from "./process.ts";
 import { claudeToken, codexAuth, type Quotas } from "./quota.ts";
 import { privateHomeAgent } from "./agents.ts";
-import { skillLinks, indexSkills } from "./skills.ts";
+import { skillLinks, skillLoadLine } from "./skills.ts";
 
 export interface Job {
   number: number;
@@ -393,17 +393,7 @@ export class Runner {
   }
   skillInstructions(provider: Provider, role: Role, job: Job): string {
     const names = this.config.skills[role];
-    const skills = indexSkills();
-    const paths = names.map((name) => {
-      const folder = skills.get(name);
-      if (!folder) throw new Error(`Skill "${name}" is not in vendor/skills`);
-      return join(folder, "SKILL.md");
-    });
-    let line = paths.length
-      ? provider === "codex"
-        ? `\nLoad these skills: ${names.map((name, i) => `[$${name}](${paths[i]})`).join(" ")}\n`
-        : `\nBefore doing anything else, read and follow these skill files: ${paths.join(", ")}\n`
-      : "";
+    let line = skillLoadLine(provider, names);
     if (role === "review" && names.includes("code-review")) {
       line += `For code-review: the fixed point is \`${job.baseSha}\`; the spec is the issue text in this prompt. Do not look up an issue tracker.\n`;
     }

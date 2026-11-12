@@ -6,6 +6,23 @@ export const bundledSkillsPath = fileURLToPath(
   new URL("../vendor/skills", import.meta.url),
 );
 
+export function skillLoadLine(
+  provider: "codex" | "claude",
+  names: string[],
+  index = indexSkills(),
+): string {
+  const paths = names.map((name) => {
+    const folder = index.get(name);
+    if (!folder) throw new Error(`Skill "${name}" is not in vendor/skills`);
+    return join(folder, "SKILL.md");
+  });
+  return paths.length
+    ? provider === "codex"
+      ? `\nLoad these skills: ${names.map((name, i) => `[$${name}](${paths[i]})`).join(" ")}\n`
+      : `\nBefore doing anything else, read and follow these skill files: ${paths.join(", ")}\n`
+    : "";
+}
+
 /** Shell commands to expose only the selected bundled skills in the private home. */
 export function skillLinks(names: string[], index = indexSkills()): string {
   const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
