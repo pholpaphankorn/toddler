@@ -2,7 +2,7 @@
 title: Link each role's skill set into the sandbox
 labels: []
 blocked_by: [13]
-status: open
+status: closed
 ---
 Make a stage's skill set available inside its Seatbelt sandbox without reading anything from the host's own skill folders.
 
