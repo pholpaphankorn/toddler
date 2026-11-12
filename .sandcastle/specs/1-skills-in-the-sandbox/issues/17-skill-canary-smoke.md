@@ -2,7 +2,7 @@
 title: toddler smoke proves each provider loads skills
 labels: []
 blocked_by: [14, 15]
-status: open
+status: closed
 ---
 Prove for real that Codex and Claude load skills from inside Seatbelt using toddler's exact mechanism.
 
