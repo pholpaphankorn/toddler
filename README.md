@@ -167,12 +167,14 @@ Each subscription is a shared budget: implementation, review, subagents, and oth
 usage on that account consume it. Four roles do not provide four separate allowances.
 
 The runner checks remaining quota before each stage and every 15 seconds during
-model work. By default, at **5% five-hour** or **10% weekly** remaining, all active sessions for that provider are cancelled.
-Its unfinished work remains on disk; the other provider can continue. A stopped
-provider stays stopped for the rest of that invocation, even if its window resets.
-Per-model weekly buckets are displayed by doctor but do not stop a provider yet.
+model work. By default, at **5% five-hour** or **10% all-models weekly** remaining,
+all active sessions for that provider are cancelled. A per-model weekly bucket at
+or below **10%** stops only that provider and model, cancelling only sessions on
+that model. Unfinished work remains on disk, and other available models can continue.
+Stops last for the rest of the invocation, even if a window resets. `toddler plan`
+lists per-model stops under `unavailableModels`.
 
-The runner exits when both providers are unavailable or no actionable issues remain.
+The runner exits when no provider has any usable model or no actionable issues remain.
 Blocked issues, issues with workflow PRs, and tasks already attempted unsuccessfully
 in the current invocation are not repeatedly scheduled. Authentication errors,
 unreadable quota, invalid review output, and failed verification also pause work;
