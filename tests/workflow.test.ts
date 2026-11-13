@@ -242,6 +242,65 @@ test("old override JSON is rejected with README guidance", async () => {
     else process.env.CODEX_USAGE_COMMAND = previous;
   }
 });
+test("a scoped weekly stop persists only for the matching model", async () => {
+  let remaining = 10;
+  const scopedConfig = {
+    ...config,
+    models: {
+      ...config.models,
+      claude: { implementation: "claude-sonnet", review: "claude-fable-5" },
+    },
+  };
+  const quotas = new Quotas(scopedConfig, async () => ({
+    ...usage(50),
+    weeklyByModel: { Fable: { remainingPercent: remaining, resetsAt: null } },
+  }));
+  await quotas.refresh();
+  assert.equal(quotas.available("claude", "claude-fable-5"), false);
+  assert.equal(quotas.available("claude", "claude-sonnet"), true);
+  remaining = 100;
+  await quotas.refresh();
+  assert.equal(quotas.available("claude", "claude-fable-5"), false);
+});
+test("a model stop aborts only sessions on that model", async () => {
+  let remaining = 50;
+  const scopedConfig = {
+    ...config,
+    models: {
+      ...config.models,
+      claude: { implementation: "claude-sonnet", review: "claude-fable" },
+    },
+  };
+  const quotas = new Quotas(scopedConfig, async () => ({
+    ...usage(50),
+    weeklyByModel: { Fable: { remainingPercent: remaining, resetsAt: null } },
+  }));
+  let reviewSignal!: AbortSignal;
+  let implementationSignal!: AbortSignal;
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const review = quotas.run("claude", "claude-fable", async (signal) => {
+    reviewSignal = signal;
+    await pending;
+  });
+  const implementation = quotas.run(
+    "claude",
+    "claude-sonnet",
+    async (signal) => {
+      implementationSignal = signal;
+      await pending;
+    },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  remaining = 10;
+  await quotas.refresh();
+  assert.equal(reviewSignal.aborted, true);
+  assert.equal(implementationSignal.aborted, false);
+  finish();
+  await Promise.all([review, implementation]);
+});
 test("weekly stop affects only its provider", async () => {
   const quotas = new Quotas(config, async (provider) => ({
     ...usage(50),
@@ -280,8 +339,8 @@ test("live quota drop aborts every active role of that provider, leaving the oth
       if (entered === 2) codexRemaining = 4;
     });
   const results = await Promise.allSettled([
-    quotas.run("codex", action),
-    quotas.run("codex", action),
+    quotas.run("codex", config.models.codex.implementation, action),
+    quotas.run("codex", config.models.codex.review, action),
   ]);
   assert.equal(
     results.every((result) => result.status === "rejected"),
@@ -581,6 +640,21 @@ test("quota interruption transfers unfinished implementation and uses remaining 
   assert.equal(state.jobs[1].status, "pr");
   assert.equal(state.jobs[1].branch, "toddler/issue-1");
 });
+test("review selection uses the review model while implementation remains available", async () => {
+  const { runner, events, quotas } = fixture();
+  quotas.available = ((name: Provider, model: string) =>
+    !(
+      name === "claude" && model === config.models.claude.review
+    )) as typeof quotas.available;
+  await runner.work(issue(1), "codex", "main");
+  assert.deepEqual(
+    events.filter((event) => event[0] === "stage"),
+    [
+      ["stage", "codex", "implementation"],
+      ["stage", "codex", "review"],
+    ],
+  );
+});
 test("malformed review and changed reviewed SHA cannot push or open a PR", async () => {
   for (const changedSha of [false, true]) {
     const { runner, events, state } = fixture();
@@ -604,6 +678,28 @@ test("no available issue or quota terminates without starting agents", async () 
   runner.candidates = async () => [];
   await runner.run("main");
   quotas.available = () => false;
+  runner.candidates = async () => [issue(1)];
+  await runner.run("main");
+  assert.equal(events.length, 0);
+});
+test("run ends when every configured model is stopped by scoped weekly readings", async () => {
+  const { runner, events } = fixture();
+  const scopedConfig = {
+    ...config,
+    models: {
+      codex: { implementation: "codex-a", review: "codex-b" },
+      claude: { implementation: "claude-fable", review: "claude-fable" },
+    },
+  };
+  runner.config = scopedConfig;
+  runner.quotas = new Quotas(scopedConfig, async (provider) => ({
+    ...usage(50),
+    weeklyByModel: Object.fromEntries(
+      (provider === "codex" ? ["codex-a", "codex-b"] : ["Fable"]).map(
+        (model) => [model, { remainingPercent: 10, resetsAt: null }],
+      ),
+    ),
+  }));
   runner.candidates = async () => [issue(1)];
   await runner.run("main");
   assert.equal(events.length, 0);
@@ -643,6 +739,7 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
       quotas: fake({
         run: async (
           _provider: Provider,
+          _model: string,
           action: (signal: AbortSignal) => unknown,
         ) => action(new AbortController().signal),
       }),
@@ -757,6 +854,7 @@ test("reviewer commit mutation is rejected and sandbox is closed", async () => {
       quotas: {
         run: async (
           _provider: Provider,
+          _model: string,
           action: (signal: AbortSignal) => unknown,
         ) => action(new AbortController().signal),
       },

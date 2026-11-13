@@ -262,22 +262,36 @@ export class Quotas {
   config: Defaults;
   read: ReadUsage;
   disabled = new Map<Provider, string>();
-  active = new Map<Provider, Set<AbortController>>();
+  disabledModels = new Map<Provider, Map<string, string>>();
+  active = new Map<Provider, Map<AbortController, string>>();
   values = new Map<Provider, Reading>();
   refreshing: Promise<void[]> | null = null;
   constructor(config: Defaults, read: ReadUsage = readUsage) {
     this.config = config;
     this.read = read;
   }
-  available(provider: Provider): boolean {
-    return this.values.has(provider) && !this.disabled.has(provider);
+  available(provider: Provider, model?: string): boolean {
+    return (
+      this.values.has(provider) &&
+      !this.disabled.has(provider) &&
+      (model === undefined || !this.disabledModels.get(provider)?.has(model))
+    );
   }
   disable(provider: Provider, reason: string): void {
     if (this.disabled.has(provider)) return;
     this.disabled.set(provider, reason);
     console.log(`[quota] ${provider} stopped: ${reason}`);
-    for (const controller of this.active.get(provider) ?? [])
+    for (const controller of this.active.get(provider)?.keys() ?? [])
       controller.abort(new Error(reason));
+  }
+  disableModel(provider: Provider, model: string, reason: string): void {
+    const models = this.disabledModels.get(provider) ?? new Map();
+    if (models.has(model)) return;
+    models.set(model, reason);
+    this.disabledModels.set(provider, models);
+    console.log(`[quota] ${provider} (${model}) stopped: ${reason}`);
+    for (const [controller, activeModel] of this.active.get(provider) ?? [])
+      if (activeModel === model) controller.abort(new Error(reason));
   }
   async refresh(): Promise<void[]> {
     if (this.refreshing) return this.refreshing;
@@ -300,6 +314,20 @@ export class Quotas {
               break;
             }
           }
+          if (!this.disabled.has(provider)) {
+            const threshold = this.config.stopAt[provider].weekly;
+            for (const model of new Set(
+              Object.values(this.config.models[provider]),
+            )) {
+              const remaining = weeklyLeft(usage, model, provider);
+              if (remaining <= threshold)
+                this.disableModel(
+                  provider,
+                  model,
+                  `weekly remaining ${remaining}% (stop at ${threshold}%)`,
+                );
+            }
+          }
         } catch {
           this.disable(
             provider,
@@ -314,15 +342,16 @@ export class Quotas {
   }
   async run<T>(
     provider: Provider,
+    model: string,
     action: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     await this.refresh();
-    if (!this.available(provider))
+    if (!this.available(provider, model))
       throw new Error(`${provider} is unavailable`);
     const controller = new AbortController();
-    const active = this.active.get(provider) ?? new Set();
+    const active = this.active.get(provider) ?? new Map();
     this.active.set(provider, active);
-    active.add(controller);
+    active.set(controller, model);
     const timer = setInterval(() => {
       void this.refresh();
     }, this.config.pollIntervalMs);

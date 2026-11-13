@@ -260,126 +260,132 @@ export class Runner {
     prompt: string,
   ): Promise<StageResult> {
     const sandcastle = this.sandcastle!;
-    return this.quotas.run(provider, async (signal) => {
-      signal.throwIfAborted();
-      const sandbox = await sandcastle.createSandbox({
-        cwd: this.root,
-        branch: job.branch,
-        baseBranch: job.baseSha,
-        sandbox: this.sandboxProvider!,
-      });
-      try {
+    return this.quotas.run(
+      provider,
+      this.config.models[provider][role],
+      async (signal) => {
         signal.throwIfAborted();
-        // Each stage gets a fresh worktree without ignored files such as node_modules, so install from the committed lockfile.
-        if (
-          this.config.install.trim() &&
-          (await sandbox.exec(this.config.install)).exitCode
-        ) {
-          throw new Error(`Sandbox install failed: ${this.config.install}`);
-        }
-        let agent: AgentProvider;
-        const model = this.config.models[provider][role];
-        const auth =
-          provider === "codex" ? await this.authentication.codex() : undefined;
-        const setupCommand =
-          `umask 077; ${skillLinks(this.config.skills[role])}` +
-          (provider === "codex"
-            ? ' && mkdir -p "$HOME/.codex" && cat > "$HOME/.codex/auth.json"'
-            : "");
-        const setup = await sandbox.exec(
-          setupCommand,
-          auth === undefined ? {} : { stdin: auth },
-        );
-        if (setup.exitCode)
-          throw new Error("Could not initialize isolated skills and login");
-        if (provider === "codex") {
-          agent = sandcastle.codex(model, { captureSessions: false });
-        } else {
-          agent = sandcastle.claudeCode(model, {
-            captureSessions: false,
-            env: {
-              CLAUDE_CODE_OAUTH_TOKEN: await this.authentication.claude(),
-              CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+        const sandbox = await sandcastle.createSandbox({
+          cwd: this.root,
+          branch: job.branch,
+          baseBranch: job.baseSha,
+          sandbox: this.sandboxProvider!,
+        });
+        try {
+          signal.throwIfAborted();
+          // Each stage gets a fresh worktree without ignored files such as node_modules, so install from the committed lockfile.
+          if (
+            this.config.install.trim() &&
+            (await sandbox.exec(this.config.install)).exitCode
+          ) {
+            throw new Error(`Sandbox install failed: ${this.config.install}`);
+          }
+          let agent: AgentProvider;
+          const model = this.config.models[provider][role];
+          const auth =
+            provider === "codex"
+              ? await this.authentication.codex()
+              : undefined;
+          const setupCommand =
+            `umask 077; ${skillLinks(this.config.skills[role])}` +
+            (provider === "codex"
+              ? ' && mkdir -p "$HOME/.codex" && cat > "$HOME/.codex/auth.json"'
+              : "");
+          const setup = await sandbox.exec(
+            setupCommand,
+            auth === undefined ? {} : { stdin: auth },
+          );
+          if (setup.exitCode)
+            throw new Error("Could not initialize isolated skills and login");
+          if (provider === "codex") {
+            agent = sandcastle.codex(model, { captureSessions: false });
+          } else {
+            agent = sandcastle.claudeCode(model, {
+              captureSessions: false,
+              env: {
+                CLAUDE_CODE_OAUTH_TOKEN: await this.authentication.claude(),
+                CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+              },
+            });
+          }
+          agent = privateHomeAgent(agent, provider);
+          console.log(`[issue #${job.number}] ${role}: ${provider} (${model})`);
+          if (
+            (await this.git(
+              ["branch", "--show-current"],
+              sandbox.worktreePath,
+            )) !== job.branch
+          )
+            throw new Error("Unexpected worktree branch");
+          const before = await this.git(
+            ["rev-parse", "HEAD"],
+            sandbox.worktreePath,
+          );
+          const result = await sandbox.run({
+            agent,
+            prompt,
+            maxIterations: 1,
+            name: `issue-${job.number}-${provider}-${role}`,
+            signal,
+            logging: {
+              type: "file",
+              path: join(
+                this.root,
+                ".sandcastle/logs",
+                `issue-${job.number}-${provider}-${role}-${Date.now()}.log`,
+              ),
             },
           });
+          signal.throwIfAborted();
+          const after = await this.git(
+            ["rev-parse", "HEAD"],
+            sandbox.worktreePath,
+          );
+          if (
+            (await this.git(
+              ["branch", "--show-current"],
+              sandbox.worktreePath,
+            )) !== job.branch
+          )
+            throw new Error("Agent changed the assigned branch");
+          const dirty = await this.git(
+            ["status", "--porcelain"],
+            sandbox.worktreePath,
+          );
+          if (dirty)
+            throw new Error(
+              `${role} left uncommitted files; worktree preserved for continuation`,
+            );
+          if (role === "review" && before !== after)
+            throw new Error("Reviewer modified commits; approval rejected");
+          await this.git(
+            ["merge-base", "--is-ancestor", job.baseSha, after],
+            sandbox.worktreePath,
+          );
+          if (after === job.baseSha)
+            throw new Error("No implementation commits were produced");
+          // The command comes from the host config, not the agent-editable worktree.
+          if (!this.config.verify.trim())
+            return { stdout: result.stdout, sha: after, verification: "" };
+          const verification = await sandbox.exec(this.config.verify);
+          if (verification.exitCode)
+            throw new Error(
+              `Host-required verification failed: ${this.config.verify}`,
+            );
+          return {
+            stdout: result.stdout,
+            sha: after,
+            verification: verification.stdout.trim(),
+          };
+        } finally {
+          const closed = await sandbox.close();
+          if (closed.preservedWorktreePath)
+            console.log(
+              `[issue #${job.number}] preserved ${closed.preservedWorktreePath}`,
+            );
         }
-        agent = privateHomeAgent(agent, provider);
-        console.log(`[issue #${job.number}] ${role}: ${provider} (${model})`);
-        if (
-          (await this.git(
-            ["branch", "--show-current"],
-            sandbox.worktreePath,
-          )) !== job.branch
-        )
-          throw new Error("Unexpected worktree branch");
-        const before = await this.git(
-          ["rev-parse", "HEAD"],
-          sandbox.worktreePath,
-        );
-        const result = await sandbox.run({
-          agent,
-          prompt,
-          maxIterations: 1,
-          name: `issue-${job.number}-${provider}-${role}`,
-          signal,
-          logging: {
-            type: "file",
-            path: join(
-              this.root,
-              ".sandcastle/logs",
-              `issue-${job.number}-${provider}-${role}-${Date.now()}.log`,
-            ),
-          },
-        });
-        signal.throwIfAborted();
-        const after = await this.git(
-          ["rev-parse", "HEAD"],
-          sandbox.worktreePath,
-        );
-        if (
-          (await this.git(
-            ["branch", "--show-current"],
-            sandbox.worktreePath,
-          )) !== job.branch
-        )
-          throw new Error("Agent changed the assigned branch");
-        const dirty = await this.git(
-          ["status", "--porcelain"],
-          sandbox.worktreePath,
-        );
-        if (dirty)
-          throw new Error(
-            `${role} left uncommitted files; worktree preserved for continuation`,
-          );
-        if (role === "review" && before !== after)
-          throw new Error("Reviewer modified commits; approval rejected");
-        await this.git(
-          ["merge-base", "--is-ancestor", job.baseSha, after],
-          sandbox.worktreePath,
-        );
-        if (after === job.baseSha)
-          throw new Error("No implementation commits were produced");
-        // The command comes from the host config, not the agent-editable worktree.
-        if (!this.config.verify.trim())
-          return { stdout: result.stdout, sha: after, verification: "" };
-        const verification = await sandbox.exec(this.config.verify);
-        if (verification.exitCode)
-          throw new Error(
-            `Host-required verification failed: ${this.config.verify}`,
-          );
-        return {
-          stdout: result.stdout,
-          sha: after,
-          verification: verification.stdout.trim(),
-        };
-      } finally {
-        const closed = await sandbox.close();
-        if (closed.preservedWorktreePath)
-          console.log(
-            `[issue #${job.number}] preserved ${closed.preservedWorktreePath}`,
-          );
-      }
-    });
+      },
+    );
   }
   // Workflow prompt from toddler, followed by optional stack-specific notes from the project.
   async prompt(name: "prompt.md" | "review.md"): Promise<string> {
@@ -453,9 +459,17 @@ export class Runner {
           return;
         }
         if (job.status === "implementation") {
-          const provider = this.quotas.available(job.implementer)
+          const provider = this.quotas.available(
+            job.implementer,
+            this.config.models[job.implementer].implementation,
+          )
             ? job.implementer
-            : providers.find((name) => this.quotas.available(name));
+            : providers.find((name) =>
+                this.quotas.available(
+                  name,
+                  this.config.models[name].implementation,
+                ),
+              );
           if (!provider) return;
           const prompt = await this.prompt("prompt.md");
           try {
@@ -478,13 +492,19 @@ export class Runner {
               verification: result.verification,
             });
           } catch (error) {
-            if (!this.quotas.available(provider)) continue; // Resume with the remaining provider.
+            if (
+              !this.quotas.available(
+                provider,
+                this.config.models[provider].implementation,
+              )
+            )
+              continue; // Resume with the remaining provider.
             throw error;
           }
         }
         if (job.status === "review") {
           const provider = reviewer(job.implementer, (name) =>
-            this.quotas.available(name),
+            this.quotas.available(name, this.config.models[name].review),
           );
           if (!provider) return;
           const prompt = await this.prompt("review.md");
@@ -499,7 +519,13 @@ export class Runner {
                 context,
             );
           } catch (error) {
-            if (!this.quotas.available(provider)) continue;
+            if (
+              !this.quotas.available(
+                provider,
+                this.config.models[provider].review,
+              )
+            )
+              continue;
             throw error;
           }
           const report = reviewReport(result.stdout);
@@ -601,7 +627,13 @@ export class Runner {
   async run(baseBranch: string): Promise<void> {
     while (!this.interrupted) {
       await this.quotas.refresh();
-      if (!providers.some((name) => this.quotas.available(name))) {
+      if (
+        !providers.some((name) =>
+          Object.values(this.config.models[name]).some((model) =>
+            this.quotas.available(name, model),
+          ),
+        )
+      ) {
         console.log(
           "Stopped: no provider has verified quota above its stop thresholds.",
         );
@@ -610,7 +642,8 @@ export class Runner {
       const issues = await this.candidates();
       const batch = assignments(
         issues,
-        (name) => this.quotas.available(name),
+        (name) =>
+          this.quotas.available(name, this.config.models[name].implementation),
         this.config,
       );
       if (!batch.length) {

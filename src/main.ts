@@ -203,9 +203,16 @@ async function main() {
         {
           quotas: Object.fromEntries(quotas.values),
           unavailable: Object.fromEntries(quotas.disabled),
+          unavailableModels: Object.fromEntries(
+            [...quotas.disabledModels].map(([provider, models]) => [
+              provider,
+              Object.fromEntries(models),
+            ]),
+          ),
           next: assignments(
             issues,
-            (name) => quotas.available(name),
+            (name) =>
+              quotas.available(name, config.models[name].implementation),
             config,
           ).map(({ issue, provider }) => ({
             issue: issue.number,

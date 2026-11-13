@@ -84,7 +84,7 @@ try {
                 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
               },
             });
-      await quotas.run(provider, async (signal) => {
+      await quotas.run(provider, model, async (signal) => {
         const result = await sandbox!.run({
           agent: privateHomeAgent(base, provider),
           maxIterations: 1,
