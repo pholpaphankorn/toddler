@@ -2,7 +2,7 @@
 title: providers and ranking config; quota and order rankers drive scheduling
 labels: []
 blocked_by: [26]
-status: open
+status: closed
 ---
 Replace "Codex always first" with a ranking chosen in config.
 
