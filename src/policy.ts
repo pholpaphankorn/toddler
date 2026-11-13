@@ -1,4 +1,53 @@
-import { providers, type Defaults, type Provider } from "./config.ts";
+import { type Defaults, type Provider, type Role } from "./config.ts";
+import { weeklyLeft, type Reading, type Quotas } from "./quota.ts";
+
+export type Ranker = (input: {
+  role: Role;
+  issue: Issue;
+  candidates: { provider: Provider; model: string; reading: Reading }[];
+}) => Provider[];
+
+export function makeRanker(
+  config: Defaults,
+  random: () => number = Math.random,
+): Ranker {
+  return ({ candidates }) => {
+    if (config.ranking === "order")
+      return config.providers.filter((provider) =>
+        candidates.some((c) => c.provider === provider),
+      );
+    const [a, b] = candidates;
+    const weekly =
+      Math.floor(weeklyLeft(b.reading, b.model, b.provider)) -
+      Math.floor(weeklyLeft(a.reading, a.model, a.provider));
+    const fiveHour =
+      Math.floor(b.reading.fiveHour?.remainingPercent ?? 100) -
+      Math.floor(a.reading.fiveHour?.remainingPercent ?? 100);
+    return weekly > 0 ||
+      (weekly === 0 && (fiveHour > 0 || (fiveHour === 0 && random() >= 0.5)))
+      ? [b.provider, a.provider]
+      : [a.provider, b.provider];
+  };
+}
+
+export function ranked(
+  issue: Issue,
+  role: Role,
+  config: Defaults,
+  quotas: Quotas,
+  ranker: Ranker = makeRanker(config),
+): Provider[] {
+  const candidates = config.providers.flatMap((provider) => {
+    const model = config.models[provider][role];
+    const reading = quotas.values.get(provider);
+    return reading && quotas.available(provider, model)
+      ? [{ provider, model, reading }]
+      : [];
+  });
+  return candidates.length < 2
+    ? candidates.map((c) => c.provider)
+    : ranker({ role, issue, candidates });
+}
 
 export interface Issue {
   number: number;
@@ -36,9 +85,13 @@ export function assignments(
   issues: Issue[],
   available: Available,
   config: Defaults,
+  quotas?: Quotas,
 ): Assignment[] {
   const candidates = issues.filter((issue) => ready(issue, config));
-  const usable = providers.filter((provider) => available(provider));
+  const usable =
+    quotas && candidates.length
+      ? ranked(candidates[0], "implementation", config, quotas)
+      : config.providers.filter((provider) => available(provider));
   if (!candidates.length || !usable.length) return [];
   const result = [{ issue: candidates[0], provider: usable[0] }];
   if (

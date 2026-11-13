@@ -29,6 +29,33 @@ import {
 } from "../src/config.ts";
 import { indexSkills } from "../src/skills.ts";
 
+test("quota ranking compares weekly, five-hour, and random ties", async () => {
+  const { makeRanker } = await import("../src/policy.ts");
+  const reading = (weekly: number, fiveHour: number | null): Reading => ({
+    observedAt: Date.now(),
+    weeklyByModel: {},
+    weekly: { remainingPercent: weekly, resetsAt: null },
+    fiveHour:
+      fiveHour === null ? null : { remainingPercent: fiveHour, resetsAt: null },
+  });
+  const candidates = [
+    { provider: "codex" as const, model: "codex", reading: reading(61.2, 90) },
+    { provider: "claude" as const, model: "claude", reading: reading(62, 10) },
+  ];
+  const input = {
+    role: "implementation" as const,
+    issue: { number: 1, title: "test", labels: [] },
+    candidates,
+  };
+  const rank = makeRanker(defaults, () => 0);
+  assert.deepEqual(rank(input), ["claude", "codex"]);
+  candidates[1].reading = reading(61.8, null);
+  assert.deepEqual(rank(input), ["claude", "codex"]);
+  candidates[0].reading = reading(61.2, 100);
+  assert.deepEqual(rank(input), ["codex", "claude"]);
+  assert.deepEqual(makeRanker(defaults, () => 0.9)(input), ["claude", "codex"]);
+});
+
 // Test doubles implement only what each test exercises.
 const fake = <T>(value: unknown) => value as T;
 const config: Config = {
@@ -106,6 +133,76 @@ test("opposite-provider review, same-provider fallback, no reviewer when exhaust
   assert.equal(
     reviewer("claude", () => false),
     undefined,
+  );
+});
+test("configured order assigns both parallel issues and single provider is the only one read", async () => {
+  const configured = {
+    ...config,
+    providers: ["claude", "codex"] as Provider[],
+    ranking: "order" as const,
+  };
+  const reads: Provider[] = [];
+  const quotas = new Quotas(configured, async (provider) => {
+    reads.push(provider);
+    return usage(provider === "codex" ? 90 : 40);
+  });
+  await quotas.refresh();
+  assert.deepEqual(
+    assignments(
+      [issue(1, ["parallel-safe"]), issue(2, ["parallel-safe"])],
+      () => true,
+      configured,
+      quotas,
+    ).map((a) => a.provider),
+    ["claude", "codex"],
+  );
+  const single = new Quotas(
+    { ...configured, providers: ["claude"] },
+    async (provider) => {
+      reads.push(provider);
+      return usage(50);
+    },
+  );
+  reads.length = 0;
+  await single.refresh();
+  assert.deepEqual(reads, ["claude"]);
+  assert.equal(single.available("codex"), false);
+});
+test("single provider reviews itself and resumed implementer remains sticky", async () => {
+  const { runner, events, state } = fixture({
+    providers: ["claude"],
+    ranking: "order",
+    openPr: false,
+  });
+  await runner.work(issue(1), "claude", "main");
+  assert.deepEqual(
+    events
+      .filter((event) => event[0] === "stage")
+      .map((event) => event.slice(1)),
+    [
+      ["claude", "implementation"],
+      ["claude", "review"],
+    ],
+  );
+  const resumed = fixture({
+    ranking: "order",
+    providers: ["codex", "claude"],
+    openPr: false,
+  });
+  resumed.state.jobs[1] = {
+    ...state.jobs[1],
+    status: "implementation",
+    implementer: "claude",
+  };
+  await resumed.runner.work(issue(1), "codex", "main");
+  assert.deepEqual(
+    resumed.events
+      .filter((event) => event[0] === "stage")
+      .map((event) => event.slice(1)),
+    [
+      ["claude", "implementation"],
+      ["codex", "review"],
+    ],
   );
 });
 test("Claude parses limits and ignores unrelated and surface rows", () => {
@@ -377,6 +474,7 @@ function fixture(
   const quotas = {
     available: (_name: Provider) => true,
     refresh: async () => {},
+    values: new Map(providers.map((provider) => [provider, usage(50)])),
   };
   const runner = new Runner({
     root,
@@ -959,6 +1057,14 @@ test("project config overrides defaults, must name a repository, and verify is o
     write({ repository: "owner/repo" });
     assert.equal(loadConfig(root).verify, "");
     assert.equal(loadConfig(root).install, "");
+    for (const value of [[], ["codex", "codex"], ["other"], "codex", null]) {
+      write({ repository: "owner/repo", providers: value });
+      assert.throws(() => loadConfig(root), /providers/);
+    }
+    for (const ranking of ["other", "", null]) {
+      write({ repository: "owner/repo", ranking });
+      assert.throws(() => loadConfig(root), /ranking/);
+    }
     write({ repository: "owner/repo", install: ["npm ci"] });
     assert.throws(() => loadConfig(root), /"install"/);
     write({ repository: "owner/repo", verify: 5 });

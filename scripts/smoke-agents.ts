@@ -1,6 +1,7 @@
 // Explicit opt-in: makes one tiny subscription model call per configured role.
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -15,23 +16,32 @@ import { codexAuth, claudeToken, Quotas } from "../src/quota.ts";
 import { skillLinks, skillLoadLine } from "../src/skills.ts";
 import { privateHomeAgent } from "../src/agents.ts";
 import {
-  defaults as config,
+  defaults,
+  loadConfig,
+  configPath,
   providers as allProviders,
   type Provider,
 } from "../src/config.ts";
 
+const config = existsSync(configPath(process.cwd()))
+  ? loadConfig(process.cwd())
+  : defaults;
 const providers = process.argv[2]
   ? [process.argv[2] as Provider]
-  : allProviders;
-if (providers.some((provider) => !allProviders.includes(provider)))
-  throw new Error("Expected codex or claude");
+  : config.providers;
+if (
+  providers.some(
+    (provider) =>
+      !allProviders.includes(provider) || !config.providers.includes(provider),
+  )
+)
+  throw new Error("Expected an enabled provider (codex or claude)");
 const directory = await mkdtemp(join(tmpdir(), "sandcastle-model-smoke-"));
 const root = join(directory, "repo");
 const skills = join(directory, "skills");
 const canary = join(skills, "canary");
 const index = new Map([["canary", canary]]);
 const code = randomBytes(16).toString("hex");
-// shortcut: smokes the default models, not a project's overrides; load the project config if overrides get used.
 const quotas = new Quotas(config);
 let sandbox: Sandbox | undefined;
 try {

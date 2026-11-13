@@ -7,6 +7,8 @@ export type Role = "implementation" | "review";
 export const providers: Provider[] = ["codex", "claude"];
 
 export const defaults = {
+  providers: [...providers],
+  ranking: "quota" as "quota" | "order",
   remote: "origin",
   /** "github": labeled GitHub issues. "local": .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files. */
   issues: "github" as "github" | "local",
@@ -73,6 +75,15 @@ export function loadConfig(
       ]),
     ) as Defaults["stopAt"],
   };
+  if (
+    !Array.isArray(config.providers) ||
+    !config.providers.length ||
+    config.providers.some((name) => !providers.includes(name)) ||
+    new Set(config.providers).size !== config.providers.length
+  )
+    throw new Error(`${path}: invalid providers`);
+  if (!["quota", "order"].includes(config.ranking))
+    throw new Error(`${path}: invalid ranking`);
   if (project.stopAt !== undefined) {
     if (
       !project.stopAt ||

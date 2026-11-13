@@ -4,13 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  configPath,
-  loadConfig,
-  offline,
-  providers,
-  type Config,
-} from "./config.ts";
+import { configPath, loadConfig, offline, type Config } from "./config.ts";
 import { command, codexRpc } from "./process.ts";
 import {
   readUsage,
@@ -118,7 +112,7 @@ async function doctor(config: Config, root: string) {
       );
     return `${repo.nameWithOwner}, base ${repo.defaultBranchRef.name}, ${repo.viewerPermission}`;
   });
-  for (const provider of providers) {
+  for (const provider of config.providers) {
     await check(`${provider} login`, async () => {
       if (provider === "codex") await codexAuth();
       else await claudeToken();
@@ -214,6 +208,7 @@ async function main() {
             (name) =>
               quotas.available(name, config.models[name].implementation),
             config,
+            quotas,
           ).map(({ issue, provider }) => ({
             issue: issue.number,
             title: issue.title,
@@ -307,7 +302,7 @@ async function main() {
       await runner.git(["fetch", config.remote, baseBranch]);
     }
     // Disable unavailable logins without taking the other provider down.
-    for (const provider of providers) {
+    for (const provider of config.providers) {
       try {
         if (provider === "codex") await codexAuth();
         else await claudeToken();

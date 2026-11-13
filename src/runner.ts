@@ -5,15 +5,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type * as SandcastleModule from "@ai-hero/sandcastle";
 import type { AgentProvider, CreateSandboxOptions } from "@ai-hero/sandcastle";
-import {
-  offline,
-  providers,
-  type Config,
-  type Provider,
-  type Role,
-} from "./config.ts";
+import { offline, type Config, type Provider, type Role } from "./config.ts";
 import {
   assignments,
+  ranked,
   localIssue,
   reviewer,
   reviewReport,
@@ -459,17 +454,14 @@ export class Runner {
           return;
         }
         if (job.status === "implementation") {
-          const provider = this.quotas.available(
-            job.implementer,
-            this.config.models[job.implementer].implementation,
-          )
-            ? job.implementer
-            : providers.find((name) =>
-                this.quotas.available(
-                  name,
-                  this.config.models[name].implementation,
-                ),
-              );
+          const provider =
+            this.config.providers.includes(job.implementer) &&
+            this.quotas.available(
+              job.implementer,
+              this.config.models[job.implementer].implementation,
+            )
+              ? job.implementer
+              : ranked(issue, "implementation", this.config, this.quotas)[0];
           if (!provider) return;
           const prompt = await this.prompt("prompt.md");
           try {
@@ -503,8 +495,11 @@ export class Runner {
           }
         }
         if (job.status === "review") {
-          const provider = reviewer(job.implementer, (name) =>
-            this.quotas.available(name, this.config.models[name].review),
+          const provider = reviewer(
+            job.implementer,
+            (name) =>
+              this.config.providers.includes(name) &&
+              this.quotas.available(name, this.config.models[name].review),
           );
           if (!provider) return;
           const prompt = await this.prompt("review.md");
@@ -628,7 +623,7 @@ export class Runner {
     while (!this.interrupted) {
       await this.quotas.refresh();
       if (
-        !providers.some((name) =>
+        !this.config.providers.some((name) =>
           Object.values(this.config.models[name]).some((model) =>
             this.quotas.available(name, model),
           ),
@@ -645,6 +640,7 @@ export class Runner {
         (name) =>
           this.quotas.available(name, this.config.models[name].implementation),
         this.config,
+        this.quotas,
       );
       if (!batch.length) {
         const paused = [...this.attempted].filter(

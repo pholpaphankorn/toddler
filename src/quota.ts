@@ -272,6 +272,7 @@ export class Quotas {
   }
   available(provider: Provider, model?: string): boolean {
     return (
+      this.config.providers.includes(provider) &&
       this.values.has(provider) &&
       !this.disabled.has(provider) &&
       (model === undefined || !this.disabledModels.get(provider)?.has(model))
@@ -296,7 +297,7 @@ export class Quotas {
   async refresh(): Promise<void[]> {
     if (this.refreshing) return this.refreshing;
     this.refreshing = Promise.all(
-      providers.map(async (provider) => {
+      this.config.providers.map(async (provider) => {
         if (this.disabled.has(provider)) return;
         try {
           const usage = validateUsage(await this.read(provider, this.config));
