@@ -2,7 +2,7 @@
 title: Per-model stops: a provider can be stopped for one model only
 labels: []
 blocked_by: [25, 14, 15]
-status: open
+status: closed
 ---
 Availability becomes per **provider and model**, so a per-model weekly bucket can stop one model while the provider stays usable for roles on other models.
 
