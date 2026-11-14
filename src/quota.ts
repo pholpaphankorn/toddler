@@ -446,14 +446,19 @@ export class Quotas {
         },
       );
     }, this.config.pollIntervalMs);
+    const running = action(controller.signal);
     try {
       try {
-        return await Promise.race([action(controller.signal), pollFailure]);
+        return await Promise.race([running, pollFailure]);
       } finally {
         // A poll can abort the action before its own failure reaches the race.
         clearInterval(timer);
         await poll;
-        if (pollFailed) throw pollError;
+        if (pollFailed) {
+          // stop() already aborted the action; wait for its cleanup so the lock outlives it.
+          await running.catch(() => {});
+          throw pollError;
+        }
       }
     } finally {
       clearInterval(timer);

@@ -153,16 +153,28 @@ test("a stop condition failure during polling aborts the session and rejects wit
     const conditions = await loadStopConditions(root, configured);
     const quotas = new Quotas(configured, async () => usage(50), conditions);
     let signal!: AbortSignal;
+    let cleanedUp = false;
     await assert.rejects(
-      quotas.run("codex", config.models.codex.implementation, (current) => {
-        signal = current;
-        return new Promise<void>((_, reject) =>
-          current.addEventListener("abort", () => reject(current.reason)),
-        );
-      }),
+      quotas.run(
+        "codex",
+        config.models.codex.implementation,
+        async (current) => {
+          signal = current;
+          try {
+            await new Promise<void>((_, reject) =>
+              current.addEventListener("abort", () => reject(current.reason)),
+            );
+          } finally {
+            // Slow cleanup, like sandbox.close(): run() must not settle before it.
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            cleanedUp = true;
+          }
+        },
+      ),
       /Stop condition module poll.mjs: broken poll/,
     );
     assert.equal(signal.aborted, true);
+    assert.equal(cleanedUp, true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -199,9 +211,11 @@ test("runner propagates stop condition polling failures during implementation an
           return runner.quotas.run(
             provider,
             configured.models[provider][currentRole],
-            () => {
+            (signal) => {
               (globalThis as any).__stopPollFail = true;
-              return new Promise<never>(() => {});
+              return new Promise<never>((_, reject) =>
+                signal.addEventListener("abort", () => reject(signal.reason)),
+              );
             },
           );
         };
