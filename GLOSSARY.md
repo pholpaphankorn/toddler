@@ -33,5 +33,8 @@ _Avoid_: priority, prioritization
 **Tracker**: where a project's specs and issues live: local files, GitHub or GitLab.
 _Avoid_: issue source, backend
 
+**Forge**: where a project's code is pushed and its pull or merge requests are opened: GitHub, GitLab, or none. Chosen apart from the tracker, so local issues can still open GitHub pull requests.
+_Avoid_: remote, host, tracker
+
 **Provider login**: the subscription sign-in toddler holds for one provider, made through toddler and kept apart from the user's own sign-ins to that provider's CLI on the same machine.
 _Avoid_: host login, auth, token
