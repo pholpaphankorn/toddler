@@ -677,11 +677,13 @@ export class Runner {
       }
       for (const { issue } of batch) this.attempted.add(issue.number);
       // One pipeline per provider: no two implementation agents race on an issue.
-      await Promise.all(
+      const results = await Promise.allSettled(
         batch.map(({ issue, provider }) =>
           this.work(issue, provider, baseBranch),
         ),
       );
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
     }
   }
 }

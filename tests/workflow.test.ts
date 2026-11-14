@@ -579,6 +579,7 @@ function fixture(
   const quotas = {
     available: (_name: Provider) => true,
     refresh: async () => {},
+    stop: () => {},
     values: new Map(providers.map((provider) => [provider, usage(50)])),
   };
   const runner = new Runner({
@@ -875,6 +876,60 @@ test("malformed review and changed reviewed SHA cannot push or open a PR", async
       ),
     );
   }
+});
+test("run waits for a parallel stage before reporting a fallback ranking failure", async () => {
+  const { loadRanker } = await import("../src/policy.ts");
+  const path = "tests/fixtures/ranking/throw.js";
+  const configured = { ...config, ranking: path };
+  const throwingRanker = await loadRanker(process.cwd(), configured);
+  const { runner, state } = fixture(configured);
+  runner.ranker = (input) =>
+    input.issue.number === 2
+      ? throwingRanker(input)
+      : input.candidates.map(({ provider }) => provider);
+  runner.candidates = async () => [
+    issue(1, ["parallel-safe"]),
+    issue(2, ["parallel-safe"]),
+  ];
+  state.jobs[2] = {
+    number: 2,
+    branch: "toddler/issue-2",
+    baseBranch: "main",
+    baseSha: "base",
+    status: "implementation",
+    rounds: 0,
+    implementer: fake<Provider>("unavailable"),
+  };
+  let release!: () => void;
+  let started!: () => void;
+  const stageStarted = new Promise<void>((resolve) => (started = resolve));
+  const stageGate = new Promise<void>((resolve) => (release = resolve));
+  runner.stage = async (_job, _provider, role) => {
+    started();
+    await stageGate;
+    return {
+      sha: "reviewed",
+      stdout: role === "review" ? report() : "done",
+      verification: "",
+    };
+  };
+  const context = runner.context.bind(runner);
+  runner.context = async (current, job) => {
+    if (current.number === 2) await stageStarted;
+    return context(current, job);
+  };
+  let settled = false;
+  const result = runner.run("main").finally(() => (settled = true));
+  void result.catch(() => {});
+  await stageStarted;
+  await new Promise((resolve) => setImmediate(resolve));
+  try {
+    assert.equal(settled, false);
+  } finally {
+    release();
+  }
+  await assert.rejects(result, (error: Error) => error.message.includes(path));
+  assert.equal(state.jobs[2].lastError, undefined);
 });
 test("no available issue or quota terminates without starting agents", async () => {
   const { runner, events, quotas } = fixture();
