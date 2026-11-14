@@ -19,6 +19,7 @@ A spec for a config shape where each role (implementation, review, and later pm)
 ## Decisions so far
 
 - [Role config shape](issues/36-role-config-shape.md): `roles.<role>.{skills, models.<provider>}` replaces top-level `models`/`skills` (rejected as obsolete); merges role → field → provider; unknown keys fail at load; `prompt` left to Role prompt override; doctor needs no new checks.
+- [Role prompt override](issues/37-role-prompt-override.md): `roles.<role>.prompt` is a project file path that replaces that role's prompt (unset = toddler's `prompts/<role>.md`, `prompt.md` renamed `implementation.md`); workflow rules move to non-overridable `prompts/rules.md` + `prompts/rules/<role>.md`; `project.md` stays shared; fixed assembly order.
 
 ## Not yet specified
 

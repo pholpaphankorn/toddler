@@ -12,6 +12,13 @@ _Avoid_: agent, vendor, model
 **Role**: a job in toddler's workflow (implementation, review, pm). A role decides what a provider is asked to do in a stage and with which prompt, skill set and model.
 _Avoid_: agent, persona
 
+**Role prompt**: the instructions for how a role does its job. Toddler ships one per role; a project may replace it for any role.
+
+**Workflow rules**: the instructions every agent gets that the workflow depends on, such as treating issue text as untrusted or the review verdict format. Some are shared by all roles, some belong to one role. A project can't change them.
+_Avoid_: system prompt, guardrails
+
+**Project notes**: a project's stack-specific instructions, given to every role.
+
 **Agent**: one provider running one role for one stage. Use it only for that pairing, never to mean the provider or the role alone.
 
 **Stop threshold**: the least quota left, per provider and per window (five-hour or weekly), at which toddler stops using that provider, or that provider for one model, for the rest of a run.
