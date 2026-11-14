@@ -11,5 +11,5 @@ What interface do `src/runner.ts` and `src/policy.ts` code against so local, Git
 
 - Tracker operations: list workable issues with labels and blockers, read a spec and its issues, close or comment (if toddler does that today).
 - Forge operations: push a branch, open a PR/MR with closing reference, find an existing one for an issue, merge (or local merge for `none`).
-- Which of these come from sandcastle (see [What sandcastle offers for trackers and forges](41-sandcastle-forge-support.md)) and which toddler writes.
+- Toddler writes all of these: sandcastle offers none (see [What sandcastle offers for trackers and forges](41-sandcastle-forge-support.md)). Today local issues ignore `parent:`; the interface should say whether it starts reading it.
 - Seams for tests: how the GitHub and GitLab implementations are tested without a network (today `gh` is injected as `command`).
