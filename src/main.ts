@@ -11,6 +11,7 @@ import {
   codexAuth,
   claudeToken,
   Quotas,
+  loadStopConditions,
   modelMatches,
   type Window,
 } from "./quota.ts";
@@ -88,6 +89,11 @@ async function doctor(config: Config, root: string) {
     await loadRanker(root, config);
     return config.ranking;
   });
+  for (const name of config.stopConditions)
+    await check(`Stop condition ${name}`, async () => {
+      await loadStopConditions(root, { ...config, stopConditions: [name] });
+      return name;
+    });
   for (const [name, action] of skillDoctorChecks(root, config.skills))
     await check(name, action);
   await check("Sandcastle", async () => {
@@ -184,9 +190,10 @@ async function main() {
   const config = loadConfig(root, { checkSkillNames: mode !== "doctor" });
   if (mode === "doctor") return doctor(config, root);
   const ranker = await loadRanker(root, config);
+  const stopConditions = await loadStopConditions(root, config);
   const statePath = join(root, ".sandcastle/state.json");
   const state = loadState(statePath, config.repository);
-  const quotas = new Quotas(config);
+  const quotas = new Quotas(config, undefined, stopConditions);
   const runner = new Runner({
     root,
     config,

@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { providers, type Defaults, type Provider } from "./config.ts";
 import { adapter, codexRpc, command } from "./process.ts";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export interface Window {
   remainingPercent: number;
@@ -43,6 +45,89 @@ export type ReadUsage = (
   provider: Provider,
   config: Defaults,
 ) => Promise<Reading>;
+
+export type StopCondition = (input: {
+  provider: Provider;
+  reading: Reading;
+  models: string[];
+}) => { reason: string; model?: string }[];
+export class StopConditionError extends Error {}
+
+export async function loadStopConditions(
+  root: string,
+  config: Defaults,
+): Promise<StopCondition[]> {
+  return Promise.all(
+    config.stopConditions.map(async (name) => {
+      let condition: StopCondition;
+      try {
+        const module = await import(pathToFileURL(resolve(root, name)).href);
+        if (typeof module.default !== "function")
+          throw new Error("default export must be a function");
+        condition = module.default;
+      } catch (error) {
+        throw new StopConditionError(
+          `Stop condition module ${name}: ${String((error as Error)?.message ?? error)}`,
+        );
+      }
+      return (input) => {
+        try {
+          const result = condition(input);
+          if (result instanceof Promise) void result.catch(() => {});
+          if (
+            !Array.isArray(result) ||
+            Array.from(result).some(
+              (stop) =>
+                !stop ||
+                typeof stop.reason !== "string" ||
+                !stop.reason.trim() ||
+                (stop.model !== undefined &&
+                  !input.models.includes(stop.model)),
+            )
+          )
+            throw new Error(
+              "must return an array of stops with nonempty reasons and valid models synchronously",
+            );
+          return result;
+        } catch (error) {
+          throw new StopConditionError(
+            `Stop condition module ${name}: ${String((error as Error)?.message ?? error)}`,
+          );
+        }
+      };
+    }),
+  );
+}
+
+export function thresholdCondition(stopAt: Defaults["stopAt"]): StopCondition {
+  return ({ provider, reading, models }) => {
+    const thresholds = stopAt[provider];
+    for (const name of ["fiveHour", "weekly"] as const) {
+      const window = reading[name],
+        threshold = thresholds[name];
+      if (threshold && window && window.remainingPercent <= threshold)
+        return [
+          {
+            reason: `${name} remaining ${window.remainingPercent}% (stop at ${threshold}%)`,
+          },
+        ];
+    }
+    const threshold = thresholds.weekly;
+    return threshold
+      ? models.flatMap((model) => {
+          const remaining = weeklyLeft(reading, model, provider);
+          return remaining <= threshold
+            ? [
+                {
+                  model,
+                  reason: `weekly remaining ${remaining}% (stop at ${threshold}%)`,
+                },
+              ]
+            : [];
+        })
+      : [];
+  };
+}
 
 export function validateUsage(value: Reading, now = Date.now()): Reading {
   if (
@@ -266,9 +351,15 @@ export class Quotas {
   active = new Map<Provider, Map<AbortController, string>>();
   values = new Map<Provider, Reading>();
   refreshing: Promise<void[]> | null = null;
-  constructor(config: Defaults, read: ReadUsage = readUsage) {
+  conditions: StopCondition[];
+  constructor(
+    config: Defaults,
+    read: ReadUsage = readUsage,
+    conditions: StopCondition[] = [],
+  ) {
     this.config = config;
     this.read = read;
+    this.conditions = [thresholdCondition(config.stopAt), ...conditions];
   }
   available(provider: Provider, model?: string): boolean {
     return (
@@ -299,42 +390,26 @@ export class Quotas {
     this.refreshing = Promise.all(
       this.config.providers.map(async (provider) => {
         if (this.disabled.has(provider)) return;
+        let usage: Reading;
         try {
-          const usage = validateUsage(await this.read(provider, this.config));
-          this.values.set(provider, usage);
-          for (const [name, window] of [
-            ["fiveHour", usage.fiveHour],
-            ["weekly", usage.weekly],
-          ] as const) {
-            const threshold = this.config.stopAt[provider][name];
-            if (window && window.remainingPercent <= threshold) {
-              this.disable(
-                provider,
-                `${name} remaining ${window.remainingPercent}% (stop at ${threshold}%)`,
-              );
-              break;
-            }
-          }
-          if (!this.disabled.has(provider)) {
-            const threshold = this.config.stopAt[provider].weekly;
-            for (const model of new Set(
-              Object.values(this.config.models[provider]),
-            )) {
-              const remaining = weeklyLeft(usage, model, provider);
-              if (remaining <= threshold)
-                this.disableModel(
-                  provider,
-                  model,
-                  `weekly remaining ${remaining}% (stop at ${threshold}%)`,
-                );
-            }
-          }
+          usage = validateUsage(await this.read(provider, this.config));
         } catch {
           this.disable(
             provider,
             "subscription usage could not be verified (run doctor for details)",
           );
+          return;
         }
+        this.values.set(provider, usage);
+        const input = {
+          provider,
+          reading: usage,
+          models: [...new Set(Object.values(this.config.models[provider]))],
+        };
+        for (const condition of this.conditions)
+          for (const stop of condition(input))
+            if (stop.model === undefined) this.disable(provider, stop.reason);
+            else this.disableModel(provider, stop.model, stop.reason);
       }),
     ).finally(() => {
       this.refreshing = null;
@@ -353,11 +428,18 @@ export class Quotas {
     const active = this.active.get(provider) ?? new Map();
     this.active.set(provider, active);
     active.set(controller, model);
+    let rejectPoll!: (error: unknown) => void;
+    const pollFailure = new Promise<never>((_, reject) => {
+      rejectPoll = reject;
+    });
     const timer = setInterval(() => {
-      void this.refresh();
+      void this.refresh().catch((error) => {
+        rejectPoll(error);
+        this.stop();
+      });
     }, this.config.pollIntervalMs);
     try {
-      return await action(controller.signal);
+      return await Promise.race([action(controller.signal), pollFailure]);
     } finally {
       clearInterval(timer);
       active.delete(controller);

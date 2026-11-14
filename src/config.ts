@@ -9,6 +9,7 @@ export const providers: Provider[] = ["codex", "claude"];
 export const defaults = {
   providers: [...providers],
   ranking: "quota" as string,
+  stopConditions: [] as string[],
   remote: "origin",
   /** "github": labeled GitHub issues. "local": .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files. */
   issues: "github" as "github" | "local",
@@ -88,6 +89,13 @@ export function loadConfig(
     isAbsolute(config.ranking)
   )
     throw new Error(`${path}: invalid ranking`);
+  if (
+    !Array.isArray(config.stopConditions) ||
+    config.stopConditions.some(
+      (name) => typeof name !== "string" || !name.trim() || isAbsolute(name),
+    )
+  )
+    throw new Error(`${path}: invalid stopConditions`);
   if (project.stopAt !== undefined) {
     if (
       !project.stopAt ||

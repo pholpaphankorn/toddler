@@ -14,6 +14,7 @@ import {
   validateUsage,
   weeklyLeft,
   readUsage,
+  loadStopConditions,
   type Reading,
 } from "../src/quota.ts";
 import { Runner, type Job, type RunnerOptions } from "../src/runner.ts";
@@ -35,6 +36,191 @@ import {
   type Provider,
 } from "../src/config.ts";
 import { indexSkills } from "../src/skills.ts";
+
+test("custom stop conditions stop a provider and preserve the first reason", async () => {
+  const quotas = new Quotas(config, async () => usage(50), [
+    () => [{ reason: "first" }],
+    () => [{ reason: "second" }],
+  ]);
+  await quotas.refresh();
+  assert.equal(quotas.disabled.get("codex"), "first");
+});
+
+test("stop modules run in order, stop models, and skip stopped or unverifiable providers", async () => {
+  const root = mkdtempSync(join(tmpdir(), "stops-"));
+  try {
+    writeFileSync(
+      join(root, "first.mjs"),
+      'export default ({ models }) => [{ model: models[0], reason: "first" }]',
+    );
+    writeFileSync(
+      join(root, "second.mjs"),
+      'export default ({ models }) => [{ model: models[0], reason: "second" }, { reason: "whole" }]',
+    );
+    const configured = {
+      ...config,
+      stopConditions: ["first.mjs", "second.mjs"],
+    };
+    const conditions = await loadStopConditions(root, configured);
+    let calls = 0;
+    const quotas = new Quotas(
+      configured,
+      async (provider) => {
+        calls++;
+        if (provider === "claude") throw new Error("unavailable");
+        return usage(50);
+      },
+      conditions,
+    );
+    await quotas.refresh();
+    assert.equal(
+      quotas.disabledModels
+        .get("codex")
+        ?.get(config.models.codex.implementation),
+      "first",
+    );
+    assert.equal(quotas.disabled.get("codex"), "whole");
+    assert.match(quotas.disabled.get("claude")!, /could not be verified/);
+    await quotas.refresh();
+    assert.equal(calls, 2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("invalid stop modules and results fail with the module name", async () => {
+  const root = mkdtempSync(join(tmpdir(), "stops-invalid-"));
+  try {
+    for (const [name, body] of Object.entries({
+      export: "export default 1",
+      throwing: 'export default () => { throw new Error("broken") }',
+      promise: "export default async () => []",
+      array: "export default () => ({})",
+      reason: 'export default () => [{ reason: " " }]',
+      model: 'export default () => [{ reason: "stop", model: "unknown" }]',
+    })) {
+      const file = `${name}.mjs`;
+      writeFileSync(join(root, file), body);
+      const configured = { ...config, stopConditions: [file] };
+      if (name === "export")
+        await assert.rejects(
+          loadStopConditions(root, configured),
+          new RegExp(file),
+        );
+      else {
+        const conditions = await loadStopConditions(root, configured);
+        await assert.rejects(
+          new Quotas(configured, async () => usage(50), conditions).refresh(),
+          new RegExp(file),
+        );
+      }
+    }
+    await assert.rejects(
+      loadStopConditions(root, { ...config, stopConditions: ["missing.mjs"] }),
+      /missing.mjs/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("zero thresholds are disabled even at zero remaining", async () => {
+  const configured = {
+    ...config,
+    stopAt: {
+      codex: { fiveHour: 0, weekly: 0 },
+      claude: { fiveHour: 0, weekly: 0 },
+    },
+  };
+  const quotas = new Quotas(configured, async () => usage(0));
+  await quotas.refresh();
+  assert.equal(quotas.available("codex"), true);
+});
+
+test("a stop condition failure during polling aborts the session and rejects with its module", async () => {
+  const root = mkdtempSync(join(tmpdir(), "stop-poll-"));
+  try {
+    writeFileSync(
+      join(root, "poll.mjs"),
+      'let calls = 0; export default () => { if (++calls > 1) throw new Error("broken poll"); return []; }',
+    );
+    const configured = {
+      ...config,
+      providers: ["codex"] as Provider[],
+      pollIntervalMs: 5,
+      stopConditions: ["poll.mjs"],
+    };
+    const conditions = await loadStopConditions(root, configured);
+    const quotas = new Quotas(configured, async () => usage(50), conditions);
+    let signal!: AbortSignal;
+    await assert.rejects(
+      quotas.run("codex", config.models.codex.implementation, (current) => {
+        signal = current;
+        return new Promise<void>((_, reject) =>
+          current.addEventListener("abort", () => reject(current.reason)),
+        );
+      }),
+      /Stop condition module poll.mjs: broken poll/,
+    );
+    assert.equal(signal.aborted, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("built-in stops run before custom conditions, which still run", async () => {
+  let calls = 0;
+  const quotas = new Quotas(config, async () => usage(5), [
+    () => {
+      calls++;
+      return [{ reason: "custom" }];
+    },
+  ]);
+  await quotas.refresh();
+  assert.match(quotas.disabled.get("codex")!, /fiveHour remaining/);
+  assert.equal(calls, 2);
+});
+
+test("doctor reports configured stop modules", () => {
+  const root = mkdtempSync(join(tmpdir(), "stop-doctor-"));
+  try {
+    mkdirSync(join(root, ".sandcastle"));
+    mkdirSync(join(root, "bin"));
+    writeFileSync(
+      join(root, ".sandcastle/config.json"),
+      JSON.stringify({
+        issues: "local",
+        openPr: false,
+        providers: ["codex"],
+        skills: { implementation: [], review: [] },
+        stopConditions: ["good.mjs", "missing.mjs"],
+      }),
+    );
+    writeFileSync(join(root, "good.mjs"), "export default () => []");
+    writeFileSync(
+      join(root, "bin/git"),
+      '#!/bin/sh\nif [ "$1" = rev-parse ]; then pwd; fi\n',
+    );
+    chmodSync(join(root, "bin/git"), 0o755);
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL("../src/main.ts", import.meta.url)), "doctor"],
+      {
+        cwd: root,
+        encoding: "utf8",
+        timeout: 15000,
+        env: { PATH: join(root, "bin"), HOME: root, TMPDIR: root },
+      },
+    );
+    assert.match(result.stdout, /OK   Stop condition good.mjs/);
+    assert.match(
+      result.stdout,
+      /FAIL Stop condition missing.mjs: Stop condition module missing.mjs/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("project ranker drives the implementer choice", async () => {
   const { loadRanker } = await import("../src/policy.ts");

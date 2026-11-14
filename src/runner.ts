@@ -18,7 +18,12 @@ import {
   RankingError,
 } from "./policy.ts";
 import { command, type Command } from "./process.ts";
-import { claudeToken, codexAuth, type Quotas } from "./quota.ts";
+import {
+  claudeToken,
+  codexAuth,
+  StopConditionError,
+  type Quotas,
+} from "./quota.ts";
 import { privateHomeAgent } from "./agents.ts";
 import { skillLinks, skillLoadLine } from "./skills.ts";
 
@@ -558,7 +563,10 @@ export class Runner {
         }
       }
     } catch (error) {
-      if (error instanceof RankingError) {
+      if (
+        error instanceof RankingError ||
+        error instanceof StopConditionError
+      ) {
         this.interrupted = true;
         this.quotas.stop();
         throw error;

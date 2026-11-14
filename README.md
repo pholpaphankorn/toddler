@@ -206,8 +206,24 @@ An exact guarantee of leaving quota untouched is not possible. Configure percent
 { "stopAt": { "claude": { "weekly": 20 }, "codex": { "fiveHour": 10 } } }
 ```
 
-Each provider and window is optional; defaults are 5% for five-hour and 10% for weekly. Values must be between 0 and 100. A missing window does not trigger a stop. Seatbelt kills normal process groups;
+Each provider and window is optional; defaults are 5% for five-hour and 10% for weekly. Values must be between 0 and 100; 0 disables that threshold. A missing window does not trigger a stop. Seatbelt kills normal process groups;
 Sandcastle documents a macOS limitation for processes that deliberately detach.
+
+Projects can add synchronous stop conditions with project-relative module paths:
+
+```json
+{ "stopConditions": [".sandcastle/stop.ts"] }
+```
+
+```ts
+// .sandcastle/stop.ts
+export default ({ provider, reading, models }) =>
+  provider === "codex" && reading.weekly?.remainingPercent < 30
+    ? [{ model: models[0], reason: "Keep weekly quota for other work" }]
+    : [];
+```
+
+Each default export receives the provider, its valid quota reading, and the distinct models its roles use. Return an array of stops: omit `model` to stop the provider, or name a model from `models` to stop only that model. The built-in thresholds run first, followed by project conditions in config order on every refresh. The first reason for each stop is kept. Invalid results or errors are fatal and identify the module; `toddler doctor` checks that modules load.
 
 Codex usage is read through the documented `account/rateLimits/read` app-server API,
 selecting five-hour and weekly windows in the `codex` bucket. Claude's usage
