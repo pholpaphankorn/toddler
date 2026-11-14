@@ -25,12 +25,11 @@ A spec for two settings: the **tracker** (where a project's specs and issues liv
 
 - [What sandcastle offers for trackers and forges](issues/41-sandcastle-forge-support.md): nothing to reuse: no tracker, push or PR/MR API (only `init` scaffold prompts); toddler owns both seams, forge calls stay on the host via `gh`/`glab`.
 - [GitHub facts for specs on a GitHub tracker](issues/43-github-spec-facts.md): sub-issues (GA, 100/parent, 8 levels) are the native spec holder; `gh` flags need ≥ 2.94.0 (2.88.1 here); one GraphQL call reads a spec's sub-issues + blockers.
+- [GitLab facts for tracker and forge parity](issues/42-gitlab-facts.md): blocking links and epics are Premium+, Free has no issue-to-issue parent/child; labels, MRs and `glab api` all work on Free; host comes from `GITLAB_HOST` or the git remote; project paths must be URL-encoded.
 
 ## Not yet specified
 
-- GitLab merge-request lifecycle in toddler's loop: closing keywords, how toddler spots an issue that "already has a PR", and merging; may graduate once the GitLab facts and the interface are in.
 - `toddler init` and `toddler doctor` per tracker/forge: checks for `gh`/`glab` login and repository access, and what `init` writes.
-- Labels on GitLab: whether `issueLabel`, `parallelLabel` and `blockedLabels` carry over as-is (scoped labels?).
 
 ## Out of scope
 
