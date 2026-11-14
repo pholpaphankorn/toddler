@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { indexSkills } from "./skills.ts";
 
 export type Provider = "codex" | "claude";
@@ -8,7 +8,7 @@ export const providers: Provider[] = ["codex", "claude"];
 
 export const defaults = {
   providers: [...providers],
-  ranking: "quota" as "quota" | "order",
+  ranking: "quota" as string,
   remote: "origin",
   /** "github": labeled GitHub issues. "local": .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files. */
   issues: "github" as "github" | "local",
@@ -82,7 +82,11 @@ export function loadConfig(
     new Set(config.providers).size !== config.providers.length
   )
     throw new Error(`${path}: invalid providers`);
-  if (!["quota", "order"].includes(config.ranking))
+  if (
+    typeof config.ranking !== "string" ||
+    !config.ranking.trim() ||
+    isAbsolute(config.ranking)
+  )
     throw new Error(`${path}: invalid ranking`);
   if (project.stopAt !== undefined) {
     if (

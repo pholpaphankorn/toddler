@@ -1,11 +1,56 @@
 import { type Defaults, type Provider, type Role } from "./config.ts";
 import { weeklyLeft, type Reading, type Quotas } from "./quota.ts";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export type Ranker = (input: {
   role: Role;
   issue: Issue;
   candidates: { provider: Provider; model: string; reading: Reading }[];
 }) => Provider[];
+
+export class RankingError extends Error {}
+
+export async function loadRanker(
+  root: string,
+  config: Defaults,
+): Promise<Ranker> {
+  if (config.ranking === "quota" || config.ranking === "order")
+    return makeRanker(config);
+  const name = config.ranking;
+  let ranker: Ranker;
+  try {
+    const module = await import(pathToFileURL(resolve(root, name)).href);
+    if (typeof module.default !== "function")
+      throw new Error("default export must be a function");
+    ranker = module.default;
+  } catch (error) {
+    throw new RankingError(
+      `Ranking module ${name}: ${(error as Error).message}`,
+    );
+  }
+  return (input) => {
+    const expected = input.candidates.map(({ provider }) => provider);
+    try {
+      const result = ranker(input);
+      if (result instanceof Promise) void result.catch(() => {});
+      if (
+        !Array.isArray(result) ||
+        result.length !== expected.length ||
+        new Set(result).size !== expected.length ||
+        result.some((provider) => !expected.includes(provider))
+      )
+        throw new Error(
+          "must return a permutation of candidate providers synchronously",
+        );
+      return result;
+    } catch (error) {
+      throw new RankingError(
+        `Ranking module ${name}: ${String((error as Error)?.message ?? error)}`,
+      );
+    }
+  };
+}
 
 export function makeRanker(
   config: Defaults,
@@ -86,11 +131,12 @@ export function assignments(
   available: Available,
   config: Defaults,
   quotas?: Quotas,
+  ranker?: Ranker,
 ): Assignment[] {
   const candidates = issues.filter((issue) => ready(issue, config));
   const usable =
     quotas && candidates.length
-      ? ranked(candidates[0], "implementation", config, quotas)
+      ? ranked(candidates[0], "implementation", config, quotas, ranker)
       : config.providers.filter((provider) => available(provider));
   if (!candidates.length || !usable.length) return [];
   const result = [{ issue: candidates[0], provider: usable[0] }];

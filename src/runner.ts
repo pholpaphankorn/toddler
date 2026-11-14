@@ -14,6 +14,8 @@ import {
   reviewReport,
   type Issue,
   type ReviewReport,
+  type Ranker,
+  RankingError,
 } from "./policy.ts";
 import { command, type Command } from "./process.ts";
 import { claudeToken, codexAuth, type Quotas } from "./quota.ts";
@@ -66,6 +68,7 @@ export interface RunnerOptions {
   git?: Command;
   gh?: Command;
   authentication?: Authentication;
+  ranker?: Ranker;
 }
 
 // Workflow files ship next to this module; runtime files live under root.
@@ -97,6 +100,7 @@ export class Runner {
   gitCommand: Command;
   ghCommand: Command;
   authentication: Authentication;
+  ranker?: Ranker;
   attempted = new Set<number>();
   interrupted = false;
   slots = new Map<string, Promise<void>>();
@@ -111,6 +115,7 @@ export class Runner {
     git = command,
     gh = command,
     authentication = { codex: codexAuth, claude: claudeToken },
+    ranker,
   }: RunnerOptions) {
     this.root = root;
     this.config = config;
@@ -122,6 +127,7 @@ export class Runner {
     this.gitCommand = git;
     this.ghCommand = gh;
     this.authentication = authentication;
+    this.ranker = ranker;
   }
   git(args: string[], cwd = this.root): Promise<string> {
     return this.gitCommand("git", args, { cwd });
@@ -461,7 +467,13 @@ export class Runner {
               this.config.models[job.implementer].implementation,
             )
               ? job.implementer
-              : ranked(issue, "implementation", this.config, this.quotas)[0];
+              : ranked(
+                  issue,
+                  "implementation",
+                  this.config,
+                  this.quotas,
+                  this.ranker,
+                )[0];
           if (!provider) return;
           const prompt = await this.prompt("prompt.md");
           try {
@@ -546,6 +558,11 @@ export class Runner {
         }
       }
     } catch (error) {
+      if (error instanceof RankingError) {
+        this.interrupted = true;
+        this.quotas.stop();
+        throw error;
+      }
       // Keep status/branch for the next invocation, but do not hot-loop a failed task.
       this.persist(job, {
         lastError: String((error as Error).message).slice(0, 1000),
@@ -641,6 +658,7 @@ export class Runner {
           this.quotas.available(name, this.config.models[name].implementation),
         this.config,
         this.quotas,
+        this.ranker,
       );
       if (!batch.length) {
         const paused = [...this.attempted].filter(

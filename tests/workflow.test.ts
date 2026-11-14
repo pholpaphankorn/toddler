@@ -17,7 +17,14 @@ import {
   type Reading,
 } from "../src/quota.ts";
 import { Runner, type Job, type RunnerOptions } from "../src/runner.ts";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  chmodSync,
+} from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -28,6 +35,104 @@ import {
   type Provider,
 } from "../src/config.ts";
 import { indexSkills } from "../src/skills.ts";
+
+test("project ranker drives the implementer choice", async () => {
+  const { loadRanker } = await import("../src/policy.ts");
+  const configured = {
+    ...config,
+    ranking: "tests/fixtures/ranking/reverse.ts",
+  };
+  const ranker = await loadRanker(process.cwd(), configured);
+  const quotas = new Quotas(configured, async () => usage(50));
+  await quotas.refresh();
+  assert.equal(
+    assignments([issue(1)], () => true, configured, quotas, ranker)[0].provider,
+    "claude",
+  );
+});
+
+test("project ranker rejects missing modules and non-function exports", async () => {
+  const { loadRanker } = await import("../src/policy.ts");
+  for (const name of ["missing.js", "invalid.js"]) {
+    const path = `tests/fixtures/ranking/${name}`;
+    await assert.rejects(
+      loadRanker(process.cwd(), { ...config, ranking: path }),
+      (error: Error) => error.message.includes(path),
+    );
+  }
+});
+
+test("project ranker failures stop scheduling and identify the module", async () => {
+  const { loadRanker } = await import("../src/policy.ts");
+  for (const name of [
+    "throw.js",
+    "drop.js",
+    "duplicate.js",
+    "unknown.js",
+    "promise.js",
+  ]) {
+    const path = `tests/fixtures/ranking/${name}`;
+    const configured = { ...config, ranking: path };
+    const ranker = await loadRanker(process.cwd(), configured);
+    const quotas = new Quotas(configured, async () => usage(50));
+    await quotas.refresh();
+    assert.throws(
+      () => assignments([issue(1)], () => true, configured, quotas, ranker),
+      (error: Error) => error.message.includes(path),
+    );
+  }
+});
+
+test("project ranker is not called with one available candidate", async () => {
+  const { loadRanker } = await import("../src/policy.ts");
+  const configured = {
+    ...config,
+    providers: ["codex"] as Provider[],
+    ranking: "tests/fixtures/ranking/throw.js",
+  };
+  const ranker = await loadRanker(process.cwd(), configured);
+  const quotas = new Quotas(configured, async () => usage(50));
+  await quotas.refresh();
+  assert.equal(
+    assignments([issue(1)], () => true, configured, quotas, ranker)[0].provider,
+    "codex",
+  );
+});
+
+test("doctor reports the configured ranking module", () => {
+  const root = mkdtempSync(join(tmpdir(), "ranking-doctor-"));
+  try {
+    mkdirSync(join(root, ".sandcastle"));
+    mkdirSync(join(root, "bin"));
+    writeFileSync(
+      join(root, ".sandcastle/config.json"),
+      JSON.stringify({
+        issues: "local",
+        openPr: false,
+        providers: ["codex"],
+        skills: { implementation: [], review: [] },
+        ranking: "missing.js",
+      }),
+    );
+    const git = join(root, "bin/git");
+    writeFileSync(git, '#!/bin/sh\nif [ "$1" = rev-parse ]; then pwd; fi\n');
+    chmodSync(git, 0o755);
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL("../src/main.ts", import.meta.url)), "doctor"],
+      {
+        cwd: root,
+        encoding: "utf8",
+        timeout: 15000,
+        env: { PATH: join(root, "bin"), HOME: root, TMPDIR: root },
+      },
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /FAIL Ranking: Ranking module missing\.js/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("quota ranking compares weekly, five-hour, and random ties", async () => {
   const { makeRanker } = await import("../src/policy.ts");
@@ -1061,7 +1166,7 @@ test("project config overrides defaults, must name a repository, and verify is o
       write({ repository: "owner/repo", providers: value });
       assert.throws(() => loadConfig(root), /providers/);
     }
-    for (const ranking of ["other", "", null]) {
+    for (const ranking of ["", null, "/absolute/path"]) {
       write({ repository: "owner/repo", ranking });
       assert.throws(() => loadConfig(root), /ranking/);
     }

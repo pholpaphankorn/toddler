@@ -15,7 +15,7 @@ import {
   type Window,
 } from "./quota.ts";
 import { Runner, loadState, saveState } from "./runner.ts";
-import { assignments } from "./policy.ts";
+import { assignments, loadRanker } from "./policy.ts";
 import { bundledSkillsPath } from "./skills.ts";
 import { skillDoctorChecks } from "./skill-doctor.ts";
 
@@ -84,6 +84,10 @@ async function doctor(config: Config, root: string) {
       console.log(`FAIL ${name}: ${(error as Error).message}`);
     }
   };
+  await check("Ranking", async () => {
+    await loadRanker(root, config);
+    return config.ranking;
+  });
   for (const [name, action] of skillDoctorChecks(root, config.skills))
     await check(name, action);
   await check("Sandcastle", async () => {
@@ -179,6 +183,7 @@ async function main() {
   if (mode === "setup") return script("setup.sh");
   const config = loadConfig(root, { checkSkillNames: mode !== "doctor" });
   if (mode === "doctor") return doctor(config, root);
+  const ranker = await loadRanker(root, config);
   const statePath = join(root, ".sandcastle/state.json");
   const state = loadState(statePath, config.repository);
   const quotas = new Quotas(config);
@@ -186,6 +191,7 @@ async function main() {
     root,
     config,
     quotas,
+    ranker,
     state,
     save: () => saveState(statePath, state),
   });
@@ -209,6 +215,7 @@ async function main() {
               quotas.available(name, config.models[name].implementation),
             config,
             quotas,
+            ranker,
           ).map(({ issue, provider }) => ({
             issue: issue.number,
             title: issue.title,

@@ -36,17 +36,17 @@ toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
 
 `.sandcastle/config.json` (committed in the project):
 
-| Key                                       | Required            | Meaning                                                                                                                                                                                                                                                                                                         |
-| ----------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repository`                              | yes, unless offline | GitHub `owner/name` whose issues are worked (`init` fills it in).                                                                                                                                                                                                                                               |
-| `verify`                                  | no                  | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. Empty or missing: no check, and only the review gates the work.                                                                                                         |
-| `providers`                               | no                  | Non-empty list of enabled providers (`codex`, `claude`); defaults to both. Duplicate and unknown names are errors. Unlisted providers are not used.                                                                                                                                                             |
-| `ranking`                                 | no                  | `quota` (default) ranks by model-specific weekly quota, then five-hour quota, then a random tie-break; percentages are rounded down. `order` prefers providers in the listed order. Review prefers the other enabled provider, and an available implementer remains assigned on later rounds.                   |
-| `install`                                 | no                  | Shell command run in each new sandbox worktree before the agent starts, e.g. `npm ci`; must exit 0. Every stage starts from a fresh worktree with only committed files, so dependencies (including ones an earlier stage added to the lockfile) must be installed here. Empty or missing: nothing is installed. |
-| `issues`                                  | no                  | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/specs/<spec>/issues/`.                                                                                                                                                                                                   |
-| `openPr`                                  | no                  | `true` (default): push the reviewed branch and open a PR. `false`: stop with the approved commit on a local branch; nothing is pushed.                                                                                                                                                                          |
-| `skills`                                  | no                  | Role-to-list mapping of vendored skill names. A listed role replaces its default list; omitted roles keep their defaults and `[]` disables skills for that role. The same sets apply to both providers.                                                                                                         |
-| anything in `defaults` in `src/config.ts` | no                  | Overrides, e.g. `stopAt`, `issueLabel`, `models`.                                                                                                                                                                                                                                                               |
+| Key                                       | Required            | Meaning                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repository`                              | yes, unless offline | GitHub `owner/name` whose issues are worked (`init` fills it in).                                                                                                                                                                                                                                                                                     |
+| `verify`                                  | no                  | Shell command run inside the sandbox worktree after each stage; must exit 0. It comes from the host config, so agents cannot weaken it. Empty or missing: no check, and only the review gates the work.                                                                                                                                               |
+| `providers`                               | no                  | Non-empty list of enabled providers (`codex`, `claude`); defaults to both. Duplicate and unknown names are errors. Unlisted providers are not used.                                                                                                                                                                                                   |
+| `ranking`                                 | no                  | `quota` (default) ranks by model-specific weekly quota, then five-hour quota, then a random tie-break; percentages are rounded down. `order` prefers providers in the listed order. A project-relative module path selects a custom ranker. Review prefers the other enabled provider, and an available implementer remains assigned on later rounds. |
+| `install`                                 | no                  | Shell command run in each new sandbox worktree before the agent starts, e.g. `npm ci`; must exit 0. Every stage starts from a fresh worktree with only committed files, so dependencies (including ones an earlier stage added to the lockfile) must be installed here. Empty or missing: nothing is installed.                                       |
+| `issues`                                  | no                  | `"github"` (default): labeled GitHub issues. `"local"`: markdown files in `.sandcastle/specs/<spec>/issues/`.                                                                                                                                                                                                                                         |
+| `openPr`                                  | no                  | `true` (default): push the reviewed branch and open a PR. `false`: stop with the approved commit on a local branch; nothing is pushed.                                                                                                                                                                                                                |
+| `skills`                                  | no                  | Role-to-list mapping of vendored skill names. A listed role replaces its default list; omitted roles keep their defaults and `[]` disables skills for that role. The same sets apply to both providers.                                                                                                                                               |
+| anything in `defaults` in `src/config.ts` | no                  | Overrides, e.g. `stopAt`, `issueLabel`, `models`.                                                                                                                                                                                                                                                                                                     |
 
 Example:
 
@@ -57,6 +57,22 @@ Example:
   "verify": "npm test"
 }
 ```
+
+### Custom ranking
+
+Set `"ranking": ".sandcastle/ranking.ts"` to load a project module. For example:
+
+```ts
+export default function rank({ candidates }) {
+  return candidates.map(({ provider }) => provider).reverse();
+}
+```
+
+The synchronous function receives `{ role, issue, candidates }`; each available
+candidate has `provider`, `model`, and `reading`. It must return every candidate's
+provider exactly once, best first. It is called only when at least two candidates
+are available. Loading or ranking errors stop the run, and `toddler doctor`
+checks the module.
 
 ### Local issues
 
