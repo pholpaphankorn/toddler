@@ -18,9 +18,11 @@ A spec for a config shape where each role (implementation, review, and later pm)
 
 ## Decisions so far
 
+- [Role config shape](issues/36-role-config-shape.md): `roles.<role>.{skills, models.<provider>}` replaces top-level `models`/`skills` (rejected as obsolete); merges role → field → provider; unknown keys fail at load; `prompt` left to Role prompt override; doctor needs no new checks.
+
 ## Not yet specified
 
-- How `doctor` validates role config (waits on [Role config shape](issues/36-role-config-shape.md)).
+_Nothing yet._
 
 ## Out of scope
 
