@@ -2,7 +2,7 @@
 title: A project's own ranker as a module
 labels: []
 blocked_by: [27]
-status: open
+status: closed
 ---
 Let a project plug in its own ranking without changing toddler.
 
