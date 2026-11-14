@@ -432,14 +432,29 @@ export class Quotas {
     const pollFailure = new Promise<never>((_, reject) => {
       rejectPoll = reject;
     });
+    let poll: Promise<void> | undefined;
+    let pollError: unknown;
+    let pollFailed = false;
     const timer = setInterval(() => {
-      void this.refresh().catch((error) => {
-        rejectPoll(error);
-        this.stop();
-      });
+      poll = this.refresh().then(
+        () => {},
+        (error) => {
+          pollFailed = true;
+          pollError = error;
+          rejectPoll(error);
+          this.stop();
+        },
+      );
     }, this.config.pollIntervalMs);
     try {
-      return await Promise.race([action(controller.signal), pollFailure]);
+      try {
+        return await Promise.race([action(controller.signal), pollFailure]);
+      } finally {
+        // A poll can abort the action before its own failure reaches the race.
+        clearInterval(timer);
+        await poll;
+        if (pollFailed) throw pollError;
+      }
     } finally {
       clearInterval(timer);
       active.delete(controller);

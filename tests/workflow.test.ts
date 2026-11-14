@@ -217,6 +217,59 @@ test("runner propagates stop condition polling failures during implementation an
   }
 });
 
+test("runner reports a fatal stop condition when the same poll cancels a stage", async () => {
+  const root = mkdtempSync(join(tmpdir(), "runner-stop-race-"));
+  try {
+    writeFileSync(
+      join(root, "poll.mjs"),
+      'export default ({ reading }) => { if (reading.fiveHour.remainingPercent === 4) throw new Error("broken poll"); return []; }',
+    );
+    const configured = {
+      ...config,
+      providers: ["codex"] as Provider[],
+      pollIntervalMs: 5,
+      stopConditions: ["poll.mjs"],
+    };
+    const conditions = await loadStopConditions(root, configured);
+    let running = false;
+    const { runner } = fixture(configured);
+    runner.quotas = new Quotas(
+      configured,
+      async () => usage(running ? 4 : 50),
+      conditions,
+    );
+    runner.stage = Runner.prototype.stage;
+    runner.git = async (args) =>
+      args[0] === "branch" ? "toddler/issue-1" : "base";
+    runner.authentication = {
+      codex: async () => "fake",
+      claude: async () => "fake",
+    };
+    runner.sandcastle = fake({
+      codex: () => ({ buildPrintCommand: () => ({ command: "fake" }) }),
+      createSandbox: async () => ({
+        worktreePath: "/fixture",
+        exec: async () => ({ exitCode: 0 }),
+        close: async () => ({}),
+        run: async ({ signal }: { signal: AbortSignal }) => {
+          running = true;
+          return new Promise((_, reject) =>
+            signal.addEventListener("abort", () =>
+              reject(new Error("stage aborted")),
+            ),
+          );
+        },
+      }),
+    });
+    await assert.rejects(
+      runner.work(issue(1), "codex", "main"),
+      /Stop condition module poll.mjs: broken poll/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("built-in stops run before custom conditions, which still run", async () => {
   let calls = 0;
   const quotas = new Quotas(config, async () => usage(5), [
