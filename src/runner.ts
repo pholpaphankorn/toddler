@@ -501,6 +501,7 @@ export class Runner {
               verification: result.verification,
             });
           } catch (error) {
+            if (error instanceof StopConditionError) throw error;
             if (
               !this.quotas.available(
                 provider,
@@ -531,6 +532,7 @@ export class Runner {
                 context,
             );
           } catch (error) {
+            if (error instanceof StopConditionError) throw error;
             if (
               !this.quotas.available(
                 provider,

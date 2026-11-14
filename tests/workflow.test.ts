@@ -168,6 +168,55 @@ test("a stop condition failure during polling aborts the session and rejects wit
   }
 });
 
+test("runner propagates stop condition polling failures during implementation and review", async (t) => {
+  for (const role of ["implementation", "review"] as const) {
+    await t.test(role, async () => {
+      const root = mkdtempSync(join(tmpdir(), "runner-stop-poll-"));
+      try {
+        writeFileSync(
+          join(root, "poll.mjs"),
+          'export default () => { if (globalThis.__stopPollFail) throw new Error("broken poll"); return []; }',
+        );
+        const configured = {
+          ...config,
+          pollIntervalMs: 5,
+          stopConditions: ["poll.mjs"],
+        };
+        const conditions = await loadStopConditions(root, configured);
+        const { runner } = fixture(configured);
+        runner.quotas = new Quotas(
+          configured,
+          async () => usage(50),
+          conditions,
+        );
+        runner.stage = async (_job, provider, currentRole) => {
+          if (currentRole !== role)
+            return {
+              sha: "reviewed",
+              stdout: "Implementation done",
+              verification: "",
+            };
+          return runner.quotas.run(
+            provider,
+            configured.models[provider][currentRole],
+            () => {
+              (globalThis as any).__stopPollFail = true;
+              return new Promise<never>(() => {});
+            },
+          );
+        };
+        await assert.rejects(
+          runner.work(issue(1), "codex", "main"),
+          /Stop condition module poll.mjs: broken poll/,
+        );
+      } finally {
+        delete (globalThis as any).__stopPollFail;
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 test("built-in stops run before custom conditions, which still run", async () => {
   let calls = 0;
   const quotas = new Quotas(config, async () => usage(5), [
