@@ -8,6 +8,22 @@ other provider review, and opens PRs.
 Run from a normal macOS terminal. Seatbelt cannot nest inside the Codex app's own
 sandbox. The runner never falls back to unsandboxed execution.
 
+## Why "toddler"?
+
+Picture a toddler at the beach building a sandcastle:
+
+- **It stays in the sandbox.** Each agent works in its own fresh worktree inside a
+  Seatbelt sandbox. It can make as much mess as it likes in there; the rest of your
+  machine stays clean.
+- **It brings its own bucket and spade.** Each role gets a small set of vendored
+  skills to build with.
+- **Another kid checks the castle.** One provider builds, the other reviews, and the
+  `verify` command has to pass before anything leaves the sandbox.
+- **It shows you the castle.** Finished work comes back as a PR (or a local branch)
+  for a grown-up to accept.
+- **It naps when it's tired.** When quota runs low, toddler stops and picks up where
+  it left off next time.
+
 ## Install
 
 toddler uses `@ai-hero/sandcastle` 0.14.0 from npm (pinned exactly). Node >= 22.18

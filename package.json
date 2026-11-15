@@ -1,6 +1,7 @@
 {
   "name": "toddler",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "bin": {
     "toddler": "src/main.ts"
