@@ -17,7 +17,7 @@ From primary GitHub sources (REST/GraphQL docs, `gh` docs, changelog), what can 
 
 ## Answer
 
-Full findings: `docs/research/github-spec-facts.md` on branch `research/github-spec-facts` (sources: GitHub docs, REST/GraphQL reference, changelog, gh manual). No live API calls; two items (the personal-account issue types date, the 2026-08-20 token-scope filtering) come from search excerpts only.
+Full findings: `docs/research/github-spec-facts.md` (sources: GitHub docs, REST/GraphQL reference, changelog, gh manual). No live API calls; two items (the personal-account issue types date, the 2026-08-20 token-scope filtering) come from search excerpts only.
 
 - **Sub-issues are GitHub's native way to hold a spec**: the parent issue is the spec and its body is the text. GA since 2025-04-09. Limits: 100 sub-issues per parent, 8 nesting levels, one parent per issue, sub-issues from same-owner repos allowed. No documented plan or visibility limits.
 - **APIs**: REST `GET …/issues/{n}/sub_issues` (100 per page) and `…/parent`; adding takes the numeric issue *id*, not the number. GraphQL has `Issue.subIssues`, `Issue.parent` and `addSubIssue`.

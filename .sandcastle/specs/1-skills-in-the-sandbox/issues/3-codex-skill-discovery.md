@@ -21,4 +21,4 @@ Claude's SKILL.md format works unchanged. Codex requires `description`, and `nam
 
 Not verified: an end-to-end `codex exec` run with seeded skills.
 
-Findings: branch `research/codex-skill-discovery`, file `research/codex-skill-discovery.md` (local only, not pushed). Sources: Codex skills docs and openai/codex at `rust-v0.163.0`.
+Findings: `docs/research/codex-skill-discovery.md`. Sources: Codex skills docs and openai/codex at `rust-v0.163.0`.

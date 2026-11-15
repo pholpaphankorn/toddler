@@ -18,7 +18,7 @@ For a Claude Pro/Max subscription used by Claude Code (current CLI), with primar
 
 ## Answer
 
-Full findings: `docs/research/claude-login-facts.md` on branch `research/claude-login-facts` (sources: code.claude.com docs, changelog, local CLI help, strings in Claude Code 2.1.306). Lifetimes observed once on a Team account.
+Full findings: `docs/research/claude-login-facts.md` (sources: code.claude.com docs, changelog, local CLI help, strings in Claude Code 2.1.306). Lifetimes observed once on a Team account.
 
 - **`claude auth login`:** scopes `user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload user:plugins`. Access token ~8 h (observed, undocumented); refresh token ~30 days, fixed from login (docs: fixed lifetime, 3-day warning). **Refresh rotates**; reusing a spent refresh token revokes the whole login (docs, troubleshoot page).
 - **`claude setup-token`:** 1 year, inference only (`user:inference`), so almost certainly no `/api/oauth/usage` (untested). Fallback quota source: `anthropic-ratelimit-unified-5h-*` / `-7d-*` response headers (undocumented). No documented revoke.

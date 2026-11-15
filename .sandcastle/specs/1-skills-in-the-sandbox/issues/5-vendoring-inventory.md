@@ -27,4 +27,4 @@ Upstream:
 
 Record the commit SHA as well as the version. Not verified online: tag names, the npm release, and the license of the `show-me` text that `pr` copies.
 
-Findings: branch `research/vendoring-inventory`, file `research/vendoring-inventory.md` (local only, not pushed).
+Findings: `docs/research/vendoring-inventory.md`.

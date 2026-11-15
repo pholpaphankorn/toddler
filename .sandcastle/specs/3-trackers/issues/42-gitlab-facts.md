@@ -21,7 +21,7 @@ Compare each with what toddler uses on GitHub today (`gh api` calls in `src/runn
 
 ## Answer
 
-Full findings: `docs/research/gitlab-facts.md` on branch `research/gitlab-facts` (sources: docs.gitlab.com as of 2026-11-14 (GitLab 19.6), the live gitlab.com GraphQL schema, `gitlab-org/gitlab` master source, `glab` 1.115.0 help; 1.130.0 is current). Nothing was run against a real GitLab project; the Free-tier 403 comes from reading source.
+Full findings: `docs/research/gitlab-facts.md` (sources: docs.gitlab.com as of 2026-11-14 (GitLab 19.6), the live gitlab.com GraphQL schema, `gitlab-org/gitlab` master source, `glab` 1.115.0 help; 1.130.0 is current). Nothing was run against a real GitLab project; the Free-tier 403 comes from reading source.
 
 - **Blocking is Premium+** on gitlab.com and self-managed; Free has only "relates to" links. Read with REST `GET /projects/:id/issues/:iid/links`, keeping `link_type == "is_blocked_by"` with `state == "opened"`. Creating a typed link without a license returns 403. GraphQL `linkedItems(filter: BLOCKED_BY)` is still an Experiment. A Free GitLab tracker needs a fallback, e.g. a body convention like the local `blocked_by:`.
 - **Grouping**: epics are Premium+, group-level, and work items since 18.1; nested epics are Ultimate. Free has tasks, but only a task can be a child of an issue, so there is **no issue-to-issue parent/child**. The REST epics API is deprecated in favour of GraphQL `workItems(types: [EPIC])`.

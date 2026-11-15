@@ -18,7 +18,7 @@ For a ChatGPT subscription used by the Codex CLI (current version), with primary
 
 ## Answer
 
-Full findings: `docs/research/codex-login-facts.md` on branch `research/codex-login-facts` (sources: learn.chatgpt.com auth docs, `openai/codex` at `rust-v0.163.0`, matching the installed CLI).
+Full findings: `docs/research/codex-login-facts.md` (sources: learn.chatgpt.com auth docs, `openai/codex` at `rust-v0.163.0`, matching the installed CLI).
 
 - **Lifetimes undocumented.** Codex reads the access token's own `exp`; refresh-token lifetime is not stated anywhere.
 - **Refresh** happens within 5 min of access-token expiry (8-day `last_refresh` rule only as fallback), plus once after a 401 (re-read `auth.json` first, then `auth.openai.com/oauth/token`). Result written back to `auth.json`; no cross-process lock.

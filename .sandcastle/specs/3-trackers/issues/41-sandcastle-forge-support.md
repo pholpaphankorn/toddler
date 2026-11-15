@@ -19,7 +19,7 @@ For each, say what toddler uses today instead (`src/runner.ts`, `src/main.ts`, `
 
 ## Answer
 
-Full findings: `docs/research/sandcastle-forge-support.md` on branch `research/sandcastle-forge-support` (sources: `node_modules/@ai-hero/sandcastle` 0.14.0 `dist`, upstream repo docs, issues and changelog; npm `latest` is still 0.14.0; `v1-next` not inspected).
+Full findings: `docs/research/sandcastle-forge-support.md` (sources: `node_modules/@ai-hero/sandcastle` 0.14.0 `dist`, upstream repo docs, issues and changelog; npm `latest` is still 0.14.0; `v1-next` not inspected).
 
 - **Nothing to reuse.** Sandcastle 0.14.0 has no tracker interface, issue type, push, or PR/MR call in its runtime API. Upstream docs say it "does not embed any issue tracker itself".
 - **Issue sources exist only as `sandcastle init` scaffold text** (`ISSUE_TRACKER_REGISTRY`: `github-issues` via `gh issue …`, `beads`, `custom`), run by the agent, not by the library. There is no GitLab or local-files tracker; upstream closed GitLab/Jira requests as "use custom". Labels are one fixed `Sandcastle` label.

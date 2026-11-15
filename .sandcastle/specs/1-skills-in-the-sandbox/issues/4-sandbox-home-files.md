@@ -18,4 +18,4 @@ Seatbelt `mounts` appear only at their own host path (a different `sandboxPath` 
 
 Recommendation: the mount + symlink. Not verified: whether Claude Code and Codex follow a symlinked `skills` dir. Fall back to tar if they don't.
 
-Findings: branch `research/sandbox-home-files`, file `research/sandbox-home-files.md` (local only, not pushed).
+Findings: `docs/research/sandbox-home-files.md`.
