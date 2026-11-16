@@ -27,6 +27,7 @@ A spec for two settings: the **tracker** (where a project's specs and issues liv
 - [GitHub facts for specs on a GitHub tracker](issues/43-github-spec-facts.md): sub-issues (GA, 100/parent, 8 levels) are the native spec holder; `gh` flags need ≥ 2.94.0 (2.88.1 here); one GraphQL call reads a spec's sub-issues + blockers.
 - [GitLab facts for tracker and forge parity](issues/42-gitlab-facts.md): blocking links and epics are Premium+, Free has no issue-to-issue parent/child; labels, MRs and `glab api` all work on Free; host comes from `GITLAB_HOST` or the git remote; project paths must be URL-encoded.
 - [Tracker and forge config shape](issues/44-tracker-forge-config.md): `forge` (default `"github"`, or `"gitlab"`/`"none"`) + one `repository` + `issues: "files" | "forge"`; no `tracker` key and no PR switch (a forge always opens a PR/MR); host left to `gh`/`glab`; old `issues` values and `openPr` rejected as obsolete.
+- [Where specs live on each tracker](issues/45-specs-per-tracker.md): a spec only groups issues, never gates picking; files unchanged, GitHub = parent issue + direct sub-issues, GitLab = plain issue pointed to by a `Spec: #<iid>` body line in each child (works on Free); exposes id, title, body, issues.
 
 ## Not yet specified
 

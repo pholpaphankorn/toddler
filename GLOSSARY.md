@@ -30,6 +30,9 @@ _Avoid_: guard, rule
 **Ranking**: the order in which toddler prefers the providers still available for a choice of implementer. Either built in (by quota left, or a fixed preference order) or supplied by the project.
 _Avoid_: priority, prioritization
 
+**Spec**: the description of one piece of work and the set of issues that build it.
+_Avoid_: map, epic
+
 **Tracker**: where a project's specs and issues live: files in the project, or the forge's own issues (GitHub or GitLab). A remote tracker is always the project's forge.
 _Avoid_: issue source, backend
 
