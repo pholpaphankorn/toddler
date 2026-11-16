@@ -31,6 +31,7 @@ A spec for two settings: the **tracker** (where a project's specs and issues liv
 - [Blocking and labels on a GitLab tracker](issues/46-gitlab-blocking-labels.md): blocked while an open blocker comes from a native `is_blocked_by` link (Premium) or a `Blocked by: #<iid>` body line (any tier); an unresolvable body line blocks and is logged; labels unchanged, scoped labels matched whole; GitHub stays native-only.
 - [Tracker and forge interface](issues/47-tracker-forge-interface.md): one `Forge` per host (github/gitlab/none) owning a `Tracker` side and a request side; `issues: "files"` swaps in the files tracker; tracker is read-only (`issues`, `blocked`, `comments`, `spec`), forge has `base`, `findRequest`, `openRequest`; normalised `Issue`; adapters tested with fake `gh`/`glab`, runner with in-memory fakes.
 - [Publishing to a GitLab forge](issues/48-gitlab-merge-requests.md): same request rules and body text on both forges (open or merged request blocks re-picking); new `autoMerge` (default off) turns on native auto-merge on GitHub/GitLab and fast-forwards the local branch on none; files `blocked` also counts `done` jobs; tracker stays read-only until PM role.
+- [Init and doctor for each forge](issues/49-init-doctor-per-forge.md): `init` tries `gh`, then `glab`, else `none`, writing only `forge`/`repository`/`install`/`verify`; each forge adapter supplies `doctorChecks` (push access, default branch, `issueLabel` exists, GitHub `autoMergeAllowed` when `autoMerge`), OK/FAIL only.
 
 ## Not yet specified
 
