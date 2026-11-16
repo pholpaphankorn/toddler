@@ -1,6 +1,7 @@
 {
   "issues": "local",
-  "openPr": false,
+  "openPr": true,
+  "repository": "pholpaphankorn/toddler",
   "install": "npm ci",
   "verify": "npm run format:check && npm test"
 }
