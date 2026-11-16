@@ -29,6 +29,7 @@ A spec for two settings: the **tracker** (where a project's specs and issues liv
 - [Tracker and forge config shape](issues/44-tracker-forge-config.md): `forge` (default `"github"`, or `"gitlab"`/`"none"`) + one `repository` + `issues: "files" | "forge"`; no `tracker` key and no PR switch (a forge always opens a PR/MR); host left to `gh`/`glab`; old `issues` values and `openPr` rejected as obsolete.
 - [Where specs live on each tracker](issues/45-specs-per-tracker.md): a spec only groups issues, never gates picking; files unchanged, GitHub = parent issue + direct sub-issues, GitLab = plain issue pointed to by a `Spec: #<iid>` body line in each child (works on Free); exposes id, title, body, issues.
 - [Blocking and labels on a GitLab tracker](issues/46-gitlab-blocking-labels.md): blocked while an open blocker comes from a native `is_blocked_by` link (Premium) or a `Blocked by: #<iid>` body line (any tier); an unresolvable body line blocks and is logged; labels unchanged, scoped labels matched whole; GitHub stays native-only.
+- [Tracker and forge interface](issues/47-tracker-forge-interface.md): one `Forge` per host (github/gitlab/none) owning a `Tracker` side and a request side; `issues: "files"` swaps in the files tracker; tracker is read-only (`issues`, `blocked`, `comments`, `spec`), forge has `base`, `findRequest`, `openRequest`; normalised `Issue`; adapters tested with fake `gh`/`glab`, runner with in-memory fakes.
 
 ## Not yet specified
 
