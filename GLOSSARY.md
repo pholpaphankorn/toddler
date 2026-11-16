@@ -30,7 +30,7 @@ _Avoid_: guard, rule
 **Ranking**: the order in which toddler prefers the providers still available for a choice of implementer. Either built in (by quota left, or a fixed preference order) or supplied by the project.
 _Avoid_: priority, prioritization
 
-**Tracker**: where a project's specs and issues live: local files, GitHub or GitLab.
+**Tracker**: where a project's specs and issues live: files in the project, or the forge's own issues (GitHub or GitLab). A remote tracker is always the project's forge.
 _Avoid_: issue source, backend
 
 **Forge**: where a project's code is pushed and its pull or merge requests are opened: GitHub, GitLab, or none. Chosen apart from the tracker, so local issues can still open GitHub pull requests.
