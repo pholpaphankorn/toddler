@@ -11,6 +11,7 @@ A spec for a pm role that reads a spec from the project's tracker and turns it i
 
 ## Notes
 
+- **Incomplete (phol, 2026-11-16):** the scope isn't settled. phol will add more functionality (e.g. closing and reprioritising issues), so the Destination will grow. Check with phol before charting tickets or treating the Destination as final.
 - Waits on [Roles in config](../2-roles-in-config/spec.md) (pm is a role) and [Trackers](../3-trackers/spec.md) (it reads specs from and writes issues to the tracker).
 - Check overlap with spec 1's out-of-scope "async planning mode" and "tracker doc" entries ([spec 1](../1-skills-in-the-sandbox/spec.md)) before charting.
 - Today no forge token enters the sandbox (`src/agents.ts` unsets them), so who writes the issues is an open question.
