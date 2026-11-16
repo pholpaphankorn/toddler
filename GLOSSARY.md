@@ -33,6 +33,8 @@ _Avoid_: priority, prioritization
 **Spec**: the description of one piece of work and the set of issues that build it.
 _Avoid_: map, epic
 
+**Blocker**: an open issue that must close before another issue can be picked. On every tracker it counts while open, whatever its labels.
+
 **Tracker**: where a project's specs and issues live: files in the project, or the forge's own issues (GitHub or GitLab). A remote tracker is always the project's forge.
 _Avoid_: issue source, backend
 
