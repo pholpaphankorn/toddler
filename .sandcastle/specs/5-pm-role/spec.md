@@ -24,6 +24,7 @@ A spec for a pm role that reads a spec from the project's tracker and turns it i
 
 - How it's started: its own command, or a stage inside `toddler run`.
 - Whether pm writes to the tracker itself or returns structured output that the host writes.
+- **Revisit (phol, 2026-11-16):** `Tracker` is read-only after [Trackers](../3-trackers/spec.md) (`issues`, `blocked`, `comments`, `spec`). PM may need to close issues and reprioritise them; this spec decides which write operations `Tracker` gains, and how they work on files, GitHub and GitLab. See [Publishing to a GitLab forge](../3-trackers/issues/48-gitlab-merge-requests.md).
 - What "organize tasks" means concretely: order, `parallel-safe` labels, `blocked_by`, sizing.
 - Whether a human approves the issues before toddler works them.
 - Which skills go in its skill set.
