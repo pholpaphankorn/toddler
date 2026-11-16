@@ -34,7 +34,6 @@ A spec for two settings: the **tracker** (where a project's specs and issues liv
 
 ## Not yet specified
 
-- `toddler init` and `toddler doctor` per tracker/forge: checks for `gh`/`glab` login and repository access, whether the repo allows auto-merge when `autoMerge` is on, and what `init` writes.
 
 ## Out of scope
 
