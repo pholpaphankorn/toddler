@@ -471,6 +471,7 @@ const config: Config = {
   repository: "example/repo",
   verify: "make check",
   install: "",
+  format: "",
 };
 
 const now = Date.now();
@@ -1421,6 +1422,82 @@ test("run ends when every configured model is stopped by scoped weekly readings"
   assert.deepEqual(events, [["git", "fetch", "origin", "main"]]);
 });
 
+test("implementation stages run the formatter and commit its changes before verify; review never does", async () => {
+  const commands: string[] = [];
+  const gits: string[][] = [];
+  let dirty = false,
+    head = "implemented",
+    formatExit = 0;
+  const sandbox = {
+    worktreePath: "/fixture",
+    close: async () => ({}),
+    exec: async (cmd: string) => {
+      commands.push(cmd);
+      if (cmd === "npm run format") {
+        dirty = true;
+        return { exitCode: formatExit, stdout: "" };
+      }
+      return { exitCode: 0, stdout: "ok" };
+    },
+    run: async () => ({ stdout: "done" }),
+  };
+  const runner = new Runner({
+    root: fileURLToPath(new URL("../../", import.meta.url)),
+    config: { ...config, format: "npm run format" },
+    quotas: fake({
+      run: async (
+        _p: Provider,
+        _m: string,
+        action: (s: AbortSignal) => unknown,
+      ) => action(new AbortController().signal),
+    }),
+    state: { repository: config.repository, jobs: {} },
+    save: () => {},
+    sandcastle: fake({
+      codex: () => ({ buildPrintCommand: () => ({ command: "cli" }) }),
+      createSandbox: async () => sandbox,
+    }),
+    authentication: { codex: async () => "auth", claude: async () => "t" },
+    git: async (_file, args = []) => {
+      gits.push(args);
+      if (args[0] === "branch") return "toddler/issue-1";
+      if (args[0] === "rev-parse") return head;
+      if (args[0] === "status") return dirty ? " M src/a.ts" : "";
+      if (args[0] === "commit") {
+        dirty = false;
+        head = "formatted";
+      }
+      return "";
+    },
+  });
+  const job = fake<Job>({
+    number: 1,
+    branch: "toddler/issue-1",
+    baseSha: "base",
+  });
+  const result = await runner.stage(job, "codex", "implementation", "task");
+  assert.equal(result.sha, "formatted");
+  assert.deepEqual(
+    commands.filter((cmd) => cmd === "npm run format" || cmd === "make check"),
+    ["npm run format", "make check"],
+  );
+  assert.ok(
+    gits.some(
+      (args) =>
+        args[0] === "commit" && args.includes("style: run project formatter"),
+    ),
+  );
+  commands.length = 0;
+  head = "reviewed";
+  await runner.stage(job, "codex", "review", "task");
+  assert.ok(!commands.includes("npm run format"));
+  formatExit = 1;
+  head = "implemented";
+  await assert.rejects(
+    runner.stage(job, "codex", "implementation", "task"),
+    /Formatter failed: npm run format/,
+  );
+});
 test("Sandcastle stage uses the requested model, runs the verify command in Seatbelt, and always closes", async () => {
   for (const provider of providers) {
     let closed = false,
@@ -1675,6 +1752,9 @@ test("project config overrides defaults, must name a repository, and verify is o
     write({ repository: "owner/repo" });
     assert.equal(loadConfig(root).verify, "");
     assert.equal(loadConfig(root).install, "");
+    assert.equal(loadConfig(root).format, "");
+    write({ repository: "owner/repo", format: true });
+    assert.throws(() => loadConfig(root), /"format"/);
     for (const value of [[], ["codex", "codex"], ["other"], "codex", null]) {
       write({ repository: "owner/repo", providers: value });
       assert.throws(() => loadConfig(root), /providers/);

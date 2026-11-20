@@ -366,7 +366,7 @@ export class Runner {
             },
           });
           signal.throwIfAborted();
-          const after = await this.git(
+          let after = await this.git(
             ["rev-parse", "HEAD"],
             sandbox.worktreePath,
           );
@@ -393,6 +393,26 @@ export class Runner {
           );
           if (after === job.baseSha)
             throw new Error("No implementation commits were produced");
+          // Format deterministically before verify and review instead of trusting the agent to remember.
+          if (role === "implementation" && this.config.format.trim()) {
+            if ((await sandbox.exec(this.config.format)).exitCode)
+              throw new Error(`Formatter failed: ${this.config.format}`);
+            const formatted = await this.git(
+              ["status", "--porcelain"],
+              sandbox.worktreePath,
+            );
+            if (formatted) {
+              await this.git(["add", "-A"], sandbox.worktreePath);
+              await this.git(
+                ["commit", "--no-verify", "-m", "style: run project formatter"],
+                sandbox.worktreePath,
+              );
+              after = await this.git(
+                ["rev-parse", "HEAD"],
+                sandbox.worktreePath,
+              );
+            }
+          }
           // The command comes from the host config, not the agent-editable worktree.
           if (!this.config.verify.trim())
             return { stdout: result.stdout, sha: after, verification: "" };

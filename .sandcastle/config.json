@@ -3,5 +3,6 @@
   "openPr": true,
   "repository": "pholpaphankorn/toddler",
   "install": "npm ci",
+  "format": "npm run format",
   "verify": "npm run format:check && npm test"
 }

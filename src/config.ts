@@ -42,6 +42,8 @@ export interface Config extends Defaults {
   verify: string;
   /** Shell command run in each new sandbox before the agent starts (e.g. "npm ci"); must exit 0. Empty: nothing installed. */
   install: string;
+  /** Shell command run in the sandbox after each implementation stage (e.g. "npm run format"); any changes it makes are committed before verify and review. Empty: not run. */
+  format: string;
 }
 
 /** Local issues kept on local branches: no GitHub repository or git remote is used. */
@@ -142,6 +144,12 @@ export function loadConfig(
   if (typeof config.verify !== "string") {
     throw new Error(
       `${path}: "verify" must be a shell command that checks the project (e.g. "npm test")`,
+    );
+  }
+  config.format ??= "";
+  if (typeof config.format !== "string") {
+    throw new Error(
+      `${path}: "format" must be a shell command that formats the project (e.g. "npm run format")`,
     );
   }
   config.install ??= "";
