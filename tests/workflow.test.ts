@@ -885,6 +885,11 @@ test("review approval requires exactly one valid verdict without findings", () =
   assert.equal(reviewReport(report()).verdict, "approved");
   assert.throws(() => reviewReport("looks good"));
   assert.throws(() => reviewReport(report() + report()));
+  assert.equal(
+    reviewReport("carries the `<sandcastle-review>` format\n" + report())
+      .verdict,
+    "approved",
+  );
   assert.throws(() =>
     reviewReport(
       '<sandcastle-review>{"verdict":"approved","findings":["broken"]}</sandcastle-review>',

@@ -166,7 +166,8 @@ export function reviewer(
 }
 export function reviewReport(text: string): ReviewReport {
   const matches = [
-    ...text.matchAll(/<sandcastle-review>([\s\S]*?)<\/sandcastle-review>/g),
+    // body must start with "{" so a prose mention of the tag is not taken as the verdict
+    ...text.matchAll(/<sandcastle-review>(\{[\s\S]*?)<\/sandcastle-review>/g),
   ];
   if (matches.length !== 1)
     throw new Error("Review must contain exactly one structured verdict");
