@@ -155,15 +155,34 @@ export class Runner {
   finished(number: number): boolean {
     return ["pr", "done"].includes(this.state.jobs[number]?.status ?? "");
   }
+  // shortcut: TEMPORARY PATCH. With PRs on, local issue files are read from this ref (e.g. origin/main) so merged
+  // close commits unblock dependents without a manual pull; replaced by the files Tracker (#50) and PM role (spec 5).
+  issueRef?: string;
   async localIssues(): Promise<Issue[]> {
-    const directory = join(this.root, ".sandcastle/specs");
-    if (!existsSync(directory)) return [];
-    const files = (await readdir(directory, { recursive: true })).filter(
-      (file) => /^[^/]+\/issues\/[^/]+\.md$/.test(file),
-    );
+    const prefix = ".sandcastle/specs/";
+    const ref = this.issueRef;
+    let files: string[];
+    if (ref)
+      files = (
+        await this.git(["ls-tree", "-r", "--name-only", ref, "--", prefix])
+      )
+        .split("\n")
+        .filter(Boolean)
+        .map((file) => file.slice(prefix.length));
+    else {
+      const directory = join(this.root, prefix);
+      if (!existsSync(directory)) return [];
+      files = await readdir(directory, { recursive: true });
+    }
+    files = files.filter((file) => /^[^/]+\/issues\/[^/]+\.md$/.test(file));
     const issues = await Promise.all(
       files.map(async (file) =>
-        localIssue(file, await readFile(join(directory, file), "utf8")),
+        localIssue(
+          file,
+          ref
+            ? await this.git(["show", `${ref}:${prefix}${file}`])
+            : await readFile(join(this.root, prefix, file), "utf8"),
+        ),
       ),
     );
     const duplicate = issues.find(
@@ -652,7 +671,7 @@ export class Runner {
       await rm(directory, { recursive: true, force: true });
     }
   }
-  // shortcut: the coordinator merges once review approves, until autoMerge (#52) and the PM role (spec 5) take this over.
+  // shortcut: TEMPORARY PATCH. The coordinator merges once review approves, until autoMerge (#52) and the PM role (spec 5) take this over.
   // --auto merges now when GitHub allows it, else waits for checks; --merge keeps the close-issue commit separate.
   async merge(issue: Issue, url: string): Promise<void> {
     try {
@@ -665,7 +684,7 @@ export class Runner {
       );
     }
   }
-  // shortcut: writes the issue file from the coordinator until Tracker gains writes (spec 5); lands with the PR's merge.
+  // shortcut: TEMPORARY PATCH. Writes the issue file from the coordinator until Tracker gains writes (spec 5); lands with the PR's merge.
   async closeCommit(issue: Issue, job: Job): Promise<string> {
     const directory = await mkdtemp(join(tmpdir(), "toddler-close-"));
     try {
@@ -703,6 +722,12 @@ export class Runner {
   }
   async run(baseBranch: string): Promise<void> {
     while (!this.interrupted) {
+      if (!offline(this.config)) {
+        // shortcut: TEMPORARY PATCH. Re-fetch each round so new jobs start from PRs merged earlier in this run;
+        // remove with the PM role (spec 5) or once the Forge seam (#50) owns fetching.
+        await this.git(["fetch", this.config.remote, baseBranch]);
+        if (this.local()) this.issueRef = `${this.config.remote}/${baseBranch}`;
+      }
       await this.quotas.refresh();
       if (
         !this.config.providers.some((name) =>

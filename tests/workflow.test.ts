@@ -1301,7 +1301,53 @@ test("no available issue or quota terminates without starting agents", async () 
   quotas.available = () => false;
   runner.candidates = async () => [issue(1)];
   await runner.run("main");
-  assert.equal(events.length, 0);
+  assert.deepEqual(events, [
+    ["git", "fetch", "origin", "main"],
+    ["git", "fetch", "origin", "main"],
+  ]);
+});
+test("with PRs on, each round re-fetches the base and local issues read from it", async () => {
+  const { runner, events } = fixture({ issues: "local" });
+  runner.candidates = async () => [];
+  await runner.run("main");
+  assert.deepEqual(events, [["git", "fetch", "origin", "main"]]);
+  assert.equal(runner.issueRef, "origin/main");
+  const offline = fixture({ issues: "local", openPr: false });
+  offline.runner.candidates = async () => [];
+  await offline.runner.run("main");
+  assert.deepEqual(offline.events, []);
+  assert.equal(offline.runner.issueRef, undefined);
+});
+test("local issues come from the issue ref, not the working tree, when it is set", async () => {
+  const root = mkdtempSync(join(tmpdir(), "toddler-ref-test-"));
+  const run = (...args: string[]) => {
+    const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  try {
+    run("init", "-q", "-b", "main");
+    run("config", "user.email", "t@example.com");
+    run("config", "user.name", "t");
+    mkdirSync(join(root, ".sandcastle/specs/1-a/issues"), { recursive: true });
+    const write = (name: string, text: string) =>
+      writeFileSync(join(root, ".sandcastle/specs/1-a/issues", name), text);
+    write("1-done.md", "---\nstatus: closed\n---\n");
+    write("2-next.md", "---\nblocked_by: [1]\n---\nDo it");
+    run("add", ".");
+    run("commit", "-qm", "merged upstream");
+    run("branch", "upstream");
+    write("1-done.md", "---\nstatus: open\n---\n");
+    write("3-local-only.md", "uncommitted");
+    const { runner } = fixture({ issues: "local", openPr: false }, root);
+    runner.gitCommand = command;
+    runner.issueRef = "upstream";
+    assert.deepEqual(
+      (await runner.candidates()).map((issue) => issue.number),
+      [2],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 test("run ends when every configured model is stopped by scoped weekly readings", async () => {
   const { runner, events } = fixture();
@@ -1323,7 +1369,7 @@ test("run ends when every configured model is stopped by scoped weekly readings"
   }));
   runner.candidates = async () => [issue(1)];
   await runner.run("main");
-  assert.equal(events.length, 0);
+  assert.deepEqual(events, [["git", "fetch", "origin", "main"]]);
 });
 
 test("Sandcastle stage uses the requested model, runs the verify command in Seatbelt, and always closes", async () => {
