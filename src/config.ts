@@ -13,6 +13,7 @@ export const defaults = {
   remote: "origin",
   forge: "github" as "github" | "gitlab" | "none",
   issues: "forge" as "forge" | "files",
+  autoMerge: false,
   issueLabel: "Sandcastle",
   parallelLabel: "parallel-safe",
   blockedLabels: ["blocked", "on-hold"],
@@ -147,6 +148,8 @@ export function loadConfig(
     throw new Error(`${path}: invalid forge`);
   if (!["forge", "files"].includes(config.issues))
     throw new Error(`${path}: invalid issues`);
+  if (typeof config.autoMerge !== "boolean")
+    throw new Error(`${path}: invalid autoMerge`);
   if (config.forge === "none" && config.issues === "forge")
     throw new Error(`${path}: issues: forge requires a forge other than none`);
   if (

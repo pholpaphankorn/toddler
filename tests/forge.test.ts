@@ -139,11 +139,54 @@ test("GitHub forge merges immediately when auto-merge has no pending checks", as
       return "";
     },
   );
-  await forge.merge("https://example.com/pr/1");
+  await forge.enableAutoMerge("https://example.com/pr/1");
   assert.deepEqual(calls, [
-    ["pr", "merge", "https://example.com/pr/1", "--auto", "--merge"],
-    ["pr", "merge", "https://example.com/pr/1", "--merge"],
+    ["pr", "merge", "https://example.com/pr/1", "--auto"],
+    ["pr", "merge", "https://example.com/pr/1"],
   ]);
+});
+
+test("GitHub enables auto-merge and propagates refusals", async () => {
+  const calls: string[][] = [];
+  let refuse = false;
+  const forge = new GitHubForge(
+    "/repo",
+    config,
+    async () => "",
+    async (_, args = []) => {
+      calls.push(args);
+      if (refuse) throw new Error("auto-merge is not allowed");
+      return "";
+    },
+  );
+  await forge.enableAutoMerge("url");
+  assert.deepEqual(calls, [["pr", "merge", "url", "--auto"]]);
+  refuse = true;
+  await assert.rejects(forge.enableAutoMerge("url"), /not allowed/);
+  assert.equal(calls.length, 2);
+});
+
+test("doctor requires GitHub auto-merge only when configured", async () => {
+  let allowed = false;
+  const forge = new GitHubForge(
+    "/repo",
+    config,
+    async () => "",
+    async () =>
+      JSON.stringify({
+        nameWithOwner: "owner/repo",
+        viewerPermission: "WRITE",
+        defaultBranchRef: { name: "main" },
+        autoMergeAllowed: allowed,
+      }),
+  );
+  await forge.doctorChecks(config)[0][1]();
+  await assert.rejects(
+    forge.doctorChecks({ ...config, autoMerge: true })[0][1](),
+    /does not allow auto-merge/,
+  );
+  allowed = true;
+  await forge.doctorChecks({ ...config, autoMerge: true })[0][1]();
 });
 
 test("files tracker returns only open issues and resolves blocked_by against the open set", async () => {

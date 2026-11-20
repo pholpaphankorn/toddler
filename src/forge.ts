@@ -30,7 +30,7 @@ export interface Forge {
     body: string;
   }): Promise<string>;
   doctorChecks(config: Config): [string, () => Promise<string>][];
-  merge(url: string): Promise<void>;
+  enableAutoMerge(url: string): Promise<void>;
 }
 export class FilesTracker implements Tracker {
   private open = new Map<number, ReturnType<typeof localIssue>>();
@@ -269,13 +269,15 @@ export class GitHubForge implements Forge {
               "view",
               this.config.repository,
               "--json",
-              "nameWithOwner,viewerPermission,defaultBranchRef",
+              "nameWithOwner,viewerPermission,defaultBranchRef,autoMergeAllowed",
             ]),
           );
           if (!["ADMIN", "MAINTAIN", "WRITE"].includes(repo.viewerPermission))
             throw new Error(
               "Repository write permission needed to push issue branches",
             );
+          if (config.autoMerge && !repo.autoMergeAllowed)
+            throw new Error("Repository does not allow auto-merge");
           return `${repo.nameWithOwner}, base ${repo.defaultBranchRef.name}, ${repo.viewerPermission}`;
         },
       ],
@@ -295,14 +297,12 @@ export class GitHubForge implements Forge {
         : []),
     ];
   }
-  async merge(url: string) {
-    await this.gh(["pr", "merge", url, "--auto", "--merge"]).catch(
-      (error: Error) => {
-        // GitHub refuses auto-merge when nothing is pending: merge now.
-        if (!/clean status/i.test(error.message)) throw error;
-        return this.gh(["pr", "merge", url, "--merge"]);
-      },
-    );
+  async enableAutoMerge(url: string) {
+    await this.gh(["pr", "merge", url, "--auto"]).catch((error: Error) => {
+      // GitHub refuses auto-merge when nothing is pending: merge now.
+      if (!/clean status/i.test(error.message)) throw error;
+      return this.gh(["pr", "merge", url]);
+    });
   }
 }
 export class NoneForge implements Forge {
@@ -331,7 +331,7 @@ export class NoneForge implements Forge {
   doctorChecks(_config: Config): [string, () => Promise<string>][] {
     return [];
   }
-  async merge(_url: string) {}
+  async enableAutoMerge(_url: string) {}
 }
 export function connect(
   root: string,

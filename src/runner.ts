@@ -570,25 +570,33 @@ export class Runner {
     const existing = await this.forge.findRequest(job.branch);
     if (existing?.open) {
       this.persist(job, { status: "pr", pr: existing.url });
-      await this.merge(issue, existing.url);
-      return;
-    }
-    const file = this.tracker.file?.(issue.number);
-    if (file && !job.publishSha)
-      this.persist(job, {
-        publishSha: await this.closeCommit(issue, job, file),
+    } else {
+      const file = this.tracker.file?.(issue.number);
+      if (file && !job.publishSha)
+        this.persist(job, {
+          publishSha: await this.closeCommit(issue, job, file),
+        });
+      const { ref, closes } = this.tracker.requestReference(issue);
+      const url = await this.forge.openRequest({
+        branch: job.branch,
+        sha: job.publishSha ?? job.reviewedSha!,
+        base: job.baseBranch,
+        title: `Fix ${ref}: ${issue.title}`.slice(0, 200),
+        body: `## Summary\n\nIssue ${ref} → implementation → review → pull request\n\n${job.report!.summary}\n\n${closes}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\n${this.config.verify.trim() ? `Coordinator verification (\`${this.config.verify}\`): passed.` : "Coordinator verification: none configured."}\n\nReviewed by ${this.config.roles.review.models[job.reviewer!]} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`,
       });
-    const { ref, closes } = this.tracker.requestReference(issue);
-    const url = await this.forge.openRequest({
-      branch: job.branch,
-      sha: job.publishSha ?? job.reviewedSha!,
-      base: job.baseBranch,
-      title: `Fix ${ref}: ${issue.title}`.slice(0, 200),
-      body: `## Summary\n\nIssue ${ref} → implementation → review → pull request\n\n${job.report!.summary}\n\n${closes}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\n${this.config.verify.trim() ? `Coordinator verification (\`${this.config.verify}\`): passed.` : "Coordinator verification: none configured."}\n\nReviewed by ${this.config.roles.review.models[job.reviewer!]} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`,
-    });
-    this.persist(job, { status: "pr", pr: url });
-    console.log(`[issue #${issue.number}] ${url}`);
-    await this.merge(issue, url);
+      this.persist(job, { status: "pr", pr: url });
+      console.log(`[issue #${issue.number}] ${url}`);
+    }
+    if (this.config.autoMerge) {
+      try {
+        await this.forge.enableAutoMerge(job.pr!);
+        console.log(`[issue #${issue.number}] auto-merge enabled: ${job.pr}`);
+      } catch (error) {
+        console.error(
+          `[issue #${issue.number}] could not enable auto-merge for ${job.pr}: ${(error as Error).message}`,
+        );
+      }
+    }
   }
 
   // shortcut: TEMPORARY PATCH. Conflicts with the fresh base go back to the implementer before review and before
@@ -615,19 +623,6 @@ export class Runner {
     if (job.rounds >= this.config.maxReviewRounds)
       throw new Error("Review round limit reached; needs human attention");
     return true;
-  }
-  // shortcut: TEMPORARY PATCH. The coordinator merges once review approves, until autoMerge (#52) and the PM role (spec 5) take this over.
-  // --auto waits for checks; --merge keeps the close-issue commit separate.
-  async merge(issue: Issue, url: string): Promise<void> {
-    try {
-      await this.forge.merge(url);
-      console.log(`[issue #${issue.number}] merged or auto-merge set: ${url}`);
-    } catch (error) {
-      // The PR stays open and the job stays "pr" (#52's refusal rule).
-      console.error(
-        `[issue #${issue.number}] could not merge ${url}: ${(error as Error).message}`,
-      );
-    }
   }
   // shortcut: TEMPORARY PATCH. Writes the issue file from the coordinator until Tracker gains writes (spec 5); lands with the PR's merge.
   async closeCommit(issue: Issue, job: Job, file: string): Promise<string> {
