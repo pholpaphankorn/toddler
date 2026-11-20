@@ -21,7 +21,11 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
     assert.equal(load({ repository: "owner/name" }).issues, "forge");
     assert.equal(load({ forge: "none" }).issues, "files");
     assert.throws(
-      () => connect(root, load({ forge: "gitlab", repository: "owner/name" })),
+      () =>
+        connect(
+          root,
+          load({ forge: "gitlab", repository: "group/subgroup/project" }),
+        ),
       /not supported yet/,
     );
     for (const [value, pattern] of [
@@ -44,7 +48,16 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
         /issues.*obsolete setting.*files/,
       ],
     ] as const)
-      assert.throws(() => load(value), pattern);
+      assert.throws(
+        () => load(value),
+        (error: Error) => {
+          assert.match(error.message, pattern);
+          assert.ok(
+            error.message.includes(join(root, ".sandcastle/config.json")),
+          );
+          return true;
+        },
+      );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

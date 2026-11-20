@@ -206,9 +206,15 @@ export function loadConfig(
     config.repository = "local";
   } else if (
     typeof config.repository !== "string" ||
-    !/^[\w.-]+\/[\w.-]+$/.test(config.repository)
+    !(
+      config.forge === "gitlab"
+        ? /^[\w.-]+(?:\/[\w.-]+)+$/
+        : /^[\w.-]+\/[\w.-]+$/
+    ).test(config.repository)
   ) {
-    throw new Error(`${path}: repository must be owner/name`);
+    throw new Error(
+      `${path}: repository must be ${config.forge === "gitlab" ? "group/project (possibly nested)" : "owner/name"}`,
+    );
   }
   config.verify ??= "";
   if (typeof config.verify !== "string") {
