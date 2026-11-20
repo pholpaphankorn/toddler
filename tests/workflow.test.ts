@@ -925,7 +925,9 @@ function fixture(
       issues: async () => [],
       blocked: async () => false,
       comments: async () => [],
-      spec: async () => undefined,
+      spec: async () => {
+        throw new Error("unused");
+      },
       requestReference: (item) =>
         overrides.issues === "files"
           ? { ref: `local issue ${item.number}`, closes: "" }
@@ -1987,7 +1989,9 @@ test("runner uses tracker and forge seams and skips finished or attempted issues
       return item.number === 4;
     },
     comments: async () => [],
-    spec: async () => undefined,
+    spec: async () => {
+      throw new Error("unused");
+    },
     requestReference: (item) => ({
       ref: `#${item.number}`,
       closes: `Closes #${item.number}\n\n`,
