@@ -19,6 +19,7 @@ A spec for two settings: the **tracker** (where a project's specs and issues liv
 - **Specs on remote trackers are in scope**: this spec decides where a spec lives on each tracker; how the PM role uses specs stays in [spec 5](../5-pm-role/spec.md).
 - Tracker: these files, same conventions as [spec 1](../1-skills-in-the-sandbox/spec.md). Claim = `assignee:`; resolve = `## Answer` + `status: closed`; blocking = `blocked_by` (works across specs). Research findings live on local `research/<name>` branches (no git remote), pointed to from the ticket's answer.
 - Vocabulary: [GLOSSARY.md](../../../GLOSSARY.md) (**Tracker**, **Forge**, **Provider**, **Role**).
+- **Short-term merge and close (2026-11-20), ahead of this spec:** before PM ([spec 5](../5-pm-role/spec.md)) or a dedicated role exists, toddler always runs `gh pr merge --auto --merge` after opening a PR (merges now if GitHub allows, else sets auto-merge; a refusal is logged and the job stays `pr`, as in [#52](issues/52-automerge-github.md)), and a local issue's PR carries a separate `pm: close issue N` commit closing its file. This breaks two decisions here on purpose: merging without `autoMerge: true` ([#48](issues/48-gitlab-merge-requests.md)) and "nothing writes to issue files" ([#53](issues/53-automerge-none.md)). #52 and #53 replace it; see `merge()` and `closeCommit()` in `src/runner.ts`.
 - Spec 2's implementation issues (38–40) touch `src/config.ts`; implementation issues from this spec are `blocked_by` them where they overlap.
 
 ## Decisions so far

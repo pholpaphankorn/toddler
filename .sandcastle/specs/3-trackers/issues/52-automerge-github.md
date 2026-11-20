@@ -16,3 +16,7 @@ Let a project hand merging to GitHub once review approves.
 Done when GitHub adapter tests cover enabling auto-merge and the refusal path, the runner tests cover the job staying `pr` on refusal, and doctor tests cover the `autoMergeAllowed` check. README documents `autoMerge`.
 
 Decision records: [48](48-gitlab-merge-requests.md), [49](49-init-doctor-per-forge.md).
+
+## Note (2026-11-20): short-term merge in place
+
+A stopgap already merges every PR after review approval, without the `autoMerge` key: `merge()` in `src/runner.ts` runs `gh pr merge <url> --auto --merge` and logs a refusal (job stays `pr`). This issue replaces it with the opt-in `autoMerge` key and `Forge.enableAutoMerge`, and should delete `merge()`. `--merge` (not the repo default) was chosen so the separate close-issue commit survives; revisit that when [#53](53-automerge-none.md) settles who closes issue files.

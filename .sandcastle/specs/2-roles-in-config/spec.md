@@ -14,6 +14,7 @@ A spec for a config shape where each role (implementation, review, and later pm)
 - Builds on spec 1's settled decision [Per-role skill sets](../1-skills-in-the-sandbox/issues/7-role-skill-sets.md) (`skills` keyed by role); not reopened.
 - Tracker: these files, same conventions as [spec 1](../1-skills-in-the-sandbox/spec.md). Tickets are files with `parent: 2` and carry `on-hold` so `toddler` never implements them. Claim = `assignee:`; resolve = `## Answer` + `status: closed`; blocking = `blocked_by` (issue numbers are unique across specs, so cross-spec blocking works).
 - Vocabulary: [GLOSSARY.md](../../../GLOSSARY.md) (**Provider**, **Role**, **Agent**, **Tracker**, **Skill set**).
+- **Short-term merge after review (2026-11-20):** until the PM role ([spec 5](../5-pm-role/spec.md)) or a dedicated role owns it, a review `approved` verdict now also merges: after opening the PR the coordinator runs `gh pr merge --auto --merge` (`merge()` in `src/runner.ts`), and for a local issue the PR carries a separate `pm: close issue N` commit that sets the file to `status: closed` (`closeCommit()`). The reviewer agent still never merges or closes; this is coordinator code, not role config. Replace it when the pm role or `autoMerge` ([#52](../3-trackers/issues/52-automerge-github.md)) lands.
 - Spec 1's implementation issues (13–17) and spec 4's (25–29) are all closed, so implementation issues from this spec have no cross-spec blockers today.
 
 ## Decisions so far

@@ -19,3 +19,7 @@ Make offline work (`forge: "none"`) flow without manual merging.
 Done when tests cover each fast-forward path (checked-out clean base, base not checked out, not fast-forwardable), the `done` job unblocking its dependents, and the doctor line.
 
 Decision records: [48](48-gitlab-merge-requests.md), [49](49-init-doctor-per-forge.md).
+
+## Note (2026-11-20): short-term close commit in place
+
+Contrary to item 3 above, a stopgap now writes to issue files: for a local issue, `closeCommit()` in `src/runner.ts` adds a separate `pm: close issue N` commit (`status: closed`) on top of the reviewed SHA, so the file closes when the PR merges. It applies to GitHub forges only (`openPr: true`); with `openPr: false` nothing changes. Remove it here or when the PM role ([spec 5](../../5-pm-role/spec.md)) gains tracker writes.
