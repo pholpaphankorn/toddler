@@ -623,29 +623,43 @@ export class Runner {
     return true;
   }
   async fastForward(job: Job): Promise<void> {
-    const base = await this.git(["rev-parse", `refs/heads/${job.baseBranch}`]);
-    try {
-      await this.git(["merge-base", "--is-ancestor", base, job.reviewedSha!]);
-    } catch (error) {
-      if ((error as { code?: unknown }).code !== 1) throw error;
-      console.log(
-        `[issue #${job.number}] cannot fast-forward ${job.baseBranch}; leaving ${job.branch}`,
-      );
-      return;
-    }
-    const current = await this.git(["branch", "--show-current"]);
-    if (
-      current === job.baseBranch &&
-      !(await this.git(["status", "--porcelain"]))
-    ) {
-      await this.git(["merge", "--ff-only", job.reviewedSha!]);
-    } else {
-      await this.git([
-        "update-ref",
+    while (true) {
+      const base = await this.git([
+        "rev-parse",
         `refs/heads/${job.baseBranch}`,
-        job.reviewedSha!,
-        base,
       ]);
+      try {
+        await this.git(["merge-base", "--is-ancestor", base, job.reviewedSha!]);
+      } catch (error) {
+        if ((error as { code?: unknown }).code !== 1) throw error;
+        console.log(
+          `[issue #${job.number}] cannot fast-forward ${job.baseBranch}; leaving ${job.branch}`,
+        );
+        return;
+      }
+      const current = await this.git(["branch", "--show-current"]);
+      try {
+        if (
+          current === job.baseBranch &&
+          !(await this.git(["status", "--porcelain"]))
+        ) {
+          await this.git(["merge", "--ff-only", job.reviewedSha!]);
+        } else {
+          await this.git([
+            "update-ref",
+            `refs/heads/${job.baseBranch}`,
+            job.reviewedSha!,
+            base,
+          ]);
+        }
+        return;
+      } catch (error) {
+        if (
+          (await this.git(["rev-parse", `refs/heads/${job.baseBranch}`])) ===
+          base
+        )
+          throw error;
+      }
     }
   }
   async run(baseBranch: string): Promise<void> {

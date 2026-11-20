@@ -1302,6 +1302,60 @@ test("offline auto-merge fast-forwards only when safe", async () => {
     }
   }
 });
+test("concurrent offline approvals finish when their branches diverge", async () => {
+  const root = mkdtempSync(join(tmpdir(), "toddler-ff-race-"));
+  const run = (...args: string[]) => {
+    const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  try {
+    run("init", "-q", "-b", "main");
+    run("config", "user.email", "t@example.com");
+    run("config", "user.name", "t");
+    writeFileSync(join(root, "base"), "base");
+    run("add", ".");
+    run("commit", "-qm", "base");
+    const jobs: Job[] = [];
+    for (const number of [1, 2]) {
+      run("checkout", "-qb", `toddler/local-${number}`, "main");
+      writeFileSync(join(root, `work-${number}`), "work");
+      run("add", ".");
+      run("commit", "-qm", `work ${number}`);
+      jobs.push({
+        number,
+        branch: `toddler/local-${number}`,
+        baseBranch: "main",
+        reviewedSha: run("rev-parse", "HEAD"),
+        status: "approved",
+      } as Job);
+    }
+    const { runner, state } = fixture({ forge: "none", autoMerge: true }, root);
+    for (const job of jobs) state.jobs[job.number] = job;
+    let arrivals = 0;
+    let release!: () => void;
+    const bothReady = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    runner.gitCommand = async (file, args = [], options) => {
+      if (args[0] === "update-ref" && ++arrivals <= 2) {
+        if (arrivals === 2) release();
+        await bothReady;
+      }
+      return command(file, args, options);
+    };
+    await Promise.all(
+      jobs.map((job) => runner.publish(issue(job.number), job)),
+    );
+    assert.deepEqual(
+      jobs.map((job) => job.status),
+      ["done", "done"],
+    );
+    assert.ok(jobs.some((job) => job.reviewedSha === run("rev-parse", "main")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 test("local issues skip closed and blocked files, never call GitHub, and stop on a local branch when openPr is false", async () => {
   const root = mkdtempSync(join(tmpdir(), "toddler-local-"));
   try {
