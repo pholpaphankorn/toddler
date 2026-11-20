@@ -11,6 +11,7 @@ export interface Tracker {
   blocked(issue: Issue): Promise<boolean>;
   comments(issue: Issue): Promise<string[]>;
   spec(id: number): Promise<unknown>;
+  requestReference(issue: Issue): { ref: string; closes: string };
   file?(number: number): string | undefined;
 }
 export interface Forge {
@@ -102,6 +103,9 @@ export class FilesTracker implements Tracker {
   async spec(_id: number): Promise<unknown> {
     throw new Error("Spec is not implemented");
   }
+  requestReference(issue: Issue) {
+    return { ref: `local issue ${issue.number}`, closes: "" };
+  }
   file(number: number): string | undefined {
     return this.open.get(number)?.file;
   }
@@ -180,6 +184,10 @@ export class GitHubForge implements Forge {
             ]),
           ).flat() as { body: string }[]
         ).map((item) => item.body),
+      requestReference: (issue) => ({
+        ref: `#${issue.number}`,
+        closes: `Closes #${issue.number}\n\n`,
+      }),
       spec: async (_id) => {
         throw new Error("Spec is not implemented");
       },

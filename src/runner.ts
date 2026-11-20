@@ -391,6 +391,7 @@ export class Runner {
     issue: Issue,
     initialProvider: Provider,
     baseBranch: string,
+    baseRef?: string,
   ): Promise<void> {
     let job = this.state.jobs[issue.number];
     if (!job) {
@@ -400,9 +401,7 @@ export class Runner {
         baseBranch,
         baseSha: await this.git([
           "rev-parse",
-          this.forge.remote
-            ? `${this.config.remote}/${baseBranch}`
-            : baseBranch,
+          baseRef ?? (await this.forge.base(baseBranch)).ref,
         ]),
         status: "implementation",
         rounds: 0,
@@ -571,15 +570,13 @@ export class Runner {
       this.persist(job, {
         publishSha: await this.closeCommit(issue, job, file),
       });
-    const ref = this.local()
-      ? `local issue ${issue.number}`
-      : `#${issue.number}`;
+    const { ref, closes } = this.tracker.requestReference(issue);
     const url = await this.forge.openRequest({
       branch: job.branch,
       sha: job.publishSha ?? job.reviewedSha!,
       base: job.baseBranch,
       title: `Fix ${ref}: ${issue.title}`.slice(0, 200),
-      body: `## Summary\n\nIssue ${ref} → implementation → review → pull request\n\n${job.report!.summary}\n\n${this.local() ? "" : `Closes #${issue.number}\n\n`}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\n${this.config.verify.trim() ? `Coordinator verification (\`${this.config.verify}\`): ${job.verification || "passed"}.` : "Coordinator verification: none configured."}\n\nReviewed by ${this.config.roles.review.models[job.reviewer!]} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`,
+      body: `## Summary\n\nIssue ${ref} → implementation → review → pull request\n\n${job.report!.summary}\n\n${closes}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\n${this.config.verify.trim() ? `Coordinator verification (\`${this.config.verify}\`): ${job.verification || "passed"}.` : "Coordinator verification: none configured."}\n\nReviewed by ${this.config.roles.review.models[job.reviewer!]} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`,
     });
     this.persist(job, { status: "pr", pr: url });
     console.log(`[issue #${issue.number}] ${url}`);
@@ -662,7 +659,7 @@ export class Runner {
   }
   async run(baseBranch: string): Promise<void> {
     while (!this.interrupted) {
-      await this.forge.base(baseBranch);
+      const base = await this.forge.base(baseBranch);
       await this.quotas.refresh();
       if (
         !this.config.providers.some((name) =>
@@ -707,7 +704,7 @@ export class Runner {
       // One pipeline per provider: no two implementation agents race on an issue.
       const results = await Promise.allSettled(
         batch.map(({ issue, provider }) =>
-          this.work(issue, provider, baseBranch),
+          this.work(issue, provider, base.branch, base.ref),
         ),
       );
       const failure = results.find((result) => result.status === "rejected");

@@ -917,11 +917,48 @@ function fixture(
         return args[1] === "origin/main" ? "base" : "reviewed";
       return "";
     },
-    gh: async (_file, args = []) => {
-      events.push(["gh", ...args]);
-      if (args[0] === "api") return "[[]]";
-      if (args[0] === "pr" && args[1] === "list") return "[]";
-      return "https://github.com/example/repo/pull/1";
+    tracker: {
+      issues: async () => [],
+      blocked: async () => false,
+      comments: async () => [],
+      spec: async () => undefined,
+      requestReference: (item) =>
+        overrides.issues === "local"
+          ? { ref: `local issue ${item.number}`, closes: "" }
+          : { ref: `#${item.number}`, closes: `Closes #${item.number}\n\n` },
+    },
+    forge: {
+      enabled: overrides.openPr !== false,
+      remote: !(overrides.issues === "local" && overrides.openPr === false),
+      base: async (branch = "main") => {
+        events.push(["base", branch]);
+        return {
+          branch,
+          ref:
+            overrides.issues === "local" && overrides.openPr === false
+              ? branch
+              : `origin/${branch}`,
+        };
+      },
+      findRequest: async (branch) => {
+        events.push(["find", branch]);
+        return undefined;
+      },
+      openRequest: async (input) => {
+        events.push([
+          "open",
+          input.branch,
+          input.sha,
+          input.base,
+          input.title,
+          input.body,
+        ]);
+        return "https://github.com/example/repo/pull/1";
+      },
+      doctorChecks: () => [],
+      merge: async (url) => {
+        events.push(["merge", url]);
+      },
     },
   });
   runner.stage = async (_job, provider, role) => {
@@ -1019,35 +1056,18 @@ test("implementation -> opposite-provider review -> push exact SHA -> PR -> merg
       ["stage", "claude", "review"],
     ],
   );
-  assert.ok(
-    events.some(
-      (event) =>
-        event[1] === "push" &&
-        event[3] === "reviewed:refs/heads/toddler/issue-1",
-    ),
-  );
-  assert.ok(
-    events.some(
-      (event) =>
-        event[0] === "gh" &&
-        event[1] === "pr" &&
-        event[2] === "create" &&
-        event.includes("--body-file"),
-    ),
-  );
+  const request = events.find((event) => event[0] === "open")!;
+  assert.deepEqual(request.slice(1, 5), [
+    "toddler/issue-1",
+    "reviewed",
+    "main",
+    "Fix #1: Issue 1",
+  ]);
+  assert.match(request[5], /Closes #1/);
   assert.equal(state.jobs[1].status, "pr");
   assert.deepEqual(
-    events.filter((event) => event.includes("merge")),
-    [
-      [
-        "gh",
-        "pr",
-        "merge",
-        "https://github.com/example/repo/pull/1",
-        "--auto",
-        "--merge",
-      ],
-    ],
+    events.filter((event) => event[0] === "merge"),
+    [["merge", "https://github.com/example/repo/pull/1"]],
   );
   assert.ok(!events.some((event) => event.includes("close")));
 });
@@ -1102,10 +1122,8 @@ test("a merge-tree failure that is not a conflict pauses the job", async () => {
 });
 test("a refused merge leaves the PR open and the job at pr", async () => {
   const { runner, state } = fixture();
-  const gh = runner.ghCommand;
-  runner.ghCommand = async (file, args = [], options) => {
-    if (args[1] === "merge") throw new Error("auto-merge is not allowed");
-    return gh(file, args, options);
+  runner.forge.merge = async () => {
+    throw new Error("auto-merge is not allowed");
   };
   await runner.work(issue(1), "codex", "main");
   assert.equal(state.jobs[1].status, "pr");
@@ -1166,6 +1184,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
       { issues: "local", openPr: false },
       root,
     );
+    runner.tracker = new FilesTracker(root, async () => "");
     const candidates = await runner.candidates();
     assert.deepEqual(
       candidates.map((issue) => issue.number),
@@ -1182,7 +1201,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
       !events.some((event) => event.some((arg) => arg.startsWith("origin"))),
     );
     assert.ok(
-      !events.some((event) => event[0] === "gh" || event[1] === "push"),
+      !events.some((event) => event[0] === "open" || event[0] === "merge"),
     );
     assert.deepEqual(
       (await runner.candidates()).map((issue) => issue.number),
@@ -1196,17 +1215,11 @@ test("local issues with openPr open a PR that does not close a GitHub issue", as
   const { runner, events, state } = fixture({ issues: "local" });
   await runner.work(issue(7), "codex", "main");
   assert.equal(state.jobs[7].status, "pr");
-  const create = events.find(
-    (event) => event[1] === "pr" && event[2] === "create",
-  )!;
-  assert.ok(create.includes("Fix local issue 7: Issue 7"));
-  assert.ok(
-    events.some(
-      (event) =>
-        event[1] === "push" &&
-        event[3] === "reviewed:refs/heads/toddler/local-7",
-    ),
-  );
+  const create = events.find((event) => event[0] === "open")!;
+  assert.equal(create[1], "toddler/local-7");
+  assert.equal(create[2], "reviewed");
+  assert.equal(create[4], "Fix local issue 7: Issue 7");
+  assert.doesNotMatch(create[5], /Closes #7/);
 });
 test("changes requested runs a fix then another review before publishing", async () => {
   const { runner, events } = fixture();
@@ -1225,7 +1238,7 @@ test("changes requested runs a fix then another review before publishing", async
   await runner.work(issue(1), "codex", "main");
   assert.equal(events.filter((event) => event[0] === "stage").length, 4);
   assert.equal(
-    events.findIndex((event) => event[1] === "push") >
+    events.findIndex((event) => event[0] === "open") >
       events.findLastIndex((event) => event[0] === "stage"),
     true,
   );
@@ -1284,10 +1297,7 @@ test("malformed review and changed reviewed SHA cannot push or open a PR", async
     await runner.work(issue(1), "codex", "main");
     assert.ok(state.jobs[1].lastError);
     assert.ok(
-      !events.some(
-        (event) =>
-          event[1] === "push" || (event[1] === "pr" && event[2] === "create"),
-      ),
+      !events.some((event) => event[0] === "open" || event[0] === "open"),
     );
   }
 });
@@ -1353,19 +1363,19 @@ test("no available issue or quota terminates without starting agents", async () 
   runner.candidates = async () => [issue(1)];
   await runner.run("main");
   assert.deepEqual(events, [
-    ["git", "fetch", "origin", "main"],
-    ["git", "fetch", "origin", "main"],
+    ["base", "main"],
+    ["base", "main"],
   ]);
 });
 test("with PRs on, each round re-fetches the base and local issues read from it", async () => {
   const { runner, events } = fixture({ issues: "local" });
   runner.candidates = async () => [];
   await runner.run("main");
-  assert.deepEqual(events, [["git", "fetch", "origin", "main"]]);
+  assert.deepEqual(events, [["base", "main"]]);
   const offline = fixture({ issues: "local", openPr: false });
   offline.runner.candidates = async () => [];
   await offline.runner.run("main");
-  assert.deepEqual(offline.events, []);
+  assert.deepEqual(offline.events, [["base", "main"]]);
 });
 test("local issues come from the issue ref, not the working tree, when it is set", async () => {
   const root = mkdtempSync(join(tmpdir(), "toddler-ref-test-"));
@@ -1428,7 +1438,7 @@ test("run ends when every configured model is stopped by scoped weekly readings"
   }));
   runner.candidates = async () => [issue(1)];
   await runner.run("main");
-  assert.deepEqual(events, [["git", "fetch", "origin", "main"]]);
+  assert.deepEqual(events, [["base", "main"]]);
 });
 
 test("implementation stages run the formatter and commit its changes before verify; review never does", async () => {
@@ -1832,6 +1842,10 @@ test("runner uses tracker and forge seams and skips finished or attempted issues
     },
     comments: async () => [],
     spec: async () => undefined,
+    requestReference: (item) => ({
+      ref: `#${item.number}`,
+      closes: `Closes #${item.number}\n\n`,
+    }),
   };
   runner.forge = {
     enabled: true,
@@ -1860,6 +1874,21 @@ test("GitHub issues with pull requests disabled finish without querying requests
   await runner.work(issue(1), "codex", "main");
   assert.equal(state.jobs[1].status, "done");
   assert.ok(
-    !events.some((event) => event.includes("push") || event.includes("pr")),
+    !events.some(
+      (event) =>
+        event[0] === "open" || event[0] === "find" || event[0] === "merge",
+    ),
   );
+});
+
+test("new jobs start from the ref returned by the forge", async () => {
+  const { runner, state, events } = fixture({ openPr: false });
+  runner.forge.base = async () => ({ branch: "main", ref: "refs/forge/base" });
+  await runner.work(issue(1), "codex", "main");
+  assert.ok(
+    events.some(
+      (event) => event[1] === "rev-parse" && event[2] === "refs/forge/base",
+    ),
+  );
+  assert.equal(state.jobs[1].baseSha, "reviewed");
 });
