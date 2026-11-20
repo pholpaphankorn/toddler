@@ -161,7 +161,7 @@ export class Runner {
     this.save();
   }
   local(): boolean {
-    return this.config.issues === "local";
+    return this.config.issues === "files";
   }
   branch(number: number): string {
     return `toddler/${this.local() ? "local" : "issue"}-${number}`;

@@ -302,8 +302,7 @@ test("doctor reports configured stop modules", () => {
     writeFileSync(
       join(root, ".sandcastle/config.json"),
       JSON.stringify({
-        issues: "local",
-        openPr: false,
+        forge: "none",
         providers: ["codex"],
         roles: { implementation: { skills: [] }, review: { skills: [] } },
         stopConditions: ["good.mjs", "missing.mjs"],
@@ -406,8 +405,7 @@ test("doctor reports the configured ranking module", () => {
     writeFileSync(
       join(root, ".sandcastle/config.json"),
       JSON.stringify({
-        issues: "local",
-        openPr: false,
+        forge: "none",
         providers: ["codex"],
         roles: { implementation: { skills: [] }, review: { skills: [] } },
         ranking: "missing.js",
@@ -577,7 +575,7 @@ test("single provider reviews itself and resumed implementer remains sticky", as
   const { runner, events, state } = fixture({
     providers: ["claude"],
     ranking: "order",
-    openPr: false,
+    forge: "none",
   });
   await runner.work(issue(1), "claude", "main");
   assert.deepEqual(
@@ -592,7 +590,7 @@ test("single provider reviews itself and resumed implementer remains sticky", as
   const resumed = fixture({
     ranking: "order",
     providers: ["codex", "claude"],
-    openPr: false,
+    forge: "none",
   });
   resumed.state.jobs[1] = {
     ...state.jobs[1],
@@ -929,21 +927,18 @@ function fixture(
       comments: async () => [],
       spec: async () => undefined,
       requestReference: (item) =>
-        overrides.issues === "local"
+        overrides.issues === "files"
           ? { ref: `local issue ${item.number}`, closes: "" }
           : { ref: `#${item.number}`, closes: `Closes #${item.number}\n\n` },
     },
     forge: {
-      enabled: overrides.openPr !== false,
-      remote: !(overrides.issues === "local" && overrides.openPr === false),
+      enabled: overrides.forge !== "none",
+      remote: !(overrides.forge === "none"),
       base: async (branch = "main") => {
         events.push(["base", branch]);
         return {
           branch,
-          ref:
-            overrides.issues === "local" && overrides.openPr === false
-              ? branch
-              : `origin/${branch}`,
+          ref: overrides.forge === "none" ? branch : `origin/${branch}`,
         };
       },
       findRequest: async (branch) => {
@@ -982,7 +977,7 @@ test("stage prompts assemble role instructions, rules, notes, skills, and issue 
   try {
     mkdirSync(join(root, ".sandcastle"));
     writeFileSync(join(root, ".sandcastle/project.md"), "Project note marker");
-    const { runner } = fixture({ openPr: false }, root);
+    const { runner } = fixture({ forge: "none" }, root);
     const prompts: string[] = [];
     runner.stage = async (_job, _provider, role, prompt) => {
       prompts.push(prompt);
@@ -1037,8 +1032,7 @@ test("a role prompt override replaces only that role and keeps workflow context"
     writeFileSync(
       join(root, ".sandcastle/config.json"),
       JSON.stringify({
-        repository: "owner/repo",
-        openPr: false,
+        forge: "none",
         roles: { review: { prompt: "review.md" } },
       }),
     );
@@ -1070,7 +1064,8 @@ test("stage prompts explicitly load each role's skills for the selected provider
     "No human is available during this stage. Where a skill says to ask the user or wait for an answer, pick the recommended option yourself and list each such choice in your summary.";
   for (const initial of providers) {
     const { runner } = fixture({
-      openPr: false,
+      forge: "none",
+      issues: "files",
       roles: {
         implementation: {
           ...config.roles.implementation,
@@ -1109,12 +1104,12 @@ test("stage prompts explicitly load each role's skills for the selected provider
     assert.ok(!prompts[0].includes("For code-review:"));
     assert.ok(
       prompts[1].includes(
-        "For code-review: the fixed point is `base`; the spec is the issue text in this prompt. Do not look up an issue tracker.",
+        "For code-review: the fixed point is `reviewed`; the spec is the issue text in this prompt. Do not look up an issue tracker.",
       ),
     );
   }
   const { runner } = fixture({
-    openPr: false,
+    forge: "none",
     roles: {
       implementation: { ...config.roles.implementation, skills: [] },
       review: { ...config.roles.review, skills: ["tdd"] },
@@ -1253,7 +1248,7 @@ test("a local issue's PR adds a separate commit that closes its file", async () 
     run("add", ".");
     run("commit", "-qm", "base");
     const reviewed = run("rev-parse", "HEAD");
-    const { runner } = fixture({ issues: "local" }, root);
+    const { runner } = fixture({ issues: "files" }, root);
     runner.gitCommand = command;
     const sha = await runner.closeCommit(
       issue(7),
@@ -1285,7 +1280,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
     write("2-b/issues/2-open.md", "---\nblocked_by: [1]\n---\nDo it");
     write("1-a/issues/3-waits.md", "---\nblocked_by: [2]\n---\n");
     const { runner, events, state } = fixture(
-      { issues: "local", openPr: false },
+      { issues: "files", forge: "none" },
       root,
     );
     runner.tracker = new FilesTracker(root, async () => "");
@@ -1316,7 +1311,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
   }
 });
 test("local issues with openPr open a PR that does not close a GitHub issue", async () => {
-  const { runner, events, state } = fixture({ issues: "local" });
+  const { runner, events, state } = fixture({ issues: "files" });
   await runner.work(issue(7), "codex", "main");
   assert.equal(state.jobs[7].status, "pr");
   const create = events.find((event) => event[0] === "open")!;
@@ -1472,11 +1467,11 @@ test("no available issue or quota terminates without starting agents", async () 
   ]);
 });
 test("with PRs on, each round re-fetches the base and local issues read from it", async () => {
-  const { runner, events } = fixture({ issues: "local" });
+  const { runner, events } = fixture({ issues: "files" });
   runner.candidates = async () => [];
   await runner.run("main");
   assert.deepEqual(events, [["base", "main"]]);
-  const offline = fixture({ issues: "local", openPr: false });
+  const offline = fixture({ issues: "files", forge: "none" });
   offline.runner.candidates = async () => [];
   await offline.runner.run("main");
   assert.deepEqual(offline.events, [["base", "main"]]);
@@ -1501,7 +1496,7 @@ test("local issues come from the issue ref, not the working tree, when it is set
     run("branch", "upstream");
     write("1-done.md", "---\nstatus: open\n---\n");
     write("3-local-only.md", "uncommitted");
-    const { runner } = fixture({ issues: "local", openPr: false }, root);
+    const { runner } = fixture({ issues: "files", forge: "none" }, root);
     runner.gitCommand = command;
     runner.tracker = new FilesTracker(
       root,
@@ -1891,7 +1886,7 @@ test("project config overrides defaults, must name a repository, and verify is o
     write({ repository: "owner/repo", verify: 5 });
     assert.throws(() => loadConfig(root), /"verify"/);
     write({ repository: "not a repo", verify: "npm test" });
-    assert.throws(() => loadConfig(root), /"repository"/);
+    assert.throws(() => loadConfig(root), /repository/);
     write({
       repository: "owner/repo",
       verify: "npm test",
@@ -1920,16 +1915,10 @@ test("project config overrides defaults, must name a repository, and verify is o
       defaults.roles.review.models.codex,
     );
     assert.equal(loaded.issueLabel, defaults.issueLabel);
-    assert.equal(loaded.issues, "github");
-    assert.equal(loaded.openPr, true);
-    write({ verify: "npm test", issues: "local", openPr: false });
+    assert.equal(loaded.issues, "forge");
+    assert.equal(loaded.forge, "github");
+    write({ forge: "none" });
     assert.equal(loadConfig(root).repository, "local");
-    write({ verify: "npm test", issues: "local" });
-    assert.throws(() => loadConfig(root), /"repository"/);
-    write({ repository: "owner/repo", verify: "npm test", issues: "jira" });
-    assert.throws(() => loadConfig(root), /"issues"/);
-    write({ repository: "owner/repo", verify: "npm test", openPr: "no" });
-    assert.throws(() => loadConfig(root), /"openPr"/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1970,23 +1959,8 @@ test("runner uses tracker and forge seams and skips finished or attempted issues
   assert.deepEqual(checked, [4, 5]);
 });
 
-test("GitHub issues with pull requests disabled finish without querying requests or publishing", async () => {
-  const { runner, state, events } = fixture({
-    issues: "github",
-    openPr: false,
-  });
-  await runner.work(issue(1), "codex", "main");
-  assert.equal(state.jobs[1].status, "done");
-  assert.ok(
-    !events.some(
-      (event) =>
-        event[0] === "open" || event[0] === "find" || event[0] === "merge",
-    ),
-  );
-});
-
 test("new jobs start from the ref returned by the forge", async () => {
-  const { runner, state, events } = fixture({ openPr: false });
+  const { runner, state, events } = fixture({ forge: "none" });
   runner.forge.base = async () => ({ branch: "main", ref: "refs/forge/base" });
   await runner.work(issue(1), "codex", "main");
   assert.ok(

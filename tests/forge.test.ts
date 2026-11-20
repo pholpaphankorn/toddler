@@ -13,6 +13,25 @@ const config = {
   remote: "origin",
 } as Config;
 
+test("doctor checks the configured issue label only for forge issues", async () => {
+  const gh = async (_: string, args: string[] = []) => {
+    if (args[0] === "api") throw new Error("label not found");
+    return "";
+  };
+  const forge = new GitHubForge("/repo", config, async () => "", gh);
+  const checks = forge.doctorChecks(config);
+  assert.equal(checks[1][0], "Issue label");
+  await assert.rejects(checks[1][1](), /label not found/);
+  assert.equal(forge.doctorChecks({ ...config, issues: "files" }).length, 1);
+  const present = new GitHubForge(
+    "/repo",
+    config,
+    async () => "",
+    async () => "{}",
+  );
+  assert.equal(await present.doctorChecks(config)[1][1](), "ready now");
+});
+
 test("GitHub tracker normalizes issues and checks all native blockers and comments", async () => {
   const calls: string[][] = [];
   const gh = async (_: string, args: string[] = []) => {
@@ -215,7 +234,7 @@ test("files tracker reads the freshly fetched base across rounds", async () => {
   };
   const { forge, tracker } = connect(
     "/repo",
-    { ...config, issues: "local" },
+    { ...config, issues: "files" },
     git,
     async () => "",
   );

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Issue } from "./policy.ts";
 import { command, type Command } from "./process.ts";
-import { offline, type Config } from "./config.ts";
+import { type Config } from "./config.ts";
 
 export interface Tracker {
   issues(): Promise<Issue[]>;
@@ -134,7 +134,7 @@ export class GitHubForge implements Forge {
     this.config = config;
     this.gitCommand = gitCommand;
     this.ghCommand = ghCommand;
-    this.enabled = config.openPr;
+    this.enabled = true;
     const gh = (args: string[]) => this.gh(args);
     this.tracker = {
       issues: async () => {
@@ -207,7 +207,6 @@ export class GitHubForge implements Forge {
     return { branch: branch!, ref: `${this.config.remote}/${branch}` };
   }
   async findRequest(branch: string) {
-    if (!this.enabled) return undefined;
     const requests: { url: string; state: string }[] = JSON.parse(
       await this.gh([
         "pr",
@@ -259,7 +258,7 @@ export class GitHubForge implements Forge {
       await rm(directory, { recursive: true, force: true });
     }
   }
-  doctorChecks(_config: Config): [string, () => Promise<string>][] {
+  doctorChecks(config: Config): [string, () => Promise<string>][] {
     return [
       [
         "GitHub",
@@ -280,6 +279,20 @@ export class GitHubForge implements Forge {
           return `${repo.nameWithOwner}, base ${repo.defaultBranchRef.name}, ${repo.viewerPermission}`;
         },
       ],
+      ...(config.issues === "forge"
+        ? [
+            [
+              "Issue label",
+              async () => {
+                await this.gh([
+                  "api",
+                  `repos/${config.repository}/labels/${encodeURIComponent(config.issueLabel)}`,
+                ]);
+                return config.issueLabel;
+              },
+            ] as [string, () => Promise<string>],
+          ]
+        : []),
     ];
   }
   async merge(url: string) {
@@ -316,7 +329,7 @@ export class NoneForge implements Forge {
     throw new Error("No forge configured");
   }
   doctorChecks(_config: Config): [string, () => Promise<string>][] {
-    return [["GitHub", async () => "not used (local issues, openPr false)"]];
+    return [];
   }
   async merge(_url: string) {}
 }
@@ -326,9 +339,12 @@ export function connect(
   git: Command = command,
   gh: Command = command,
 ) {
-  const forge: Forge = offline(config)
-    ? new NoneForge(root, git)
-    : new GitHubForge(root, config, git, gh);
+  if (config.forge === "gitlab")
+    throw new Error("forge: gitlab is not supported yet");
+  const forge: Forge =
+    config.forge === "none"
+      ? new NoneForge(root, git)
+      : new GitHubForge(root, config, git, gh);
   let ref: string | undefined;
   const originalBase = forge.base.bind(forge);
   forge.base = async (branch) => {
@@ -337,7 +353,7 @@ export function connect(
     return base;
   };
   const tracker =
-    config.issues === "local"
+    config.issues === "files"
       ? new FilesTracker(
           root,
           (args) => git("git", args, { cwd: root }),

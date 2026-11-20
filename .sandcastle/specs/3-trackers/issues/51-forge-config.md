@@ -3,7 +3,7 @@ title: forge, repository and issues replace openPr
 labels: []
 blocked_by: [38, 50]
 parent: 3
-status: open
+status: closed
 ---
 Replace `openPr` and the old `issues` values with the one-host config shape, built on the seams from #50.
 
