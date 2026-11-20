@@ -3,7 +3,7 @@ title: autoMerge on GitHub
 labels: []
 blocked_by: [51]
 parent: 3
-status: open
+status: closed
 ---
 Let a project hand merging to GitHub once review approves.
 
