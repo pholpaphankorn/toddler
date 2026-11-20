@@ -22,7 +22,8 @@ Replace `openPr` and the old `issues` values with the one-host config shape, bui
 4. **Obsolete keys**: `openPr`, `issues: "github"` and `issues: "local"` fail with an "obsolete setting" error saying what to write instead (e.g. `issues: "local"` → `"files"` and set `forge`), like `reservePercent`.
 5. **`init`** writes `{ forge, repository?, install: "", verify: "" }`: `forge` always (even `"github"`), `repository` only with a forge. Detection stays `gh repo view`, else `none`. Next steps: GitHub — label issues `<issueLabel>` or set `"issues": "files"`; none — how to write issue files and that nothing is pushed.
 6. **`doctor`** runs the forge's `doctorChecks`. With `issues: "forge"`, FAIL if the `issueLabel` label doesn't exist. OK/FAIL only.
+7. **This repo's own config**: `.sandcastle/config.json` here uses `"issues": "local", "openPr": true`, which this issue makes obsolete. Change it to `"forge": "github", "issues": "files"` (keep `repository`, `install`, `verify`) in the same commit, so the next toddler run on this repo still loads.
 
-Done when tests cover the defaults, each validation error and its path, each obsolete-key error, `init`'s written config for GitHub and none, and the `issueLabel` check. The README config table documents `forge`, `repository`, `issues` and the `GH_HOST` env var, and drops `openPr`.
+Done when tests cover the defaults, each validation error and its path, each obsolete-key error, `init`'s written config for GitHub and none, and the `issueLabel` check, and this repo's `.sandcastle/config.json` loads with the new shape. The README config table documents `forge`, `repository`, `issues` and the `GH_HOST` env var, and drops `openPr`.
 
 Decision records: [44](44-tracker-forge-config.md), [49](49-init-doctor-per-forge.md).
