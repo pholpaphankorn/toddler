@@ -124,7 +124,7 @@ say `Closes #N`.
 
 With `"forge": "none"`, toddler runs offline and nothing is pushed. With a GitHub forge, file issues still open pull requests.
 
-Set `"autoMerge": true` to ask GitHub to merge approved pull requests using its default merge method after required checks and approvals pass. GitHub must allow auto-merge on the repository; `toddler doctor` checks this setting. If GitHub refuses, the pull request remains open and the error is logged. The default is `false`, so toddler leaves merging to you. With `forge: "none"`, this setting currently has no effect.
+Set `"autoMerge": true` to ask GitHub to merge approved pull requests after required checks and approvals pass. Toddler uses an enabled repository merge method, preferring merge commits, then squash, then rebase. GitHub must allow auto-merge on the repository; `toddler doctor` checks this setting. If GitHub refuses, the pull request remains open and the error is logged. The default is `false`, so toddler leaves merging to you. With `forge: "none"`, this setting currently has no effect.
 
 `.sandcastle/project.md` (optional) is appended to the implementation and review
 prompts as "Project notes": stack, how to check changes, what not to do.

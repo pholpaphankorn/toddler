@@ -298,11 +298,24 @@ export class GitHubForge implements Forge {
     ];
   }
   async enableAutoMerge(url: string) {
-    await this.gh(["pr", "merge", url, "--auto"]).catch((error: Error) => {
-      // GitHub refuses auto-merge when nothing is pending: merge now.
-      if (!/clean status/i.test(error.message)) throw error;
-      return this.gh(["pr", "merge", url]);
-    });
+    const repo = JSON.parse(
+      await this.gh(["api", `repos/${this.config.repository}`]),
+    );
+    const method = repo.allow_merge_commit
+      ? "--merge"
+      : repo.allow_squash_merge
+        ? "--squash"
+        : repo.allow_rebase_merge
+          ? "--rebase"
+          : undefined;
+    if (!method) throw new Error("Repository has no enabled merge method");
+    await this.gh(["pr", "merge", url, "--auto", method]).catch(
+      (error: Error) => {
+        // GitHub refuses auto-merge when nothing is pending: merge now.
+        if (!/clean status/i.test(error.message)) throw error;
+        return this.gh(["pr", "merge", url, method]);
+      },
+    );
   }
 }
 export class NoneForge implements Forge {

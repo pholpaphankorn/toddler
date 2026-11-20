@@ -127,6 +127,34 @@ test("GitHub forge fetches the base, finds open or merged requests, pushes and c
   assert.equal(await new NoneForge("/repo").findRequest("branch"), undefined);
 });
 
+test("GitHub uses an allowed merge method for noninteractive auto-merge and clean PRs", async () => {
+  const calls: string[][] = [];
+  const forge = new GitHubForge(
+    "/repo",
+    config,
+    async () => "",
+    async (_, args = []) => {
+      calls.push(args);
+      if (args[0] === "api")
+        return JSON.stringify({
+          allow_merge_commit: false,
+          allow_squash_merge: true,
+          allow_rebase_merge: false,
+        });
+      if (!args.includes("--squash"))
+        throw new Error("noninteractive gh requires a merge method");
+      if (args.includes("--auto")) throw new Error("clean status");
+      return "";
+    },
+  );
+  await forge.enableAutoMerge("url");
+  assert.deepEqual(calls, [
+    ["api", "repos/owner/repo"],
+    ["pr", "merge", "url", "--auto", "--squash"],
+    ["pr", "merge", "url", "--squash"],
+  ]);
+});
+
 test("GitHub forge merges immediately when auto-merge has no pending checks", async () => {
   const calls: string[][] = [];
   const forge = new GitHubForge(
@@ -135,14 +163,17 @@ test("GitHub forge merges immediately when auto-merge has no pending checks", as
     async () => "",
     async (_, args = []) => {
       calls.push(args);
+      if (args[0] === "api")
+        return JSON.stringify({ allow_merge_commit: true });
       if (args.includes("--auto")) throw new Error("clean status");
       return "";
     },
   );
   await forge.enableAutoMerge("https://example.com/pr/1");
   assert.deepEqual(calls, [
-    ["pr", "merge", "https://example.com/pr/1", "--auto"],
-    ["pr", "merge", "https://example.com/pr/1"],
+    ["api", "repos/owner/repo"],
+    ["pr", "merge", "https://example.com/pr/1", "--auto", "--merge"],
+    ["pr", "merge", "https://example.com/pr/1", "--merge"],
   ]);
 });
 
@@ -155,15 +186,20 @@ test("GitHub enables auto-merge and propagates refusals", async () => {
     async () => "",
     async (_, args = []) => {
       calls.push(args);
+      if (args[0] === "api")
+        return JSON.stringify({ allow_merge_commit: true });
       if (refuse) throw new Error("auto-merge is not allowed");
       return "";
     },
   );
   await forge.enableAutoMerge("url");
-  assert.deepEqual(calls, [["pr", "merge", "url", "--auto"]]);
+  assert.deepEqual(calls, [
+    ["api", "repos/owner/repo"],
+    ["pr", "merge", "url", "--auto", "--merge"],
+  ]);
   refuse = true;
   await assert.rejects(forge.enableAutoMerge("url"), /not allowed/);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 4);
 });
 
 test("doctor requires GitHub auto-merge only when configured", async () => {
