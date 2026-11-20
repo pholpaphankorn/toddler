@@ -979,7 +979,7 @@ test("stage prompts explicitly load each role's skills for the selected provider
   );
   assert.ok(!prompts[1].includes("For code-review:"));
 });
-test("implementation -> opposite-provider review -> push exact SHA -> PR, never issue close or merge", async () => {
+test("implementation -> opposite-provider review -> push exact SHA -> PR -> merge, never issue close", async () => {
   const { runner, events, state } = fixture();
   await runner.work(issue(1), "codex", "main");
   assert.deepEqual(
@@ -1006,9 +1006,31 @@ test("implementation -> opposite-provider review -> push exact SHA -> PR, never 
     ),
   );
   assert.equal(state.jobs[1].status, "pr");
-  assert.ok(
-    !events.some((event) => event.includes("merge") || event.includes("close")),
+  assert.deepEqual(
+    events.filter((event) => event.includes("merge")),
+    [
+      [
+        "gh",
+        "pr",
+        "merge",
+        "https://github.com/example/repo/pull/1",
+        "--auto",
+        "--merge",
+      ],
+    ],
   );
+  assert.ok(!events.some((event) => event.includes("close")));
+});
+test("a refused merge leaves the PR open and the job at pr", async () => {
+  const { runner, state } = fixture();
+  const gh = runner.ghCommand;
+  runner.ghCommand = async (file, args = [], options) => {
+    if (args[1] === "merge") throw new Error("auto-merge is not allowed");
+    return gh(file, args, options);
+  };
+  await runner.work(issue(1), "codex", "main");
+  assert.equal(state.jobs[1].status, "pr");
+  assert.equal(state.jobs[1].lastError, undefined);
 });
 test("local issue files parse frontmatter, and fall back to the file name", () => {
   const parsed = localIssue(

@@ -608,6 +608,7 @@ export class Runner {
     );
     if (existing[0]) {
       this.persist(job, { status: "pr", pr: existing[0].url });
+      await this.merge(issue, existing[0].url);
       return;
     }
     await this.git([
@@ -642,8 +643,22 @@ export class Runner {
       ]);
       this.persist(job, { status: "pr", pr: url });
       console.log(`[issue #${issue.number}] ${url}`);
+      await this.merge(issue, url);
     } finally {
       await rm(directory, { recursive: true, force: true });
+    }
+  }
+  // shortcut: the coordinator merges once review approves, until autoMerge (#52) and the PM role (spec 5) take this over.
+  // --auto merges now when GitHub allows it, else waits for checks; --merge keeps the close-issue commit separate.
+  async merge(issue: Issue, url: string): Promise<void> {
+    try {
+      await this.gh(["pr", "merge", url, "--auto", "--merge"]);
+      console.log(`[issue #${issue.number}] merged or auto-merge set: ${url}`);
+    } catch (error) {
+      // The PR stays open and the job stays "pr" (#52's refusal rule).
+      console.error(
+        `[issue #${issue.number}] could not merge ${url}: ${(error as Error).message}`,
+      );
     }
   }
   async run(baseBranch: string): Promise<void> {
