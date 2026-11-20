@@ -1,7 +1,6 @@
 import { modelsForProvider } from "./config.ts";
-import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type * as SandcastleModule from "@ai-hero/sandcastle";
@@ -43,8 +42,6 @@ export interface Job {
   reviewer?: Provider;
   report?: ReviewReport;
   pr?: string;
-  /** reviewedSha plus the commit that closes the local issue file. */
-  publishSha?: string;
   /** Fresh base SHA the branch conflicts with; the implementer merges it next. */
   conflictBase?: string;
   lastError?: string;
@@ -178,7 +175,13 @@ export class Runner {
       const head =
         this.state.jobs[issue.number]?.branch ?? this.branch(issue.number);
       if (await this.forge.findRequest(head)) continue;
-      if (!(await this.tracker.blocked(issue))) result.push(issue);
+      if (
+        !(await this.tracker.blocked(
+          issue,
+          (number) => this.state.jobs[number]?.status === "done",
+        ))
+      )
+        result.push(issue);
     }
     return result;
   }
@@ -561,6 +564,7 @@ export class Runner {
     if (current !== job.reviewedSha)
       throw new Error("Branch changed after review; refusing to publish");
     if (!this.forge.enabled) {
+      if (this.config.autoMerge) await this.fastForward(job);
       this.persist(job, { status: "done" });
       console.log(
         `[issue #${issue.number}] approved on local branch ${job.branch}`,
@@ -571,15 +575,10 @@ export class Runner {
     if (existing?.open) {
       this.persist(job, { status: "pr", pr: existing.url });
     } else {
-      const file = this.tracker.file?.(issue.number);
-      if (file && !job.publishSha)
-        this.persist(job, {
-          publishSha: await this.closeCommit(issue, job, file),
-        });
       const { ref, closes } = this.tracker.requestReference(issue);
       const url = await this.forge.openRequest({
         branch: job.branch,
-        sha: job.publishSha ?? job.reviewedSha!,
+        sha: job.reviewedSha!,
         base: job.baseBranch,
         title: `Fix ${ref}: ${issue.title}`.slice(0, 200),
         body: `## Summary\n\nIssue ${ref} → implementation → review → pull request\n\n${job.report!.summary}\n\n${closes}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\n${this.config.verify.trim() ? `Coordinator verification (\`${this.config.verify}\`): passed.` : "Coordinator verification: none configured."}\n\nReviewed by ${this.config.roles.review.models[job.reviewer!]} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`,
@@ -615,7 +614,6 @@ export class Runner {
       status: "implementation",
       conflictBase: base,
       rounds: job.rounds + 1,
-      publishSha: undefined,
     });
     console.log(
       `[issue #${job.number}] conflicts with ${this.config.remote}/${job.baseBranch}; back to the implementer`,
@@ -624,40 +622,30 @@ export class Runner {
       throw new Error("Review round limit reached; needs human attention");
     return true;
   }
-  // shortcut: TEMPORARY PATCH. Writes the issue file from the coordinator until Tracker gains writes (spec 5); lands with the PR's merge.
-  async closeCommit(issue: Issue, job: Job, file: string): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "toddler-close-"));
+  async fastForward(job: Job): Promise<void> {
+    const base = await this.git(["rev-parse", `refs/heads/${job.baseBranch}`]);
     try {
+      await this.git(["merge-base", "--is-ancestor", base, job.reviewedSha!]);
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 1) throw error;
+      console.log(
+        `[issue #${job.number}] cannot fast-forward ${job.baseBranch}; leaving ${job.branch}`,
+      );
+      return;
+    }
+    const current = await this.git(["branch", "--show-current"]);
+    if (
+      current === job.baseBranch &&
+      !(await this.git(["status", "--porcelain"]))
+    ) {
+      await this.git(["merge", "--ff-only", job.reviewedSha!]);
+    } else {
       await this.git([
-        "worktree",
-        "add",
-        "--detach",
-        directory,
+        "update-ref",
+        `refs/heads/${job.baseBranch}`,
         job.reviewedSha!,
+        base,
       ]);
-      const path = join(directory, ".sandcastle/specs", file);
-      // An issue file the base commit lacks cannot be closed by this PR.
-      if (!existsSync(path)) return job.reviewedSha!;
-      const text = await readFile(path, "utf8");
-      const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
-      await writeFile(
-        path,
-        !front
-          ? `---\nstatus: closed\n---\n${text}`
-          : /^status:/m.test(front[1])
-            ? text.replace(/^status:.*$/m, "status: closed")
-            : text.replace(/^---\r?\n/, "$&status: closed\n"),
-      );
-      await this.git(
-        ["commit", "--no-verify", "-am", `pm: close issue ${issue.number}`],
-        directory,
-      );
-      return await this.git(["rev-parse", "HEAD"], directory);
-    } finally {
-      await this.git(["worktree", "remove", "--force", directory]).catch(
-        () => {},
-      );
-      await rm(directory, { recursive: true, force: true });
     }
   }
   async run(baseBranch: string): Promise<void> {

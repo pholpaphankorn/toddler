@@ -70,7 +70,7 @@ async function init(root: string) {
       ".env\nlogs/\nworktrees/\nstate.json\nstate.json.tmp\nrunner.lock\n",
     );
   console.log(`Wrote ${path} for ${repository ?? "local issues (no GitHub repository found)"}.
-Next:${repository ? `\n  0. Label issues ${defaults.issueLabel} or set \"issues\": \"files\".` : "\n  0. Write issues as .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files (spec in spec.md beside issues/). Nothing is pushed."}
+Next:${repository ? `\n  0. Label issues ${defaults.issueLabel} or set \"issues\": \"files\".` : '\n  0. Write issues as .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files (spec in spec.md beside issues/). Nothing is pushed. Set "autoMerge": true to fast-forward approved work into the base branch.'}
   1. Optionally set "install" to a shell command that installs dependencies in each new sandbox (e.g. "npm ci"),
      and "verify" to a shell command that checks this project inside the sandbox (e.g. "npm test").
   2. Optionally write stack-specific agent notes in .sandcastle/project.md.
