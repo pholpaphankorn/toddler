@@ -41,6 +41,10 @@ export const defaults = {
 };
 export type Defaults = typeof defaults;
 export interface Config extends Defaults {
+  roles: Record<
+    Role,
+    { skills: string[]; models: Record<Provider, string>; prompt?: string }
+  >;
   /** GitHub owner/name whose issues are worked. */
   repository: string;
   /** Shell command run inside the sandbox worktree; must exit 0 before a stage is accepted. Empty: no check. */
@@ -85,8 +89,18 @@ export function loadConfig(
         throw new Error(`${path}: invalid ${rolePath}`);
       for (const [field, value] of Object.entries(settings)) {
         const fieldPath = `${rolePath}.${field}`;
-        if (field !== "skills" && field !== "models")
+        if (field !== "skills" && field !== "models" && field !== "prompt")
           throw new Error(`${path}: invalid ${fieldPath}`);
+        if (field === "prompt") {
+          if (typeof value !== "string" || !value.trim() || isAbsolute(value))
+            throw new Error(`${path}: invalid ${fieldPath}`);
+          try {
+            if (!readFileSync(join(root, value), "utf8").trim())
+              throw new Error("empty prompt");
+          } catch {
+            throw new Error(`${path}: invalid ${fieldPath}`);
+          }
+        }
         if (field === "models") {
           if (!isObject(value))
             throw new Error(`${path}: invalid ${fieldPath}`);
@@ -114,7 +128,7 @@ export function loadConfig(
           models: { ...settings.models, ...project.roles?.[role]?.models },
         },
       ]),
-    ) as Defaults["roles"],
+    ) as Config["roles"],
     stopAt: Object.fromEntries(
       providers.map((provider) => [
         provider,
