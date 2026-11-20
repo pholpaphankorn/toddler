@@ -740,10 +740,16 @@ export class Runner {
     return true;
   }
   // shortcut: TEMPORARY PATCH. The coordinator merges once review approves, until autoMerge (#52) and the PM role (spec 5) take this over.
-  // --auto merges now when GitHub allows it, else waits for checks; --merge keeps the close-issue commit separate.
+  // --auto waits for checks; --merge keeps the close-issue commit separate.
   async merge(issue: Issue, url: string): Promise<void> {
     try {
-      await this.gh(["pr", "merge", url, "--auto", "--merge"]);
+      await this.gh(["pr", "merge", url, "--auto", "--merge"]).catch(
+        (error: Error) => {
+          // GitHub refuses auto-merge when nothing is pending (e.g. no branch protection): merge now.
+          if (!/clean status/i.test(error.message)) throw error;
+          return this.gh(["pr", "merge", url, "--merge"]);
+        },
+      );
       console.log(`[issue #${issue.number}] merged or auto-merge set: ${url}`);
     } catch (error) {
       // The PR stays open and the job stays "pr" (#52's refusal rule).

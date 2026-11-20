@@ -1161,6 +1161,26 @@ test("a merge-tree failure that is not a conflict pauses the job", async () => {
   assert.equal(state.jobs[1].lastError, "fatal");
   assert.ok(!events.some((event) => event[2] === "review"));
 });
+test("a PR already in clean status merges without --auto", async () => {
+  const { runner, events, state } = fixture();
+  const gh = runner.ghCommand;
+  runner.ghCommand = async (file, args = [], options) => {
+    if (args[1] === "merge" && args.includes("--auto"))
+      throw new Error(
+        "GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)",
+      );
+    return gh(file, args, options);
+  };
+  await runner.work(issue(1), "codex", "main");
+  assert.deepEqual(events.filter((event) => event[2] === "merge").at(-1), [
+    "gh",
+    "pr",
+    "merge",
+    "https://github.com/example/repo/pull/1",
+    "--merge",
+  ]);
+  assert.equal(state.jobs[1].status, "pr");
+});
 test("a refused merge leaves the PR open and the job at pr", async () => {
   const { runner, state } = fixture();
   const gh = runner.ghCommand;
