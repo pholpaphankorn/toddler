@@ -1,12 +1,8 @@
+import { FilesTracker } from "../src/forge.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import {
-  assignments,
-  localIssue,
-  reviewer,
-  reviewReport,
-} from "../src/policy.ts";
+import { assignments, reviewer, reviewReport } from "../src/policy.ts";
 import {
   Quotas,
   codexUsage,
@@ -1132,9 +1128,13 @@ test("a local issue's PR adds a separate commit that closes its file", async () 
     const reviewed = run("rev-parse", "HEAD");
     const { runner } = fixture({ issues: "local" }, root);
     runner.gitCommand = command;
-    const sha = await runner.closeCommit({ ...issue(7), file }, {
-      reviewedSha: reviewed,
-    } as Job);
+    const sha = await runner.closeCommit(
+      issue(7),
+      {
+        reviewedSha: reviewed,
+      } as Job,
+      file,
+    );
     assert.equal(run("rev-parse", `${sha}^`), reviewed);
     assert.equal(run("log", "-1", "--format=%s", sha), "pm: close issue 7");
     assert.equal(
@@ -1145,37 +1145,6 @@ test("a local issue's PR adds a separate commit that closes its file", async () 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-});
-test("local issue files parse frontmatter, and fall back to the file name", () => {
-  const parsed = localIssue(
-    "1-auth/issues/3-fix-login.md",
-    "---\ntitle: Fix login\nlabels: [parallel-safe, blocked]\nblocked_by: [1, 2]\nstatus: closed\n---\nSteps here\n",
-  );
-  assert.deepEqual(parsed, {
-    number: 3,
-    title: "Fix login",
-    body: "Steps here\n",
-    labels: ["parallel-safe", "blocked"],
-    blockedBy: [1, 2],
-    closed: true,
-    file: "1-auth/issues/3-fix-login.md",
-  });
-  assert.deepEqual(localIssue("1-auth/issues/4-add-logout.md", "Body only"), {
-    number: 4,
-    title: "add logout",
-    body: "Body only",
-    labels: [],
-    blockedBy: [],
-    closed: false,
-    file: "1-auth/issues/4-add-logout.md",
-  });
-  assert.throws(() => localIssue("1-auth/issues/notes.md", ""), /issue-number/);
-  assert.throws(() => localIssue("3-fix-login.md", ""), /spec-number/);
-  assert.throws(() => localIssue("1-auth/3-fix-login.md", ""), /issues\//);
-  assert.throws(
-    () => localIssue("1-auth/issues/5.md", "---\nblocked_by: [x]\n---\n"),
-    /blocked_by/,
-  );
 });
 test("local issues skip closed and blocked files, never call GitHub, and stop on a local branch when openPr is false", async () => {
   const root = mkdtempSync(join(tmpdir(), "toddler-local-"));
@@ -1388,12 +1357,10 @@ test("with PRs on, each round re-fetches the base and local issues read from it"
   runner.candidates = async () => [];
   await runner.run("main");
   assert.deepEqual(events, [["git", "fetch", "origin", "main"]]);
-  assert.equal(runner.issueRef, "origin/main");
   const offline = fixture({ issues: "local", openPr: false });
   offline.runner.candidates = async () => [];
   await offline.runner.run("main");
   assert.deepEqual(offline.events, []);
-  assert.equal(offline.runner.issueRef, undefined);
 });
 test("local issues come from the issue ref, not the working tree, when it is set", async () => {
   const root = mkdtempSync(join(tmpdir(), "toddler-ref-test-"));
@@ -1417,7 +1384,11 @@ test("local issues come from the issue ref, not the working tree, when it is set
     write("3-local-only.md", "uncommitted");
     const { runner } = fixture({ issues: "local", openPr: false }, root);
     runner.gitCommand = command;
-    runner.issueRef = "upstream";
+    runner.tracker = new FilesTracker(
+      root,
+      (args) => command("git", args, { cwd: root }),
+      () => "upstream",
+    );
     assert.deepEqual(
       (await runner.candidates()).map((issue) => issue.number),
       [2],
@@ -1843,4 +1814,47 @@ test("project config overrides defaults, must name a repository, and verify is o
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("runner uses tracker and forge seams and skips finished or attempted issues before blocker checks", async () => {
+  const { runner, state } = fixture();
+  const checked: number[] = [];
+  runner.tracker = {
+    issues: async () => [issue(1), issue(2), issue(3), issue(4), issue(5)],
+    blocked: async (item) => {
+      checked.push(item.number);
+      return item.number === 4;
+    },
+    comments: async () => [],
+    spec: async () => undefined,
+  };
+  runner.forge = {
+    enabled: true,
+    remote: true,
+    base: async () => ({ branch: "main", ref: "origin/main" }),
+    findRequest: async (branch) =>
+      branch.endsWith("3") ? { url: "url", open: false } : undefined,
+    openRequest: async () => "url",
+    doctorChecks: () => [],
+    merge: async () => {},
+  };
+  runner.attempted.add(1);
+  state.jobs[2] = { status: "done" } as Job;
+  assert.deepEqual(
+    (await runner.candidates()).map((item) => item.number),
+    [5],
+  );
+  assert.deepEqual(checked, [4, 5]);
+});
+
+test("GitHub issues with pull requests disabled finish without querying requests or publishing", async () => {
+  const { runner, state, events } = fixture({
+    issues: "github",
+    openPr: false,
+  });
+  await runner.work(issue(1), "codex", "main");
+  assert.equal(state.jobs[1].status, "done");
+  assert.ok(
+    !events.some((event) => event.includes("push") || event.includes("pr")),
+  );
 });

@@ -98,13 +98,7 @@ export interface Issue {
   number: number;
   title: string;
   body?: string | null;
-  labels: (string | { name: string })[];
-  pull_request?: unknown;
-  /** Local issues only. */
-  blockedBy?: number[];
-  closed?: boolean;
-  /** Local issues only: path under .sandcastle/specs. */
-  file?: string;
+  labels: string[];
 }
 export interface ReviewReport {
   verdict: "approved" | "changes_requested";
@@ -119,9 +113,7 @@ export interface Assignment {
 }
 
 export function labels(issue: Issue): string[] {
-  return issue.labels.map((label) =>
-    typeof label === "string" ? label : label.name,
-  );
+  return issue.labels;
 }
 export function ready(issue: Issue, config: Defaults): boolean {
   return !labels(issue).some((label) =>
@@ -182,44 +174,4 @@ export function reviewReport(text: string): ReviewReport {
   )
     throw new Error("Invalid review verdict");
   return value;
-}
-
-// .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md (next to that spec's spec.md), with optional "key: value" frontmatter
-// (title, labels: [a, b], blocked_by: [1, 2], status: closed). Issue numbers are unique across specs.
-export function localIssue(file: string, text: string): Issue {
-  const number = Number(/^\d+-[^/]+\/issues\/(\d+)[^/]*\.md$/.exec(file)?.[1]);
-  if (!number)
-    throw new Error(
-      `.sandcastle/specs/${file}: path must be <spec-number>-<slug>/issues/<issue-number>-<slug>.md, e.g. 1-auth/issues/3-fix-login.md`,
-    );
-  const name = file.slice(file.lastIndexOf("/") + 1);
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
-  const fields: Record<string, string> = {};
-  for (const line of match?.[1].split(/\r?\n/) ?? []) {
-    const pair = /^(\w+):\s*(.*)$/.exec(line.trim());
-    if (pair) fields[pair[1]] = pair[2];
-  }
-  const list = (value = "") =>
-    value
-      .replace(/^\[|\]$/g, "")
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  const blockedBy = list(fields.blocked_by).map(Number);
-  if (blockedBy.some((value) => !Number.isInteger(value)))
-    throw new Error(
-      `.sandcastle/specs/${file}: blocked_by must list issue numbers`,
-    );
-  return {
-    number,
-    title:
-      fields.title ||
-      name.replace(/^\d+-?|\.md$/g, "").replace(/-/g, " ") ||
-      `Issue ${number}`,
-    body: match ? text.slice(match[0].length) : text,
-    labels: list(fields.labels),
-    blockedBy,
-    closed: fields.status?.toLowerCase() === "closed",
-    file,
-  };
 }

@@ -20,6 +20,7 @@ import { Runner, loadState, saveState } from "./runner.ts";
 import { assignments, loadRanker } from "./policy.ts";
 import { bundledSkillsPath } from "./skills.ts";
 import { skillDoctorChecks } from "./skill-doctor.ts";
+import { connect } from "./forge.ts";
 
 const usage =
   "Usage: toddler [init|setup|doctor|plan|run|smoke [codex|claude]]";
@@ -114,23 +115,8 @@ async function doctor(config: Config, root: string) {
     seatbelt();
     return "available (never falls back to unsandboxed execution)";
   });
-  await check("GitHub", async () => {
-    if (offline(config)) return "not used (local issues, openPr false)";
-    const repo = JSON.parse(
-      await command("gh", [
-        "repo",
-        "view",
-        config.repository,
-        "--json",
-        "nameWithOwner,viewerPermission,defaultBranchRef",
-      ]),
-    );
-    if (!["ADMIN", "MAINTAIN", "WRITE"].includes(repo.viewerPermission))
-      throw new Error(
-        "Repository write permission needed to push issue branches",
-      );
-    return `${repo.nameWithOwner}, base ${repo.defaultBranchRef.name}, ${repo.viewerPermission}`;
-  });
+  for (const [name, action] of connect(root, config).forge.doctorChecks(config))
+    await check(name, action);
   for (const provider of config.providers) {
     await check(`${provider} login`, async () => {
       if (provider === "codex") await codexAuth();
@@ -305,25 +291,7 @@ async function main() {
       },
     });
     runner.sandcastle = await import("@ai-hero/sandcastle");
-    let baseBranch: string;
-    if (offline(config)) {
-      // Offline jobs branch from the checked-out branch, as it is locally.
-      baseBranch = await runner.git(["branch", "--show-current"]);
-      if (!baseBranch)
-        throw new Error("Check out a branch for local issues to start from");
-    } else {
-      const repo = JSON.parse(
-        await runner.gh([
-          "repo",
-          "view",
-          config.repository,
-          "--json",
-          "defaultBranchRef",
-        ]),
-      );
-      baseBranch = repo.defaultBranchRef.name;
-      await runner.git(["fetch", config.remote, baseBranch]);
-    }
+    const { branch: baseBranch } = await runner.forge.base();
     // Disable unavailable logins without taking the other provider down.
     for (const provider of config.providers) {
       try {
