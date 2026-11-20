@@ -127,8 +127,10 @@ With `"issues": "local"` and `"openPr": false` toddler runs offline: no GitHub l
 GitHub is still used for the base branch and, with `openPr`, the PR.
 
 `.sandcastle/project.md` (optional) is appended to the implementation and review
-prompts as "Project notes": stack, how to check changes, what not to do. The
-generic workflow rules stay in toddler's `prompts/prompt.md` and `prompts/review.md`.
+prompts as "Project notes": stack, how to check changes, what not to do.
+Role instructions live in `prompts/implementation.md` and `prompts/review.md`.
+Shared workflow rules live in `prompts/rules.md`, with role-specific rules in
+`prompts/rules/implementation.md` and `prompts/rules/review.md`.
 
 The project's `.sandcastle/` also holds the ignored runtime files: `.env`, `state.json`,
 `logs/`, `worktrees/` and `runner.lock`. The repo must have the `Sandcastle`,
