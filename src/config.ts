@@ -11,10 +11,8 @@ export const defaults = {
   ranking: "quota" as string,
   stopConditions: [] as string[],
   remote: "origin",
-  /** "github": labeled GitHub issues. "local": .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files. */
-  issues: "github" as "github" | "local",
-  /** false: stop after review with the approved commit on a local branch; nothing is pushed. */
-  openPr: true,
+  forge: "github" as "github" | "gitlab" | "none",
+  issues: "forge" as "forge" | "files",
   issueLabel: "Sandcastle",
   parallelLabel: "parallel-safe",
   blockedLabels: ["blocked", "on-hold"],
@@ -55,9 +53,8 @@ export interface Config extends Defaults {
   format: string;
 }
 
-/** Local issues kept on local branches: no GitHub repository or git remote is used. */
-export function offline(config: Pick<Defaults, "issues" | "openPr">): boolean {
-  return config.issues === "local" && !config.openPr;
+export function offline(config: Pick<Defaults, "forge">): boolean {
+  return config.forge === "none";
 }
 
 export function configPath(root: string): string {
@@ -78,6 +75,14 @@ export function loadConfig(
   if ("models" in project || "skills" in project)
     throw new Error(
       `${path}: obsolete setting; use roles.<role>.models and roles.<role>.skills; see README`,
+    );
+  if ("openPr" in project)
+    throw new Error(
+      `${path}: openPr: obsolete setting; set forge to github or none`,
+    );
+  if (project.issues === "github" || project.issues === "local")
+    throw new Error(
+      `${path}: issues: obsolete setting; use issues: "${project.issues === "local" ? "files" : "forge"}" and set forge`,
     );
   const isObject = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === "object" && !Array.isArray(value);
@@ -136,6 +141,14 @@ export function loadConfig(
       ]),
     ) as Defaults["stopAt"],
   };
+  if (project.issues === undefined && config.forge === "none")
+    config.issues = "files";
+  if (!["github", "gitlab", "none"].includes(config.forge))
+    throw new Error(`${path}: invalid forge`);
+  if (!["forge", "files"].includes(config.issues))
+    throw new Error(`${path}: invalid issues`);
+  if (config.forge === "none" && config.issues === "forge")
+    throw new Error(`${path}: issues: forge requires a forge other than none`);
   if (
     !Array.isArray(config.providers) ||
     !config.providers.length ||
@@ -187,16 +200,15 @@ export function loadConfig(
   }
   if ("reservePercent" in project || "codexLimitId" in project)
     throw new Error(`${path}: obsolete quota setting; see README`);
-  // Offline projects have no repository; the placeholder only keys .sandcastle/state.json.
-  if (offline(config) && config.repository === undefined)
+  if (config.forge === "none") {
+    if (project.repository !== undefined)
+      throw new Error(`${path}: repository is only used with a forge`);
     config.repository = "local";
-  else if (
+  } else if (
     typeof config.repository !== "string" ||
     !/^[\w.-]+\/[\w.-]+$/.test(config.repository)
   ) {
-    throw new Error(
-      `${path}: "repository" must be "owner/name" (optional only with "issues": "local" and "openPr": false)`,
-    );
+    throw new Error(`${path}: repository must be owner/name`);
   }
   config.verify ??= "";
   if (typeof config.verify !== "string") {
@@ -216,10 +228,6 @@ export function loadConfig(
       `${path}: "install" must be a shell command that installs dependencies (e.g. "npm ci")`,
     );
   }
-  if (!["github", "local"].includes(config.issues))
-    throw new Error(`${path}: "issues" must be "github" or "local"`);
-  if (typeof config.openPr !== "boolean")
-    throw new Error(`${path}: "openPr" must be true or false`);
   const skills = options.checkSkillNames === false ? undefined : indexSkills();
   for (const [role, { skills: names }] of Object.entries(config.roles)) {
     if (

@@ -1,6 +1,6 @@
 {
-  "issues": "local",
-  "openPr": true,
+  "forge": "github",
+  "issues": "files",
   "repository": "pholpaphankorn/toddler",
   "install": "npm ci",
   "format": "npm run format",
