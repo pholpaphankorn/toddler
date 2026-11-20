@@ -112,6 +112,11 @@ test("init writes detected GitHub or no-forge config", () => {
           ? /Sandcastle.*issues.*files/
           : /Write issues.*Nothing is pushed/,
       );
+      if (!github)
+        assert.match(
+          result.stdout,
+          /"autoMerge": true.*fast-forward approved work/,
+        );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

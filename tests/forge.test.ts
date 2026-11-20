@@ -2,6 +2,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+
+test("none forge doctor reports auto-merge setting", async () => {
+  const { NoneForge } = await import("../src/forge.ts");
+  const forge = new NoneForge(".");
+  for (const autoMerge of [false, true]) {
+    const [name, check] = forge.doctorChecks({ ...config, autoMerge })[0];
+    assert.equal(
+      `OK ${name}: ${await check()}`,
+      `OK Forge: none (nothing pushed; autoMerge ${autoMerge ? "on" : "off"})`,
+    );
+  }
+});
 import { join } from "node:path";
 import { GitHubForge, FilesTracker, NoneForge } from "../src/forge.ts";
 import { defaults, type Config } from "../src/config.ts";
@@ -255,7 +267,7 @@ test("files tracker returns only open issues and resolves blocked_by against the
     await writeFile(join(dir, "1-closed.md"), "---\nstatus: closed\n---\n");
     await writeFile(join(dir, "2-open.md"), "---\nblocked_by: [1]\n---\nBody");
     await writeFile(join(dir, "3-blocked.md"), "---\nblocked_by: [2]\n---\n");
-    const tracker = new FilesTracker(root, async () => "");
+    const tracker = new FilesTracker(root);
     const issues = await tracker.issues();
     assert.deepEqual(
       issues.map((issue) => issue.number),
@@ -287,7 +299,7 @@ test("files tracker parses issue frontmatter and validates issue files", async (
     );
     await writeFile(join(dir, "4-add-logout.md"), "Body only");
     await writeFile(join(specs, "1-auth/7-not-an-issue.md"), "ignored");
-    const tracker = new FilesTracker(root, async () => "");
+    const tracker = new FilesTracker(root);
     assert.deepEqual(await tracker.issues(), [
       {
         number: 3,
@@ -313,45 +325,4 @@ test("files tracker parses issue frontmatter and validates issue files", async (
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
-
-test("files tracker reads the freshly fetched base across rounds", async () => {
-  const { connect } = await import("../src/forge.ts");
-  let round = 0;
-  const calls: string[][] = [];
-  const git = async (_: string, args: string[] = []) => {
-    calls.push(args);
-    if (args[0] === "fetch") {
-      round++;
-      return "";
-    }
-    if (args[0] === "ls-tree")
-      return ".sandcastle/specs/1-a/issues/1-first.md\n.sandcastle/specs/1-a/issues/2-next.md";
-    if (args[0] === "show")
-      return args[1].includes("1-first")
-        ? `---\nstatus: ${round === 1 ? "open" : "closed"}\n---\n`
-        : "---\nblocked_by: [1]\n---\n";
-    return "";
-  };
-  const { forge, tracker } = connect(
-    "/repo",
-    { ...config, issues: "files" },
-    git,
-    async () => "",
-  );
-  await forge.base("main");
-  let issues = await tracker.issues();
-  assert.equal(await tracker.blocked(issues[1]), true);
-  await forge.base("main");
-  issues = await tracker.issues();
-  assert.deepEqual(
-    issues.map((item) => item.number),
-    [2],
-  );
-  assert.equal(await tracker.blocked(issues[0]), false);
-  assert.ok(
-    calls.some(
-      (args) => args[0] === "show" && args[1].startsWith("origin/main:"),
-    ),
-  );
 });

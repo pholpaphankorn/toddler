@@ -1239,8 +1239,71 @@ test("auto-merge is enabled for GitHub PRs with either issue tracker", async () 
     );
   }
 });
-test("a local issue's PR adds a separate commit that closes its file", async () => {
-  const root = mkdtempSync(join(tmpdir(), "toddler-close-test-"));
+test("offline auto-merge fast-forwards only when safe", async () => {
+  for (const scenario of [
+    "clean",
+    "unchecked",
+    "diverged",
+    "dirty",
+    "disabled",
+  ]) {
+    const root = mkdtempSync(join(tmpdir(), "toddler-ff-"));
+    const run = (...args: string[]) => {
+      const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout.trim();
+    };
+    try {
+      run("init", "-q", "-b", "main");
+      run("config", "user.email", "t@example.com");
+      run("config", "user.name", "t");
+      writeFileSync(join(root, "base"), "base");
+      run("add", ".");
+      run("commit", "-qm", "base");
+      run("checkout", "-qb", "toddler/local-1");
+      writeFileSync(join(root, "work"), "work");
+      run("add", ".");
+      run("commit", "-qm", "work");
+      const reviewed = run("rev-parse", "HEAD");
+      run("checkout", "-q", "main");
+      if (scenario === "diverged") {
+        writeFileSync(join(root, "other"), "other");
+        run("add", ".");
+        run("commit", "-qm", "other");
+      }
+      const before = run("rev-parse", "main");
+      if (scenario === "unchecked") run("checkout", "-qb", "another");
+      if (scenario === "dirty") writeFileSync(join(root, "base"), "dirty");
+      const { runner, state } = fixture(
+        { forge: "none", autoMerge: scenario !== "disabled" },
+        root,
+      );
+      runner.gitCommand = command;
+      const job = {
+        number: 1,
+        branch: "toddler/local-1",
+        baseBranch: "main",
+        reviewedSha: reviewed,
+        status: "approved",
+      } as Job;
+      state.jobs[1] = job;
+      await runner.publish(issue(1), job);
+      assert.equal(job.status, "done");
+      assert.equal(
+        run("rev-parse", "main"),
+        ["clean", "unchecked", "dirty"].includes(scenario) ? reviewed : before,
+        scenario,
+      );
+      assert.equal(run("rev-parse", "toddler/local-1"), reviewed);
+      if (scenario === "clean")
+        assert.equal(run("rev-parse", "HEAD"), reviewed);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+test("concurrent offline approvals finish on a clean checked-out base", async () => {
+  const root = mkdtempSync(join(tmpdir(), "toddler-ff-race-"));
   const run = (...args: string[]) => {
     const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
@@ -1250,31 +1313,45 @@ test("a local issue's PR adds a separate commit that closes its file", async () 
     run("init", "-q", "-b", "main");
     run("config", "user.email", "t@example.com");
     run("config", "user.name", "t");
-    mkdirSync(join(root, ".sandcastle/specs/1-a/issues"), { recursive: true });
-    const file = "1-a/issues/7-x.md";
-    writeFileSync(
-      join(root, ".sandcastle/specs", file),
-      "---\ntitle: X\nstatus: open\n---\nstatus: body stays\n",
-    );
+    writeFileSync(join(root, "base"), "base");
     run("add", ".");
     run("commit", "-qm", "base");
-    const reviewed = run("rev-parse", "HEAD");
-    const { runner } = fixture({ issues: "files" }, root);
-    runner.gitCommand = command;
-    const sha = await runner.closeCommit(
-      issue(7),
-      {
-        reviewedSha: reviewed,
-      } as Job,
-      file,
+    const jobs: Job[] = [];
+    for (const number of [1, 2]) {
+      run("checkout", "-qb", `toddler/local-${number}`, "main");
+      writeFileSync(join(root, `work-${number}`), "work");
+      run("add", ".");
+      run("commit", "-qm", `work ${number}`);
+      jobs.push({
+        number,
+        branch: `toddler/local-${number}`,
+        baseBranch: "main",
+        reviewedSha: run("rev-parse", "HEAD"),
+        status: "approved",
+      } as Job);
+    }
+    run("checkout", "-q", "main");
+    const { runner, state } = fixture({ forge: "none", autoMerge: true }, root);
+    for (const job of jobs) state.jobs[job.number] = job;
+    let first = true;
+    runner.gitCommand = async (file, args = [], options) => {
+      if (args[0] === "merge" && first) {
+        first = false;
+        const lock = join(root, ".git", "index.lock");
+        writeFileSync(lock, "");
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        rmSync(lock);
+      }
+      return command(file, args, options);
+    };
+    await Promise.all(
+      jobs.map((job) => runner.publish(issue(job.number), job)),
     );
-    assert.equal(run("rev-parse", `${sha}^`), reviewed);
-    assert.equal(run("log", "-1", "--format=%s", sha), "pm: close issue 7");
-    assert.equal(
-      run("show", `${sha}:.sandcastle/specs/${file}`),
-      "---\ntitle: X\nstatus: closed\n---\nstatus: body stays",
+    assert.deepEqual(
+      jobs.map((job) => job.status),
+      ["done", "done"],
     );
-    assert.equal(run("worktree", "list").split("\n").length, 1);
+    assert.ok(jobs.some((job) => job.reviewedSha === run("rev-parse", "main")));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1294,7 +1371,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
       { issues: "files", forge: "none" },
       root,
     );
-    runner.tracker = new FilesTracker(root, async () => "");
+    runner.tracker = new FilesTracker(root);
     const candidates = await runner.candidates();
     assert.deepEqual(
       candidates.map((issue) => issue.number),
@@ -1315,7 +1392,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
     );
     assert.deepEqual(
       (await runner.candidates()).map((issue) => issue.number),
-      [],
+      [3],
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -1477,7 +1554,7 @@ test("no available issue or quota terminates without starting agents", async () 
     ["base", "main"],
   ]);
 });
-test("with PRs on, each round re-fetches the base and local issues read from it", async () => {
+test("each round refreshes the base", async () => {
   const { runner, events } = fixture({ issues: "files" });
   runner.candidates = async () => [];
   await runner.run("main");
@@ -1486,41 +1563,6 @@ test("with PRs on, each round re-fetches the base and local issues read from it"
   offline.runner.candidates = async () => [];
   await offline.runner.run("main");
   assert.deepEqual(offline.events, [["base", "main"]]);
-});
-test("local issues come from the issue ref, not the working tree, when it is set", async () => {
-  const root = mkdtempSync(join(tmpdir(), "toddler-ref-test-"));
-  const run = (...args: string[]) => {
-    const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
-    assert.equal(result.status, 0, result.stderr);
-  };
-  try {
-    run("init", "-q", "-b", "main");
-    run("config", "user.email", "t@example.com");
-    run("config", "user.name", "t");
-    mkdirSync(join(root, ".sandcastle/specs/1-a/issues"), { recursive: true });
-    const write = (name: string, text: string) =>
-      writeFileSync(join(root, ".sandcastle/specs/1-a/issues", name), text);
-    write("1-done.md", "---\nstatus: closed\n---\n");
-    write("2-next.md", "---\nblocked_by: [1]\n---\nDo it");
-    run("add", ".");
-    run("commit", "-qm", "merged upstream");
-    run("branch", "upstream");
-    write("1-done.md", "---\nstatus: open\n---\n");
-    write("3-local-only.md", "uncommitted");
-    const { runner } = fixture({ issues: "files", forge: "none" }, root);
-    runner.gitCommand = command;
-    runner.tracker = new FilesTracker(
-      root,
-      (args) => command("git", args, { cwd: root }),
-      () => "upstream",
-    );
-    assert.deepEqual(
-      (await runner.candidates()).map((issue) => issue.number),
-      [2],
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
 });
 test("run ends when every configured model is stopped by scoped weekly readings", async () => {
   const { runner, events } = fixture();

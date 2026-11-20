@@ -8,11 +8,10 @@ import { type Config } from "./config.ts";
 
 export interface Tracker {
   issues(): Promise<Issue[]>;
-  blocked(issue: Issue): Promise<boolean>;
+  blocked(issue: Issue, done?: (number: number) => boolean): Promise<boolean>;
   comments(issue: Issue): Promise<string[]>;
   spec(id: number): Promise<unknown>;
   requestReference(issue: Issue): { ref: string; closes: string };
-  file?(number: number): string | undefined;
 }
 export interface Forge {
   tracker?: Tracker;
@@ -35,37 +34,18 @@ export interface Forge {
 export class FilesTracker implements Tracker {
   private open = new Map<number, ReturnType<typeof localIssue>>();
   private root: string;
-  private git: (args: string[]) => Promise<string>;
-  private ref: () => string | undefined;
-  constructor(
-    root: string,
-    git: (args: string[]) => Promise<string>,
-    ref: () => string | undefined = () => undefined,
-  ) {
+  constructor(root: string) {
     this.root = root;
-    this.git = git;
-    this.ref = ref;
   }
   async issues(): Promise<Issue[]> {
-    const prefix = ".sandcastle/specs/",
-      ref = this.ref();
-    let files = ref
-      ? (await this.git(["ls-tree", "-r", "--name-only", ref, "--", prefix]))
-          .split("\n")
-          .filter(Boolean)
-          .map((file) => file.slice(prefix.length))
-      : existsSync(join(this.root, prefix))
-        ? await readdir(join(this.root, prefix), { recursive: true })
-        : [];
+    const prefix = ".sandcastle/specs/";
+    let files = existsSync(join(this.root, prefix))
+      ? await readdir(join(this.root, prefix), { recursive: true })
+      : [];
     files = files.filter((file) => /^[^/]+\/issues\/[^/]+\.md$/.test(file));
     const parsed = await Promise.all(
       files.map(async (file) =>
-        localIssue(
-          file,
-          ref
-            ? await this.git(["show", `${ref}:${prefix}${file}`])
-            : await readFile(join(this.root, prefix, file), "utf8"),
-        ),
+        localIssue(file, await readFile(join(this.root, prefix, file), "utf8")),
       ),
     );
     const seen = new Set<number>();
@@ -90,11 +70,15 @@ export class FilesTracker implements Tracker {
         labels,
       }));
   }
-  async blocked(issue: Issue): Promise<boolean> {
+  async blocked(
+    issue: Issue,
+    done: (number: number) => boolean = () => false,
+  ): Promise<boolean> {
     return (
       this.open
         .get(issue.number)
-        ?.blockedBy.some((number) => this.open.has(number)) ?? false
+        ?.blockedBy.some((number) => this.open.has(number) && !done(number)) ??
+      false
     );
   }
   async comments(_issue: Issue): Promise<string[]> {
@@ -105,9 +89,6 @@ export class FilesTracker implements Tracker {
   }
   requestReference(issue: Issue) {
     return { ref: `local issue ${issue.number}`, closes: "" };
-  }
-  file(number: number): string | undefined {
-    return this.open.get(number)?.file;
   }
 }
 export class GitHubForge implements Forge {
@@ -361,8 +342,14 @@ export class NoneForge implements Forge {
   async openRequest(): Promise<string> {
     throw new Error("No forge configured");
   }
-  doctorChecks(_config: Config): [string, () => Promise<string>][] {
-    return [];
+  doctorChecks(config: Config): [string, () => Promise<string>][] {
+    return [
+      [
+        "Forge",
+        async () =>
+          `none (nothing pushed; autoMerge ${config.autoMerge ? "on" : "off"})`,
+      ],
+    ];
   }
   async enableAutoMerge(_url: string) {}
 }
@@ -378,21 +365,8 @@ export function connect(
     config.forge === "none"
       ? new NoneForge(root, git)
       : new GitHubForge(root, config, git, gh);
-  let ref: string | undefined;
-  const originalBase = forge.base.bind(forge);
-  forge.base = async (branch) => {
-    const base = await originalBase(branch);
-    ref = forge.remote ? base.ref : undefined;
-    return base;
-  };
   const tracker =
-    config.issues === "files"
-      ? new FilesTracker(
-          root,
-          (args) => git("git", args, { cwd: root }),
-          () => ref,
-        )
-      : forge.tracker!;
+    config.issues === "files" ? new FilesTracker(root) : forge.tracker!;
   return { forge, tracker };
 }
 
