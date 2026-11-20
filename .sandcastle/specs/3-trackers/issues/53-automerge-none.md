@@ -3,7 +3,7 @@ title: autoMerge with no forge, and finished jobs unblock issue files
 labels: []
 blocked_by: [51]
 parent: 3
-status: open
+status: closed
 ---
 Make offline work (`forge: "none"`) flow without manual merging.
 
