@@ -269,14 +269,18 @@ export class GitHubForge implements Forge {
               "view",
               this.config.repository,
               "--json",
-              "nameWithOwner,viewerPermission,defaultBranchRef,autoMergeAllowed",
+              "nameWithOwner,viewerPermission,defaultBranchRef",
             ]),
           );
           if (!["ADMIN", "MAINTAIN", "WRITE"].includes(repo.viewerPermission))
             throw new Error(
               "Repository write permission needed to push issue branches",
             );
-          if (config.autoMerge && !repo.autoMergeAllowed)
+          if (
+            config.autoMerge &&
+            !JSON.parse(await this.gh(["api", `repos/${config.repository}`]))
+              .allow_auto_merge
+          )
             throw new Error("Repository does not allow auto-merge");
           return `${repo.nameWithOwner}, base ${repo.defaultBranchRef.name}, ${repo.viewerPermission}`;
         },
@@ -301,13 +305,29 @@ export class GitHubForge implements Forge {
     const repo = JSON.parse(
       await this.gh(["api", `repos/${this.config.repository}`]),
     );
-    const method = repo.allow_merge_commit
-      ? "--merge"
-      : repo.allow_squash_merge
-        ? "--squash"
-        : repo.allow_rebase_merge
-          ? "--rebase"
-          : undefined;
+    const { viewerDefaultMergeMethod } = JSON.parse(
+      await this.gh([
+        "repo",
+        "view",
+        this.config.repository,
+        "--json",
+        "viewerDefaultMergeMethod",
+      ]),
+    );
+    const preferred = {
+      MERGE: repo.allow_merge_commit && "--merge",
+      SQUASH: repo.allow_squash_merge && "--squash",
+      REBASE: repo.allow_rebase_merge && "--rebase",
+    }[viewerDefaultMergeMethod as "MERGE" | "SQUASH" | "REBASE"];
+    const method =
+      preferred ||
+      (repo.allow_merge_commit
+        ? "--merge"
+        : repo.allow_squash_merge
+          ? "--squash"
+          : repo.allow_rebase_merge
+            ? "--rebase"
+            : undefined);
     if (!method) throw new Error("Repository has no enabled merge method");
     await this.gh(["pr", "merge", url, "--auto", method]).catch(
       (error: Error) => {
