@@ -319,6 +319,188 @@ export class GitHubForge implements Forge {
     );
   }
 }
+export class GitLabForge implements Forge {
+  enabled = true;
+  remote = true;
+  tracker: Tracker;
+  private project: string;
+  private root: string;
+  private config: Config;
+  private gitCommand: Command;
+  private glabCommand: Command;
+  constructor(
+    root: string,
+    config: Config,
+    gitCommand: Command = command,
+    glabCommand: Command = command,
+  ) {
+    this.root = root;
+    this.config = config;
+    this.gitCommand = gitCommand;
+    this.glabCommand = glabCommand;
+    this.project = `projects/${encodeURIComponent(config.repository)}`;
+    this.tracker = {
+      issues: async () =>
+        (
+          await this.list(
+            `${this.project}/issues?state=opened&labels=${encodeURIComponent(config.issueLabel)}&per_page=100`,
+          )
+        )
+          .filter((item: any) => item.labels.includes(config.issueLabel))
+          .map((item: any) => ({
+            number: item.iid,
+            title: item.title,
+            body: item.description,
+            labels: item.labels,
+          }))
+          .sort((a: Issue, b: Issue) => a.number - b.number),
+      blocked: async (issue) => {
+        const links = await this.list(
+          `${this.project}/issues/${issue.number}/links?per_page=100`,
+        );
+        if (
+          links.some(
+            (item: any) =>
+              item.link_type === "is_blocked_by" && item.state === "opened",
+          )
+        )
+          return true;
+        for (const line of (issue.body ?? "").split(/\r?\n/)) {
+          const match = /^Blocked by:\s*(.*)$/i.exec(line);
+          if (!match) continue;
+          if (!/^#\d+(?:\s*,\s*#\d+)*\s*$/.test(match[1])) {
+            console.error(
+              `[issue #${issue.number}] unresolvable blocker: ${line}`,
+            );
+            return true;
+          }
+          for (const ref of match[1].matchAll(/#(\d+)/g)) {
+            let blocker;
+            try {
+              blocker = await this.api(`${this.project}/issues/${ref[1]}`);
+            } catch (error) {
+              console.error(
+                `[issue #${issue.number}] unresolvable blocker: ${line} (${(error as Error).message})`,
+              );
+              return true;
+            }
+            if (blocker.state === "opened") return true;
+          }
+        }
+        return false;
+      },
+      comments: async (issue) =>
+        (
+          await this.list(
+            `${this.project}/issues/${issue.number}/notes?per_page=100`,
+          )
+        ).map((item: any) => item.body),
+      requestReference: (issue) => ({
+        ref: `#${issue.number}`,
+        closes: `Closes #${issue.number}\n\n`,
+      }),
+      spec: async () => {
+        throw new Error("Spec is not implemented");
+      },
+    };
+  }
+  private async api(path: string, args: string[] = []) {
+    return JSON.parse(
+      await this.glabCommand("glab", ["api", path, ...args], {
+        cwd: this.root,
+      }),
+    );
+  }
+  private async list(path: string): Promise<any[]> {
+    const output = await this.glabCommand(
+      "glab",
+      ["api", path, "--paginate", "--output", "ndjson"],
+      { cwd: this.root },
+    );
+    return output
+      .split("\n")
+      .filter(Boolean)
+      .flatMap((line) => JSON.parse(line));
+  }
+  async base(branch?: string) {
+    branch ??= (await this.api(this.project)).default_branch;
+    await this.gitCommand("git", ["fetch", this.config.remote, branch!], {
+      cwd: this.root,
+    });
+    return { branch: branch!, ref: `${this.config.remote}/${branch}` };
+  }
+  async findRequest(branch: string) {
+    const requests = await this.list(
+      `${this.project}/merge_requests?source_branch=${encodeURIComponent(branch)}&per_page=100`,
+    );
+    const request = requests.find(
+      (item) => item.state === "opened" || item.state === "merged",
+    );
+    return (
+      request && { url: request.web_url, open: request.state === "opened" }
+    );
+  }
+  async openRequest(input: {
+    branch: string;
+    sha: string;
+    base: string;
+    title: string;
+    body: string;
+  }) {
+    await this.gitCommand(
+      "git",
+      ["push", this.config.remote, `${input.sha}:refs/heads/${input.branch}`],
+      { cwd: this.root },
+    );
+    const result = await this.api(`${this.project}/merge_requests`, [
+      "--method",
+      "POST",
+      "--raw-field",
+      `source_branch=${input.branch}`,
+      "--raw-field",
+      `target_branch=${input.base}`,
+      "--raw-field",
+      `title=${input.title}`,
+      "--raw-field",
+      `description=${input.body}`,
+    ]);
+    return result.web_url as string;
+  }
+  doctorChecks(config: Config): [string, () => Promise<string>][] {
+    return [
+      [
+        "GitLab",
+        async () => {
+          const project = await this.api(this.project);
+          return `${project.path_with_namespace}, base ${project.default_branch}`;
+        },
+      ],
+      ...(config.issues === "forge"
+        ? [
+            [
+              "Issue label",
+              async () => {
+                await this.api(
+                  `${this.project}/labels/${encodeURIComponent(config.issueLabel)}`,
+                );
+                return config.issueLabel;
+              },
+            ] as [string, () => Promise<string>],
+          ]
+        : []),
+    ];
+  }
+  async enableAutoMerge(url: string) {
+    const iid = /\/merge_requests\/(\d+)/.exec(url)?.[1];
+    if (!iid) throw new Error("Invalid GitLab merge request URL");
+    await this.api(`${this.project}/merge_requests/${iid}/merge`, [
+      "--method",
+      "PUT",
+      "--field",
+      "auto_merge=true",
+    ]);
+  }
+}
 export class NoneForge implements Forge {
   enabled = false;
   remote = false;
@@ -359,12 +541,12 @@ export function connect(
   git: Command = command,
   gh: Command = command,
 ) {
-  if (config.forge === "gitlab")
-    throw new Error("forge: gitlab is not supported yet");
   const forge: Forge =
     config.forge === "none"
       ? new NoneForge(root, git)
-      : new GitHubForge(root, config, git, gh);
+      : config.forge === "gitlab"
+        ? new GitLabForge(root, config, git, gh)
+        : new GitHubForge(root, config, git, gh);
   const tracker =
     config.issues === "files" ? new FilesTracker(root) : forge.tracker!;
   return { forge, tracker };

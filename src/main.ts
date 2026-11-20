@@ -238,12 +238,13 @@ async function main() {
     );
   if (!offline(config)) {
     const remote = await command("git", ["remote", "get-url", config.remote]);
+    const remotePath = remote.replace(/\.git\/?$/, "").replace(/\/$/, "");
     if (
-      !remote.endsWith(`${config.repository}.git`) &&
-      !remote.endsWith(config.repository)
+      !remotePath.endsWith(`/${config.repository}`) &&
+      !remotePath.endsWith(`:${config.repository}`)
     ) {
       throw new Error(
-        "Configured push remote does not match the GitHub repository",
+        `Configured push remote does not match the ${config.forge === "gitlab" ? "GitLab" : "GitHub"} repository`,
       );
     }
   }
@@ -291,6 +292,7 @@ async function main() {
         ANTHROPIC_API_KEY: "",
         GH_TOKEN: "",
         GITHUB_TOKEN: "",
+        GITLAB_TOKEN: "",
       },
     });
     runner.sandcastle = await import("@ai-hero/sandcastle");

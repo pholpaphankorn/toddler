@@ -22,13 +22,11 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
     assert.equal(load({ forge: "none" }).issues, "files");
     assert.equal(load({ repository: "owner/name" }).autoMerge, false);
     assert.equal(load({ forge: "none", autoMerge: true }).autoMerge, true);
-    assert.throws(
-      () =>
-        connect(
-          root,
-          load({ forge: "gitlab", repository: "group/subgroup/project" }),
-        ),
-      /not supported yet/,
+    assert.ok(
+      connect(
+        root,
+        load({ forge: "gitlab", repository: "group/subgroup/project" }),
+      ).forge.enabled,
     );
     for (const [value, pattern] of [
       [{ forge: "none", issues: "forge" }, /issues.*forge.*none/],
