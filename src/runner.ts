@@ -42,6 +42,8 @@ export interface Job {
   reviewer?: Provider;
   report?: ReviewReport;
   pr?: string;
+  /** reviewedSha plus the commit that closes the local issue file. */
+  publishSha?: string;
   lastError?: string;
 }
 export interface State {
@@ -611,10 +613,12 @@ export class Runner {
       await this.merge(issue, existing[0].url);
       return;
     }
+    if (issue.file && !job.publishSha)
+      this.persist(job, { publishSha: await this.closeCommit(issue, job) });
     await this.git([
       "push",
       this.config.remote,
-      `${job.reviewedSha}:refs/heads/${job.branch}`,
+      `${job.publishSha ?? job.reviewedSha}:refs/heads/${job.branch}`,
     ]);
     const ref = this.local()
       ? `local issue ${issue.number}`
@@ -659,6 +663,42 @@ export class Runner {
       console.error(
         `[issue #${issue.number}] could not merge ${url}: ${(error as Error).message}`,
       );
+    }
+  }
+  // shortcut: writes the issue file from the coordinator until Tracker gains writes (spec 5); lands with the PR's merge.
+  async closeCommit(issue: Issue, job: Job): Promise<string> {
+    const directory = await mkdtemp(join(tmpdir(), "toddler-close-"));
+    try {
+      await this.git([
+        "worktree",
+        "add",
+        "--detach",
+        directory,
+        job.reviewedSha!,
+      ]);
+      const path = join(directory, ".sandcastle/specs", issue.file!);
+      // An issue file the base commit lacks cannot be closed by this PR.
+      if (!existsSync(path)) return job.reviewedSha!;
+      const text = await readFile(path, "utf8");
+      const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+      await writeFile(
+        path,
+        !front
+          ? `---\nstatus: closed\n---\n${text}`
+          : /^status:/m.test(front[1])
+            ? text.replace(/^status:.*$/m, "status: closed")
+            : text.replace(/^---\r?\n/, "$&status: closed\n"),
+      );
+      await this.git(
+        ["commit", "--no-verify", "-am", `pm: close issue ${issue.number}`],
+        directory,
+      );
+      return await this.git(["rev-parse", "HEAD"], directory);
+    } finally {
+      await this.git(["worktree", "remove", "--force", directory]).catch(
+        () => {},
+      );
+      await rm(directory, { recursive: true, force: true });
     }
   }
   async run(baseBranch: string): Promise<void> {

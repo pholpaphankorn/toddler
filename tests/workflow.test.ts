@@ -18,6 +18,7 @@ import {
   type Reading,
 } from "../src/quota.ts";
 import { Runner, type Job, type RunnerOptions } from "../src/runner.ts";
+import { command } from "../src/process.ts";
 import {
   mkdtempSync,
   mkdirSync,
@@ -1032,6 +1033,42 @@ test("a refused merge leaves the PR open and the job at pr", async () => {
   assert.equal(state.jobs[1].status, "pr");
   assert.equal(state.jobs[1].lastError, undefined);
 });
+test("a local issue's PR adds a separate commit that closes its file", async () => {
+  const root = mkdtempSync(join(tmpdir(), "toddler-close-test-"));
+  const run = (...args: string[]) => {
+    const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  try {
+    run("init", "-q", "-b", "main");
+    run("config", "user.email", "t@example.com");
+    run("config", "user.name", "t");
+    mkdirSync(join(root, ".sandcastle/specs/1-a/issues"), { recursive: true });
+    const file = "1-a/issues/7-x.md";
+    writeFileSync(
+      join(root, ".sandcastle/specs", file),
+      "---\ntitle: X\nstatus: open\n---\nstatus: body stays\n",
+    );
+    run("add", ".");
+    run("commit", "-qm", "base");
+    const reviewed = run("rev-parse", "HEAD");
+    const { runner } = fixture({ issues: "local" }, root);
+    runner.gitCommand = command;
+    const sha = await runner.closeCommit({ ...issue(7), file }, {
+      reviewedSha: reviewed,
+    } as Job);
+    assert.equal(run("rev-parse", `${sha}^`), reviewed);
+    assert.equal(run("log", "-1", "--format=%s", sha), "pm: close issue 7");
+    assert.equal(
+      run("show", `${sha}:.sandcastle/specs/${file}`),
+      "---\ntitle: X\nstatus: closed\n---\nstatus: body stays",
+    );
+    assert.equal(run("worktree", "list").split("\n").length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 test("local issue files parse frontmatter, and fall back to the file name", () => {
   const parsed = localIssue(
     "1-auth/issues/3-fix-login.md",
@@ -1044,6 +1081,7 @@ test("local issue files parse frontmatter, and fall back to the file name", () =
     labels: ["parallel-safe", "blocked"],
     blockedBy: [1, 2],
     closed: true,
+    file: "1-auth/issues/3-fix-login.md",
   });
   assert.deepEqual(localIssue("1-auth/issues/4-add-logout.md", "Body only"), {
     number: 4,
@@ -1052,6 +1090,7 @@ test("local issue files parse frontmatter, and fall back to the file name", () =
     labels: [],
     blockedBy: [],
     closed: false,
+    file: "1-auth/issues/4-add-logout.md",
   });
   assert.throws(() => localIssue("1-auth/issues/notes.md", ""), /issue-number/);
   assert.throws(() => localIssue("3-fix-login.md", ""), /spec-number/);

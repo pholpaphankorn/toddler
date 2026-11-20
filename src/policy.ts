@@ -103,6 +103,8 @@ export interface Issue {
   /** Local issues only. */
   blockedBy?: number[];
   closed?: boolean;
+  /** Local issues only: path under .sandcastle/specs. */
+  file?: string;
 }
 export interface ReviewReport {
   verdict: "approved" | "changes_requested";
@@ -218,5 +220,6 @@ export function localIssue(file: string, text: string): Issue {
     labels: list(fields.labels),
     blockedBy,
     closed: fields.status?.toLowerCase() === "closed",
+    file,
   };
 }
