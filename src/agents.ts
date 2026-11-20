@@ -11,7 +11,7 @@ export function privateHomeAgent(
     buildPrintCommand(options) {
       const print = baseAgent.buildPrintCommand(options);
       const hostOnly =
-        "CODEX_HOME CLAUDE_CONFIG_DIR OPENAI_API_KEY CODEX_API_KEY ANTHROPIC_API_KEY GH_TOKEN GITHUB_TOKEN CODEX_USAGE_COMMAND CLAUDE_USAGE_COMMAND CLAUDE_USAGE_TOKEN_COMMAND";
+        "CODEX_HOME CLAUDE_CONFIG_DIR OPENAI_API_KEY CODEX_API_KEY ANTHROPIC_API_KEY GH_TOKEN GITHUB_TOKEN GITLAB_TOKEN CODEX_USAGE_COMMAND CLAUDE_USAGE_COMMAND CLAUDE_USAGE_TOKEN_COMMAND";
       const clear = `unset ${hostOnly}${provider === "codex" ? " CLAUDE_CODE_OAUTH_TOKEN" : ""}; `;
       // Claude defaults to /tmp on macOS even when TMPDIR is set; keep its
       // internal files inside Seatbelt's private temp directory.
