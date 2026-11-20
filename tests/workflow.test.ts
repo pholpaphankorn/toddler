@@ -1302,7 +1302,7 @@ test("offline auto-merge fast-forwards only when safe", async () => {
     }
   }
 });
-test("concurrent offline approvals finish when their branches diverge", async () => {
+test("concurrent offline approvals finish on a clean checked-out base", async () => {
   const root = mkdtempSync(join(tmpdir(), "toddler-ff-race-"));
   const run = (...args: string[]) => {
     const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -1330,17 +1330,17 @@ test("concurrent offline approvals finish when their branches diverge", async ()
         status: "approved",
       } as Job);
     }
+    run("checkout", "-q", "main");
     const { runner, state } = fixture({ forge: "none", autoMerge: true }, root);
     for (const job of jobs) state.jobs[job.number] = job;
-    let arrivals = 0;
-    let release!: () => void;
-    const bothReady = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    let first = true;
     runner.gitCommand = async (file, args = [], options) => {
-      if (args[0] === "update-ref" && ++arrivals <= 2) {
-        if (arrivals === 2) release();
-        await bothReady;
+      if (args[0] === "merge" && first) {
+        first = false;
+        const lock = join(root, ".git", "index.lock");
+        writeFileSync(lock, "");
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        rmSync(lock);
       }
       return command(file, args, options);
     };

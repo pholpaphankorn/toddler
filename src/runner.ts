@@ -115,6 +115,7 @@ export class Runner {
   attempted = new Set<number>();
   interrupted = false;
   slots = new Map<string, Promise<void>>();
+  private fastForwardQueue: Promise<void> = Promise.resolve();
   constructor({
     root,
     config,
@@ -623,6 +624,19 @@ export class Runner {
     return true;
   }
   async fastForward(job: Job): Promise<void> {
+    const previous = this.fastForwardQueue;
+    let release!: () => void;
+    this.fastForwardQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      await this.fastForwardBase(job);
+    } finally {
+      release();
+    }
+  }
+  private async fastForwardBase(job: Job): Promise<void> {
     while (true) {
       const base = await this.git([
         "rev-parse",
