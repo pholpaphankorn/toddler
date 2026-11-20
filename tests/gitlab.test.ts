@@ -1,13 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GitLabForge } from "../src/forge.ts";
+import { FilesTracker, GitLabForge } from "../src/forge.ts";
 import { defaults, type Config } from "../src/config.ts";
+import { Runner, type Job } from "../src/runner.ts";
+import type { Quotas } from "../src/quota.ts";
 
 const config = {
   ...defaults,
   forge: "gitlab",
   repository: "group/sub/project",
   issueLabel: "workflow::ready",
+  verify: "",
 } as Config;
 
 test("GitLab tracker lists iids and checks native and body blockers", async () => {
@@ -30,13 +33,25 @@ test("GitLab tracker lists iids and checks native and body blockers", async () =
         description: "Blocked by: #12\nblocked BY: #15",
         labels: ["workflow::ready"],
       },
+      {
+        iid: 8,
+        title: "Other",
+        description: "",
+        labels: ["workflow::ready-later"],
+      },
     ]);
   };
   const tracker = new GitLabForge(".", config, async () => "", glab).tracker;
-  const [issue] = await tracker.issues();
+  const issues = await tracker.issues();
+  assert.equal(issues.length, 1);
+  const [issue] = issues;
   assert.equal(issue.number, 2);
   assert.deepEqual(issue.labels, ["workflow::ready"]);
   assert.equal(await tracker.blocked(issue), true);
+  assert.equal(
+    await tracker.blocked({ ...issue, body: "Blocked by: #12, #15" }),
+    true,
+  );
   assert.equal(
     await tracker.blocked({ ...issue, body: "Mention Blocked by: #15" }),
     false,
@@ -47,6 +62,49 @@ test("GitLab tracker lists iids and checks native and body blockers", async () =
       "projects/group%2Fsub%2Fproject/issues?state=opened&labels=workflow%3A%3Aready",
     ),
   );
+});
+
+test("publishing GitLab merge requests uses the tracker reference in the generated body", async () => {
+  for (const issues of ["forge", "files"] as const) {
+    let description = "";
+    const git = async (_: string, args: string[] = []) =>
+      args[0] === "rev-parse" ? "reviewed" : "";
+    const forge = new GitLabForge(".", config, git, async (_, args = []) => {
+      if (args.includes("POST")) {
+        description = args
+          .find((arg) => arg.startsWith("description="))!
+          .slice("description=".length);
+        return JSON.stringify({ web_url: "created" });
+      }
+      return "[]";
+    });
+    const job = {
+      number: 3,
+      branch: "feature",
+      baseBranch: "main",
+      reviewedSha: "reviewed",
+      reviewer: "codex",
+      report: { summary: "Done", validation: "Tests passed" },
+      status: "approved",
+    } as Job;
+    const runner = new Runner({
+      root: ".",
+      config: { ...config, issues },
+      quotas: {} as Quotas,
+      state: { repository: config.repository, jobs: { 3: job } },
+      save: () => {},
+      git,
+      forge,
+      tracker: issues === "forge" ? forge.tracker : new FilesTracker("."),
+    });
+    await runner.publish(
+      { number: 3, title: "Example", labels: [], body: "" },
+      job,
+    );
+    assert.match(description, /review → merge request/);
+    if (issues === "forge") assert.match(description, /Closes #3/);
+    else assert.doesNotMatch(description, /Closes #\d+/);
+  }
 });
 
 test("GitLab blockers fail closed and log unresolvable lines", async () => {

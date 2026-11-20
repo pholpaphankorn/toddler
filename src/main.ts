@@ -20,7 +20,7 @@ import { Runner, loadState, saveState } from "./runner.ts";
 import { assignments, loadRanker } from "./policy.ts";
 import { bundledSkillsPath } from "./skills.ts";
 import { skillDoctorChecks } from "./skill-doctor.ts";
-import { connect } from "./forge.ts";
+import { connect, validatePushRemote } from "./forge.ts";
 
 const usage =
   "Usage: toddler [init|setup|doctor|plan|run|smoke [codex|claude]]";
@@ -237,16 +237,12 @@ async function main() {
       "Commit or stash repository changes before starting Sandcastle",
     );
   if (!offline(config)) {
-    const remote = await command("git", ["remote", "get-url", config.remote]);
-    const remotePath = remote.replace(/\.git\/?$/, "").replace(/\/$/, "");
-    if (
-      !remotePath.endsWith(`/${config.repository}`) &&
-      !remotePath.endsWith(`:${config.repository}`)
-    ) {
-      throw new Error(
-        `Configured push remote does not match the ${config.forge === "gitlab" ? "GitLab" : "GitHub"} repository`,
-      );
-    }
+    await validatePushRemote(
+      command,
+      config.remote,
+      config.repository,
+      config.forge,
+    );
   }
   await mkdir(join(root, ".sandcastle/logs"), { recursive: true });
   const lockPath = join(root, ".sandcastle/runner.lock");

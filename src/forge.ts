@@ -6,6 +6,32 @@ import { type Issue } from "./policy.ts";
 import { command, type Command } from "./process.ts";
 import { type Config } from "./config.ts";
 
+export async function validatePushRemote(
+  run: Command,
+  remote: string,
+  repository: string,
+  forge: string,
+): Promise<void> {
+  const destinations = await run("git", [
+    "remote",
+    "get-url",
+    "--push",
+    "--all",
+    remote,
+  ]);
+  for (const destination of destinations.split("\n")) {
+    let path: string;
+    try {
+      path = new URL(destination).pathname.replace(/^\//, "");
+    } catch {
+      path = destination.match(/^[^/]+:(.+)$/)?.[1] ?? "";
+    }
+    if (path.replace(/\.git\/?$/, "").replace(/\/$/, "") !== repository)
+      throw new Error(
+        `Configured push remote does not match the ${forge === "gitlab" ? "GitLab" : "GitHub"} repository`,
+      );
+  }
+}
 export interface Tracker {
   issues(): Promise<Issue[]>;
   blocked(issue: Issue, done?: (number: number) => boolean): Promise<boolean>;
