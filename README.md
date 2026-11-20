@@ -124,6 +124,8 @@ say `Closes #N`.
 
 With `"forge": "none"`, toddler runs offline and nothing is pushed. With a GitHub forge, file issues still open pull requests.
 
+Set `"autoMerge": true` to ask GitHub to merge approved pull requests after required checks and approvals pass. Toddler uses the repository default merge method when enabled. GitHub must allow auto-merge on the repository; `toddler doctor` checks this setting. If GitHub refuses, the pull request remains open and the error is logged. The default is `false`, so toddler leaves merging to you. With `forge: "none"`, this setting currently has no effect.
+
 `.sandcastle/project.md` (optional) is appended to the implementation and review
 prompts as "Project notes": stack, how to check changes, what not to do.
 Set `roles.<role>.prompt` to a non-empty Markdown file path relative to the
@@ -193,8 +195,7 @@ Each issue branches from the fetched default branch (`origin/main` here), with i
 base SHA recorded in local state. Agents commit locally; the host verifies a clean
 worktree and runs the project's `verify` command, if set. A structured approving review of the exact resulting SHA
 is required before that SHA is pushed to `toddler/issue-N` and a PR is opened.
-PRs reference the issue for closure on merge. The runner never merges PRs or closes
-issues itself. Human changes to a branch after approval cause publication to stop.
+PRs reference the issue for closure on merge. Human changes to a branch after approval cause publication to stop.
 
 After requested changes, implementation and review repeat up to ten rounds per
 invocation. Failed tasks pause for human inspection while other issues can continue.

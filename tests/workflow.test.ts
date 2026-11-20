@@ -957,7 +957,7 @@ function fixture(
         return "https://github.com/example/repo/pull/1";
       },
       doctorChecks: () => [],
-      merge: async (url) => {
+      enableAutoMerge: async (url) => {
         events.push(["merge", url]);
       },
     },
@@ -1133,7 +1133,7 @@ test("stage prompts explicitly load each role's skills for the selected provider
   );
   assert.ok(!prompts[1].includes("For code-review:"));
 });
-test("implementation -> opposite-provider review -> push exact SHA -> PR -> merge, never issue close", async () => {
+test("implementation -> opposite-provider review -> push exact SHA -> PR without auto-merge by default", async () => {
   const { runner, events, state } = fixture();
   await runner.work(issue(1), "codex", "main");
   assert.deepEqual(
@@ -1154,7 +1154,7 @@ test("implementation -> opposite-provider review -> push exact SHA -> PR -> merg
   assert.equal(state.jobs[1].status, "pr");
   assert.deepEqual(
     events.filter((event) => event[0] === "merge"),
-    [["merge", "https://github.com/example/repo/pull/1"]],
+    [],
   );
   assert.ok(!events.some((event) => event.includes("close")));
 });
@@ -1219,14 +1219,25 @@ test("a merge-tree failure that is not a conflict pauses the job", async () => {
   assert.equal(state.jobs[1].lastError, "fatal");
   assert.ok(!events.some((event) => event[2] === "review"));
 });
-test("a refused merge leaves the PR open and the job at pr", async () => {
-  const { runner, state } = fixture();
-  runner.forge.merge = async () => {
+test("a refused auto-merge leaves the PR open and the job at pr", async () => {
+  const { runner, state } = fixture({ autoMerge: true });
+  runner.forge.enableAutoMerge = async () => {
     throw new Error("auto-merge is not allowed");
   };
   await runner.work(issue(1), "codex", "main");
   assert.equal(state.jobs[1].status, "pr");
   assert.equal(state.jobs[1].lastError, undefined);
+});
+test("auto-merge is enabled for GitHub PRs with either issue tracker", async () => {
+  for (const issues of ["forge", "files"] as const) {
+    const { runner, events, state } = fixture({ autoMerge: true, issues });
+    await runner.work(issue(1), "codex", "main");
+    assert.equal(state.jobs[1].status, "pr");
+    assert.deepEqual(
+      events.filter((event) => event[0] === "merge"),
+      [["merge", "https://github.com/example/repo/pull/1"]],
+    );
+  }
 });
 test("a local issue's PR adds a separate commit that closes its file", async () => {
   const root = mkdtempSync(join(tmpdir(), "toddler-close-test-"));
@@ -1948,7 +1959,7 @@ test("runner uses tracker and forge seams and skips finished or attempted issues
       branch.endsWith("3") ? { url: "url", open: false } : undefined,
     openRequest: async () => "url",
     doctorChecks: () => [],
-    merge: async () => {},
+    enableAutoMerge: async () => {},
   };
   runner.attempted.add(1);
   state.jobs[2] = { status: "done" } as Job;

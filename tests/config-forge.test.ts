@@ -20,6 +20,8 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
     assert.equal(load({ repository: "owner/name" }).forge, "github");
     assert.equal(load({ repository: "owner/name" }).issues, "forge");
     assert.equal(load({ forge: "none" }).issues, "files");
+    assert.equal(load({ repository: "owner/name" }).autoMerge, false);
+    assert.equal(load({ forge: "none", autoMerge: true }).autoMerge, true);
     assert.throws(
       () =>
         connect(
@@ -34,6 +36,7 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
       [{ repository: "bad" }, /repository.*owner\/name/],
       [{ forge: "other", repository: "a/b" }, /forge/],
       [{ issues: "other", repository: "a/b" }, /issues/],
+      [{ autoMerge: "true", repository: "a/b" }, /autoMerge/],
       [
         { forge: "none", repository: "a/b" },
         /repository.*only used with a forge/,
