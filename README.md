@@ -127,7 +127,7 @@ With `"forge": "none"`, toddler runs offline and nothing is pushed. With a GitHu
 
 For GitLab, set `"forge": "gitlab"` and `"repository": "group/subgroup/project"` (nested groups are supported), and sign in with `glab`. GitLab issues can declare same-project blockers on lines such as `Blocked by: #12, #15`; lines can repeat. Native GitLab blocking links also count. File issues open merge requests without a closing reference.
 
-Set `"autoMerge": true` to ask GitHub to merge approved pull requests after required checks and approvals pass. Toddler uses the repository default merge method when enabled. GitHub must allow auto-merge on the repository; `toddler doctor` checks this setting. If GitHub refuses, the pull request remains open and the error is logged. The default is `false`, so toddler leaves merging to you. With `forge: "none"`, this setting currently has no effect.
+Set `"autoMerge": true` to ask GitHub or GitLab to merge approved requests after required checks and approvals pass. GitHub uses the repository default merge method and must allow auto-merge on the repository; `toddler doctor` checks this setting. If the forge refuses, the request remains open and the error is logged. The default is `false`, so toddler leaves merging to you. With `forge: "none"`, toddler fast-forwards approved work into the base branch.
 
 `.sandcastle/project.md` (optional) is appended to the implementation and review
 prompts as "Project notes": stack, how to check changes, what not to do.

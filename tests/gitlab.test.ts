@@ -13,6 +13,41 @@ const config = {
   verify: "",
 } as Config;
 
+test("GitLab doctor requires Developer access and checks the issue label", async () => {
+  let project: any = {
+    path_with_namespace: "group/sub/project",
+    default_branch: "main",
+    permissions: {
+      project_access: { access_level: 20 },
+      group_access: { access_level: 30 },
+    },
+  };
+  const calls: string[] = [];
+  const forge = new GitLabForge(
+    ".",
+    config,
+    async () => "",
+    async (_, args = []) => {
+      calls.push(args[1]);
+      if (args[1].includes("/labels/")) return "{}";
+      if (!project) throw new Error("glab: access denied");
+      return JSON.stringify(project);
+    },
+  );
+  const checks = forge.doctorChecks({ ...config, autoMerge: true });
+  assert.match(await checks[0][1](), /group\/sub\/project.*main/);
+  assert.equal(await checks[1][1](), "workflow::ready");
+  assert.deepEqual(calls, [
+    "projects/group%2Fsub%2Fproject",
+    "projects/group%2Fsub%2Fproject/labels/workflow%3A%3Aready",
+  ]);
+  assert.equal(forge.doctorChecks({ ...config, issues: "files" }).length, 1);
+  project.permissions.group_access.access_level = 20;
+  await assert.rejects(checks[0][1](), /Developer/);
+  project = null;
+  await assert.rejects(checks[0][1](), /glab: access denied/);
+});
+
 test("GitLab tracker lists iids and checks native and body blockers", async () => {
   const calls: string[] = [];
   const glab = async (_: string, args: string[] = []) => {
@@ -104,6 +139,69 @@ test("publishing GitLab merge requests uses the tracker reference in the generat
     assert.match(description, /review → merge request/);
     if (issues === "forge") assert.match(description, /Closes #3/);
     else assert.doesNotMatch(description, /Closes #\d+/);
+  }
+});
+
+test("GitLab publishing enables auto-merge and keeps the request open on refusal", async () => {
+  for (const refused of [false, true]) {
+    const calls: string[][] = [];
+    const url = "https://gitlab.example/group/sub/project/-/merge_requests/42";
+    const git = async (_: string, args: string[] = []) =>
+      args[0] === "rev-parse" ? "reviewed" : "";
+    const forge = new GitLabForge(".", config, git, async (_, args = []) => {
+      calls.push(args);
+      if (args.includes("POST")) return JSON.stringify({ web_url: url });
+      if (args.includes("PUT")) {
+        if (refused) throw new Error("merge refused");
+        return "{}";
+      }
+      return "[]";
+    });
+    const job = {
+      number: 3,
+      branch: "feature",
+      baseBranch: "main",
+      reviewedSha: "reviewed",
+      reviewer: "codex",
+      report: { summary: "Done", validation: "Tests passed" },
+      status: "approved",
+    } as Job;
+    const runner = new Runner({
+      root: ".",
+      config: { ...config, autoMerge: true },
+      quotas: {} as Quotas,
+      state: { repository: config.repository, jobs: { 3: job } },
+      save: () => {},
+      git,
+      forge,
+      tracker: forge.tracker,
+    });
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (...args) => errors.push(args.join(" "));
+    try {
+      await runner.publish(
+        { number: 3, title: "Example", labels: [], body: "" },
+        job,
+      );
+    } finally {
+      console.error = original;
+    }
+    assert.equal(job.status, "pr");
+    assert.equal(job.pr, url);
+    assert.ok(
+      calls.some(
+        (args) =>
+          args.join(" ") ===
+          "api projects/group%2Fsub%2Fproject/merge_requests/42/merge --method PUT --field auto_merge=true",
+      ),
+    );
+    if (refused)
+      assert.match(
+        errors.join("\n"),
+        /could not enable auto-merge.*merge refused/,
+      );
+    else assert.deepEqual(errors, []);
   }
 });
 
