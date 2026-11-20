@@ -127,8 +127,14 @@ With `"issues": "local"` and `"openPr": false` toddler runs offline: no GitHub l
 GitHub is still used for the base branch and, with `openPr`, the PR.
 
 `.sandcastle/project.md` (optional) is appended to the implementation and review
-prompts as "Project notes": stack, how to check changes, what not to do. The
-generic workflow rules stay in toddler's `prompts/prompt.md` and `prompts/review.md`.
+prompts as "Project notes": stack, how to check changes, what not to do.
+Set `roles.<role>.prompt` to a non-empty Markdown file path relative to the
+project root (for example, `".sandcastle/prompts/review.md"`) to replace that
+role's instructions. Unset roles use the bundled prompts. To customize one,
+copy [implementation.md](prompts/implementation.md) or [review.md](prompts/review.md)
+and edit it. Workflow rules and project notes are still appended.
+Shared workflow rules live in `prompts/rules.md`, with role-specific rules in
+`prompts/rules/implementation.md` and `prompts/rules/review.md`.
 
 The project's `.sandcastle/` also holds the ignored runtime files: `.env`, `state.json`,
 `logs/`, `worktrees/` and `runner.lock`. The repo must have the `Sandcastle`,
@@ -192,7 +198,7 @@ is required before that SHA is pushed to `toddler/issue-N` and a PR is opened.
 PRs reference the issue for closure on merge. The runner never merges PRs or closes
 issues itself. Human changes to a branch after approval cause publication to stop.
 
-After requested changes, implementation and review repeat up to three rounds per
+After requested changes, implementation and review repeat up to ten rounds per
 invocation. Failed tasks pause for human inspection while other issues can continue.
 Already-open or merged workflow PRs are not assigned again.
 

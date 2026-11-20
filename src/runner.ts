@@ -357,11 +357,19 @@ export class Runner {
       },
     );
   }
-  // Workflow prompt from toddler, followed by optional stack-specific notes from the project.
-  async prompt(name: "prompt.md" | "review.md"): Promise<string> {
+  // Role prompt and workflow rules, followed by optional project notes.
+  async prompt(role: Role): Promise<string> {
     const notes = join(this.root, ".sandcastle/project.md");
+    const override = this.config.roles[role].prompt;
     return (
-      (await readFile(own(name), "utf8")) +
+      (await readFile(
+        override ? join(this.root, override) : own(`${role}.md`),
+        "utf8",
+      )) +
+      "\n" +
+      (await readFile(own("rules.md"), "utf8")) +
+      "\n" +
+      (await readFile(own(`rules/${role}.md`), "utf8")) +
       (existsSync(notes)
         ? `\nProject notes:\n${await readFile(notes, "utf8")}`
         : "")
@@ -435,7 +443,7 @@ export class Runner {
                   this.ranker,
                 )[0];
           if (!provider) return;
-          const prompt = await this.prompt("prompt.md");
+          const prompt = await this.prompt("implementation");
           try {
             const result = await this.stage(
               job,
@@ -487,7 +495,7 @@ export class Runner {
               ),
           );
           if (!provider) return;
-          const prompt = await this.prompt("review.md");
+          const prompt = await this.prompt("review");
           let result;
           try {
             result = await this.stage(
@@ -609,7 +617,7 @@ export class Runner {
     return true;
   }
   // shortcut: TEMPORARY PATCH. The coordinator merges once review approves, until autoMerge (#52) and the PM role (spec 5) take this over.
-  // --auto merges now when GitHub allows it, else waits for checks; --merge keeps the close-issue commit separate.
+  // --auto waits for checks; --merge keeps the close-issue commit separate.
   async merge(issue: Issue, url: string): Promise<void> {
     try {
       await this.forge.merge(url);

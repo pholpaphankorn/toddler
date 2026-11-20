@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { modelsForProvider } from "./config.ts";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { mkdir, open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -257,6 +257,9 @@ async function main() {
       "Runner lock exists. Check the PID in .sandcastle/runner.lock before removing a stale lock",
     );
   }
+  // Sandcastle's own Ctrl+C handler calls process.exit() mid-stage, which skips the finally below.
+  const unlock = () => rmSync(lockPath, { force: true });
+  process.on("exit", unlock);
   const stop = () => {
     runner.interrupted = true;
     quotas.stop();
@@ -305,6 +308,7 @@ async function main() {
   } finally {
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
+    process.removeListener("exit", unlock);
     await lock.close();
     await rm(lockPath, { force: true });
   }

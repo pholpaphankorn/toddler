@@ -20,3 +20,7 @@ Decision records: [48](48-gitlab-merge-requests.md), [49](49-init-doctor-per-for
 ## Note (2026-11-20): temporary patch, merge in place
 
 A stopgap already merges every PR after review approval, without the `autoMerge` key: `merge()` in `src/runner.ts` runs `gh pr merge <url> --auto --merge` and logs a refusal (job stays `pr`). This issue replaces it with the opt-in `autoMerge` key and `Forge.enableAutoMerge`, and should delete `merge()`. `--merge` (not the repo default) was chosen so the separate close-issue commit survives; revisit that when [#53](53-automerge-none.md) settles who closes issue files.
+
+## Note (2026-11-20): auto-merge is refused on a clean PR
+
+GitHub will not enable auto-merge on a pull request with nothing left to wait for (`mergeStateStatus: CLEAN`): `gh pr merge --auto` fails with "Pull request is in clean status (enablePullRequestAutoMerge)". This repo's `main` ruleset requires a PR but no approvals and no status checks, so every toddler PR is clean at once. The stopgap `merge()` retries with a plain `gh pr merge <url> --merge` on that error. `enableAutoMerge` must keep that fallback (or merge directly when the PR is already clean), or it will log a refusal for every PR on a repo like this one; cover it in the GitHub adapter tests.

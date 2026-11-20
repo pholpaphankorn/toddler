@@ -283,7 +283,13 @@ export class GitHubForge implements Forge {
     ];
   }
   async merge(url: string) {
-    await this.gh(["pr", "merge", url, "--auto", "--merge"]);
+    await this.gh(["pr", "merge", url, "--auto", "--merge"]).catch(
+      (error: Error) => {
+        // GitHub refuses auto-merge when nothing is pending: merge now.
+        if (!/clean status/i.test(error.message)) throw error;
+        return this.gh(["pr", "merge", url, "--merge"]);
+      },
+    );
   }
 }
 export class NoneForge implements Forge {

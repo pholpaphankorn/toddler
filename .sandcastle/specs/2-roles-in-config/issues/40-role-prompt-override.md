@@ -3,7 +3,7 @@ title: roles.<role>.prompt overrides a role's prompt
 labels: []
 blocked_by: [38, 39]
 parent: 2
-status: open
+status: closed
 ---
 Let a project replace a built-in role's prompt without being able to drop the workflow rules.
 

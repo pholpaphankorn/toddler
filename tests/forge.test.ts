@@ -108,6 +108,25 @@ test("GitHub forge fetches the base, finds open or merged requests, pushes and c
   assert.equal(await new NoneForge("/repo").findRequest("branch"), undefined);
 });
 
+test("GitHub forge merges immediately when auto-merge has no pending checks", async () => {
+  const calls: string[][] = [];
+  const forge = new GitHubForge(
+    "/repo",
+    config,
+    async () => "",
+    async (_, args = []) => {
+      calls.push(args);
+      if (args.includes("--auto")) throw new Error("clean status");
+      return "";
+    },
+  );
+  await forge.merge("https://example.com/pr/1");
+  assert.deepEqual(calls, [
+    ["pr", "merge", "https://example.com/pr/1", "--auto", "--merge"],
+    ["pr", "merge", "https://example.com/pr/1", "--merge"],
+  ]);
+});
+
 test("files tracker returns only open issues and resolves blocked_by against the open set", async () => {
   const root = await mkdtemp(join(tmpdir(), "tracker-test-"));
   try {
