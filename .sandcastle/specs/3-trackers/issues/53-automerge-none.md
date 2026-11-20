@@ -20,6 +20,6 @@ Done when tests cover each fast-forward path (checked-out clean base, base not c
 
 Decision records: [48](48-gitlab-merge-requests.md), [49](49-init-doctor-per-forge.md).
 
-## Note (2026-11-20): short-term close commit in place
+## Note (2026-11-20): temporary patch, close commit in place
 
-Contrary to item 3 above, a stopgap now writes to issue files: for a local issue, `closeCommit()` in `src/runner.ts` adds a separate `pm: close issue N` commit (`status: closed`) on top of the reviewed SHA, so the file closes when the PR merges. It applies to GitHub forges only (`openPr: true`); with `openPr: false` nothing changes. Remove it here or when the PM role ([spec 5](../../5-pm-role/spec.md)) gains tracker writes.
+Contrary to item 3 above, a stopgap now writes to issue files: for a local issue, `closeCommit()` in `src/runner.ts` adds a separate `pm: close issue N` commit (`status: closed`) on top of the reviewed SHA, so the file closes when the PR merges. It applies to GitHub forges only (`openPr: true`); with `openPr: false` nothing changes. Toddler also reads issue files from `origin/<base>` while PRs are on (`issueRef`), so the merged close commit is what unblocks dependents. Remove both here or when the PM role ([spec 5](../../5-pm-role/spec.md)) gains tracker writes.

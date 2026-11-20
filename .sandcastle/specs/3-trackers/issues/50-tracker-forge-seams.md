@@ -24,3 +24,7 @@ Prefactor: move every host call out of the runner behind two interfaces, so GitL
 Done when the GitHub tracker and forge have their own tests with a fake `gh` recording arguments (as today), the files tracker has tests for open/closed/`blocked_by`, and the runner's workflow tests use in-memory fake `Tracker` and `Forge` objects instead of faking `gh` arguments, with the same behaviours covered.
 
 Decision record: [47](47-tracker-forge-interface.md).
+
+## Note (2026-11-20): temporary patch to fold in
+
+`Runner.localIssues()` now reads issue files from a git ref (`issueRef`, set to `origin/<base>` each round when PRs are on) instead of the working tree, and `run()` re-fetches the base each round. This is a temporary patch so a run continues after its own PRs merge. When the files tracker moves behind the `Tracker` seam, carry the "read from the fetched base" behaviour into it (or replace it with #53's `done`-job rule) and delete `issueRef`.
