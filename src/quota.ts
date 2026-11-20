@@ -1,3 +1,4 @@
+import { modelsForProvider } from "./config.ts";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -404,7 +405,7 @@ export class Quotas {
         const input = {
           provider,
           reading: usage,
-          models: [...new Set(Object.values(this.config.models[provider]))],
+          models: modelsForProvider(this.config, provider),
         };
         for (const condition of this.conditions)
           for (const stop of condition(input))

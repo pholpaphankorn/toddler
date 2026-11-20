@@ -77,7 +77,7 @@ test("stop modules run in order, stop models, and skip stopped or unverifiable p
     assert.equal(
       quotas.disabledModels
         .get("codex")
-        ?.get(config.models.codex.implementation),
+        ?.get(config.roles.implementation.models.codex),
       "first",
     );
     assert.equal(quotas.disabled.get("codex"), "whole");
@@ -158,7 +158,7 @@ test("a stop condition failure during polling aborts the session and rejects wit
     await assert.rejects(
       quotas.run(
         "codex",
-        config.models.codex.implementation,
+        config.roles.implementation.models.codex,
         async (current) => {
           signal = current;
           try {
@@ -211,7 +211,7 @@ test("runner propagates stop condition polling failures during implementation an
             };
           return runner.quotas.run(
             provider,
-            configured.models[provider][currentRole],
+            configured.roles[currentRole].models[provider],
             (signal) => {
               (globalThis as any).__stopPollFail = true;
               return new Promise<never>((_, reject) =>
@@ -309,7 +309,7 @@ test("doctor reports configured stop modules", () => {
         issues: "local",
         openPr: false,
         providers: ["codex"],
-        skills: { implementation: [], review: [] },
+        roles: { implementation: { skills: [] }, review: { skills: [] } },
         stopConditions: ["good.mjs", "missing.mjs"],
       }),
     );
@@ -413,7 +413,7 @@ test("doctor reports the configured ranking module", () => {
         issues: "local",
         openPr: false,
         providers: ["codex"],
-        skills: { implementation: [], review: [] },
+        roles: { implementation: { skills: [] }, review: { skills: [] } },
         ranking: "missing.js",
       }),
     );
@@ -752,9 +752,18 @@ test("a scoped weekly stop persists only for the matching model", async () => {
   let remaining = 10;
   const scopedConfig = {
     ...config,
-    models: {
-      ...config.models,
-      claude: { implementation: "claude-sonnet", review: "claude-fable-5" },
+    roles: {
+      implementation: {
+        ...config.roles.implementation,
+        models: {
+          ...config.roles.implementation.models,
+          claude: "claude-sonnet",
+        },
+      },
+      review: {
+        ...config.roles.review,
+        models: { ...config.roles.review.models, claude: "claude-fable-5" },
+      },
     },
   };
   const quotas = new Quotas(scopedConfig, async () => ({
@@ -772,9 +781,18 @@ test("a model stop aborts only sessions on that model", async () => {
   let remaining = 50;
   const scopedConfig = {
     ...config,
-    models: {
-      ...config.models,
-      claude: { implementation: "claude-sonnet", review: "claude-fable" },
+    roles: {
+      implementation: {
+        ...config.roles.implementation,
+        models: {
+          ...config.roles.implementation.models,
+          claude: "claude-sonnet",
+        },
+      },
+      review: {
+        ...config.roles.review,
+        models: { ...config.roles.review.models, claude: "claude-fable" },
+      },
     },
   };
   const quotas = new Quotas(scopedConfig, async () => ({
@@ -845,8 +863,8 @@ test("live quota drop aborts every active role of that provider, leaving the oth
       if (entered === 2) codexRemaining = 4;
     });
   const results = await Promise.allSettled([
-    quotas.run("codex", config.models.codex.implementation, action),
-    quotas.run("codex", config.models.codex.review, action),
+    quotas.run("codex", config.roles.implementation.models.codex, action),
+    quotas.run("codex", config.roles.review.models.codex, action),
   ]);
   assert.equal(
     results.every((result) => result.status === "rejected"),
@@ -923,9 +941,15 @@ test("stage prompts explicitly load each role's skills for the selected provider
   for (const initial of providers) {
     const { runner } = fixture({
       openPr: false,
-      skills: {
-        implementation: ["tdd", "ponytail"],
-        review: ["code-review", "ponytail-review"],
+      roles: {
+        implementation: {
+          ...config.roles.implementation,
+          skills: ["tdd", "ponytail"],
+        },
+        review: {
+          ...config.roles.review,
+          skills: ["code-review", "ponytail-review"],
+        },
       },
     });
     const prompts: string[] = [];
@@ -961,7 +985,10 @@ test("stage prompts explicitly load each role's skills for the selected provider
   }
   const { runner } = fixture({
     openPr: false,
-    skills: { implementation: [], review: ["tdd"] },
+    roles: {
+      implementation: { ...config.roles.implementation, skills: [] },
+      review: { ...config.roles.review, skills: ["tdd"] },
+    },
   });
   const prompts: string[] = [];
   runner.stage = async (_job, _provider, role, prompt) => {
@@ -1261,7 +1288,7 @@ test("review selection uses the review model while implementation remains availa
   const { runner, events, quotas } = fixture();
   quotas.available = ((name: Provider, model: string) =>
     !(
-      name === "claude" && model === config.models.claude.review
+      name === "claude" && model === config.roles.review.models.claude
     )) as typeof quotas.available;
   await runner.work(issue(1), "codex", "main");
   assert.deepEqual(
@@ -1403,9 +1430,15 @@ test("run ends when every configured model is stopped by scoped weekly readings"
   const { runner, events } = fixture();
   const scopedConfig = {
     ...config,
-    models: {
-      codex: { implementation: "codex-a", review: "codex-b" },
-      claude: { implementation: "claude-fable", review: "claude-fable" },
+    roles: {
+      implementation: {
+        ...config.roles.implementation,
+        models: { codex: "codex-a", claude: "claude-fable" },
+      },
+      review: {
+        ...config.roles.review,
+        models: { codex: "codex-b", claude: "claude-fable" },
+      },
     },
   };
   runner.config = scopedConfig;
@@ -1556,7 +1589,7 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
       "review",
       "task",
     );
-    assert.equal(captured.agent.model, config.models[provider].review);
+    assert.equal(captured.agent.model, config.roles.review.models[provider]);
     assert.equal(captured.agent.captureSessions, false);
     assert.equal(captured.logging.type, "file");
     assert.match(
@@ -1576,10 +1609,10 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
       cmd.includes('"$HOME/.claude/skills"'),
     )!;
     assert.ok(setup.cmd.includes('"$HOME/.agents/skills"'));
-    for (const name of config.skills.review)
+    for (const name of config.roles.review.skills)
       assert.ok(setup.cmd.includes(`'${name}'`));
-    for (const name of config.skills.implementation.filter(
-      (name) => !config.skills.review.includes(name),
+    for (const name of config.roles.implementation.skills.filter(
+      (name) => !config.roles.review.skills.includes(name),
     )) {
       assert.ok(!setup.cmd.includes(`'${name}'`));
     }
@@ -1773,7 +1806,10 @@ test("project config overrides defaults, must name a repository, and verify is o
       repository: "owner/repo",
       verify: "npm test",
       stopAt: { codex: { weekly: 20 } },
-      models: { claude: { implementation: "a", review: "b" } },
+      roles: {
+        implementation: { models: { claude: "a" } },
+        review: { models: { claude: "b" } },
+      },
     });
     const loaded = loadConfig(root);
     assert.deepEqual(loaded.stopAt.codex, { fiveHour: 5, weekly: 20 });
@@ -1788,8 +1824,11 @@ test("project config overrides defaults, must name a repository, and verify is o
       write({ repository: "owner/repo", stopAt });
       assert.throws(() => loadConfig(root), /stopAt/);
     }
-    assert.equal(loaded.models.claude.review, "b");
-    assert.equal(loaded.models.codex, defaults.models.codex);
+    assert.equal(loaded.roles.review.models.claude, "b");
+    assert.equal(
+      loaded.roles.review.models.codex,
+      defaults.roles.review.models.codex,
+    );
     assert.equal(loaded.issueLabel, defaults.issueLabel);
     assert.equal(loaded.issues, "github");
     assert.equal(loaded.openPr, true);

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { modelsForProvider } from "./config.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, open, rm, writeFile, type FileHandle } from "node:fs/promises";
@@ -94,7 +95,15 @@ async function doctor(config: Config, root: string) {
       await loadStopConditions(root, { ...config, stopConditions: [name] });
       return name;
     });
-  for (const [name, action] of skillDoctorChecks(root, config.skills))
+  for (const [name, action] of skillDoctorChecks(
+    root,
+    Object.fromEntries(
+      Object.entries(config.roles).map(([role, settings]) => [
+        role,
+        settings.skills,
+      ]),
+    ) as Record<import("./config.ts").Role, string[]>,
+  ))
     await check(name, action);
   await check("Sandcastle", async () => {
     await import("@ai-hero/sandcastle");
@@ -136,7 +145,7 @@ async function doctor(config: Config, root: string) {
           : "no limit";
       const buckets = Object.entries(reading.weeklyByModel).map(
         ([label, window]) =>
-          `${label}: ${describe(window)}${Object.values(config.models[provider]).some((model) => modelMatches(provider, label, model)) ? "" : " (no configured model matches)"}`,
+          `${label}: ${describe(window)}${modelsForProvider(config, provider).some((model) => modelMatches(provider, label, model)) ? "" : " (no configured model matches)"}`,
       );
       return [
         `five-hour: ${describe(reading.fiveHour)}`,
@@ -154,18 +163,18 @@ async function doctor(config: Config, root: string) {
       { limit: 100 },
     );
     const names = response.data.map((entry) => entry.model);
-    const missing = Object.values(config.models.codex).filter(
+    const missing = modelsForProvider(config, "codex").filter(
       (name) => !names.includes(name),
     );
     if (missing.length)
       throw new Error(
         `Not advertised by this account/CLI: ${missing.join(", ")}`,
       );
-    return Object.values(config.models.codex).join(", ");
+    return modelsForProvider(config, "codex").join(", ");
   });
   console.log(
     "Claude pins: " +
-      Object.values(config.models.claude).join(", ") +
+      modelsForProvider(config, "claude").join(", ") +
       " (access is verified by Claude when a task starts).",
   );
   process.exitCode = failures ? 1 : 0;
@@ -219,7 +228,7 @@ async function main() {
           next: assignments(
             issues,
             (name) =>
-              quotas.available(name, config.models[name].implementation),
+              quotas.available(name, config.roles.implementation.models[name]),
             config,
             quotas,
             ranker,
@@ -227,7 +236,7 @@ async function main() {
             issue: issue.number,
             title: issue.title,
             provider,
-            implementation: config.models[provider].implementation,
+            implementation: config.roles.implementation.models[provider],
           })),
         },
         null,

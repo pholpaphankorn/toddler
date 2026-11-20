@@ -85,22 +85,46 @@ test("skill overrides replace individual role defaults and reject unknown names"
     const write = (skills: object) =>
       writeFileSync(
         join(root, ".sandcastle/config.json"),
-        JSON.stringify({ repository: "owner/repo", skills }),
+        JSON.stringify({
+          repository: "owner/repo",
+          roles: Object.fromEntries(
+            Object.entries(skills).map(([role, names]) => [
+              role,
+              { skills: names },
+            ]),
+          ),
+        }),
       );
     write({ review: ["tdd"] });
-    assert.deepEqual(loadConfig(root).skills, {
-      implementation: defaults.skills.implementation,
-      review: ["tdd"],
-    });
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(loadConfig(root).roles).map(([role, settings]) => [
+          role,
+          settings.skills,
+        ]),
+      ),
+      {
+        implementation: defaults.roles.implementation.skills,
+        review: ["tdd"],
+      },
+    );
     write({ implementation: [] });
-    assert.deepEqual(loadConfig(root).skills, {
-      implementation: [],
-      review: defaults.skills.review,
-    });
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(loadConfig(root).roles).map(([role, settings]) => [
+          role,
+          settings.skills,
+        ]),
+      ),
+      {
+        implementation: [],
+        review: defaults.roles.review.skills,
+      },
+    );
     write({ review: ["missing"] });
     assert.throws(
       () => loadConfig(root),
-      /skills: "missing" in review set is not in vendor\/skills; add it to vendor\/skills.json and re-run scripts\/vendor-skills.sh/,
+      /roles\.review\.skills: "missing" is not in vendor\/skills/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
