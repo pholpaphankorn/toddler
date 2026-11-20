@@ -886,6 +886,12 @@ test("review approval requires exactly one valid verdict without findings", () =
       .verdict,
     "approved",
   );
+  const spaced = (text: string) =>
+    text.replace("<sandcastle-review>", "<sandcastle-review>\n  ");
+  assert.equal(reviewReport(spaced(report())).verdict, "approved");
+  assert.throws(() =>
+    reviewReport(spaced(report("changes_requested")) + report()),
+  );
   assert.throws(() =>
     reviewReport(
       '<sandcastle-review>{"verdict":"approved","findings":["broken"]}</sandcastle-review>',
