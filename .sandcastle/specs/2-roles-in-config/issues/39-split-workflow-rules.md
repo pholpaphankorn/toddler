@@ -3,7 +3,7 @@ title: Split workflow rules out of the role prompts
 labels: []
 blocked_by: []
 parent: 2
-status: open
+status: closed
 ---
 Separate each role's replaceable prompt from the rules the workflow depends on, so that #40 can let projects replace the prompt without losing the rules. Agents should still get the same instructions; only where the text lives changes.
 
