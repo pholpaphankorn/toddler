@@ -136,6 +136,46 @@ test("files tracker returns only open issues and resolves blocked_by against the
   }
 });
 
+test("files tracker parses issue frontmatter and validates issue files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tracker-parse-"));
+  const specs = join(root, ".sandcastle/specs");
+  try {
+    const dir = join(specs, "1-auth/issues");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "3-fix-login.md"),
+      "---\ntitle: Fix login\nlabels: [parallel-safe, blocked]\nblocked_by: [1, 2]\n---\nSteps here\n",
+    );
+    await writeFile(join(dir, "4-add-logout.md"), "Body only");
+    await writeFile(join(specs, "1-auth/7-not-an-issue.md"), "ignored");
+    const tracker = new FilesTracker(root, async () => "");
+    assert.deepEqual(await tracker.issues(), [
+      {
+        number: 3,
+        title: "Fix login",
+        body: "Steps here\n",
+        labels: ["parallel-safe", "blocked"],
+      },
+      { number: 4, title: "add logout", body: "Body only", labels: [] },
+    ]);
+    const invalid = join(dir, "notes.md");
+    await writeFile(invalid, "");
+    await assert.rejects(tracker.issues(), /issue-number/);
+    await rm(invalid);
+    await writeFile(join(dir, "5.md"), "---\nblocked_by: [x]\n---\n");
+    await assert.rejects(
+      tracker.issues(),
+      /blocked_by must list issue numbers/,
+    );
+    await rm(join(dir, "5.md"));
+    await mkdir(join(specs, "auth/issues"), { recursive: true });
+    await writeFile(join(specs, "auth/issues/6-fix.md"), "");
+    await assert.rejects(tracker.issues(), /spec-number/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("files tracker reads the freshly fetched base across rounds", async () => {
   const { connect } = await import("../src/forge.ts");
   let round = 0;

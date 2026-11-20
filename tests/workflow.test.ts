@@ -1077,6 +1077,18 @@ test("implementation -> opposite-provider review -> push exact SHA -> PR -> merg
   );
   assert.ok(!events.some((event) => event.includes("close")));
 });
+test("pull request reports verification passed without including its output", async () => {
+  const { runner, events } = fixture();
+  runner.stage = async (_job, _provider, role) => ({
+    sha: "reviewed",
+    stdout: role === "review" ? report() : "done",
+    verification: "verbose test output",
+  });
+  await runner.work(issue(1), "codex", "main");
+  const body = events.find((event) => event[0] === "open")![5];
+  assert.match(body, /Coordinator verification \(`make check`\): passed\./);
+  assert.doesNotMatch(body, /verbose test output/);
+});
 test("a conflict with the moved base goes back to the implementer before review", async () => {
   const { runner, events, state } = fixture();
   const git = runner.gitCommand;
