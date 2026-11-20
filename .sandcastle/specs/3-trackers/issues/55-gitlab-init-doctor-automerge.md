@@ -3,7 +3,7 @@ title: GitLab init, doctor and autoMerge
 labels: []
 blocked_by: [52, 54]
 parent: 3
-status: open
+status: closed
 ---
 Finish GitLab parity for setup, checks and auto-merge.
 
