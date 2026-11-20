@@ -70,8 +70,9 @@ test("this project's configuration loads", () => {
   assert.equal(config.issues, "files");
 });
 
-test("init writes detected GitHub or no-forge config", () => {
-  for (const github of [true, false]) {
+test("init detects GitHub, GitLab, or no forge", () => {
+  for (const scenario of ["github", "gitlab", "neither", "remote"] as const) {
+    const github = scenario === "github";
     const root = mkdtempSync(join(tmpdir(), "init-forge-"));
     try {
       assert.equal(spawnSync("git", ["init", "-q"], { cwd: root }).status, 0);
@@ -83,6 +84,23 @@ test("init writes detected GitHub or no-forge config", () => {
         github ? "#!/bin/sh\necho owner/name\n" : "#!/bin/sh\nexit 1\n",
       );
       chmodSync(gh, 0o755);
+      const glab = join(bin, "glab");
+      writeFileSync(
+        glab,
+        scenario === "gitlab"
+          ? "#!/bin/sh\necho group/sub/project\n"
+          : "#!/bin/sh\nexit 1\n",
+      );
+      chmodSync(glab, 0o755);
+      if (scenario === "remote")
+        assert.equal(
+          spawnSync(
+            "git",
+            ["remote", "add", "upstream", "https://example.com/repo.git"],
+            { cwd: root },
+          ).status,
+          0,
+        );
       const result = spawnSync(
         process.execPath,
         [fileURLToPath(new URL("../src/main.ts", import.meta.url)), "init"],
@@ -102,15 +120,24 @@ test("init writes detected GitHub or no-forge config", () => {
               install: "",
               verify: "",
             }
-          : { forge: "none", install: "", verify: "" },
+          : scenario === "gitlab"
+            ? {
+                forge: "gitlab",
+                repository: "group/sub/project",
+                install: "",
+                verify: "",
+              }
+            : { forge: "none", install: "", verify: "" },
       );
       assert.match(
         result.stdout,
-        github
+        github || scenario === "gitlab"
           ? /Sandcastle.*issues.*files/
           : /Write issues.*Nothing is pushed/,
       );
-      if (!github)
+      if (scenario === "remote")
+        assert.match(result.stdout, /upstream.*(?:gh|glab).*rerun/is);
+      if (!github && scenario !== "gitlab")
         assert.match(
           result.stdout,
           /"autoMerge": true.*fast-forward approved work/,

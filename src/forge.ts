@@ -498,6 +498,13 @@ export class GitLabForge implements Forge {
         "GitLab",
         async () => {
           const project = await this.api(this.project);
+          if (
+            Math.max(
+              project.permissions?.project_access?.access_level ?? 0,
+              project.permissions?.group_access?.access_level ?? 0,
+            ) < 30
+          )
+            throw new Error("Developer access needed to push issue branches");
           return `${project.path_with_namespace}, base ${project.default_branch}`;
         },
       ],
