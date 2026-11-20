@@ -3,7 +3,7 @@ title: Tracker and forge seams, behaviour unchanged
 labels: []
 blocked_by: [38]
 parent: 3
-status: open
+status: closed
 ---
 Prefactor: move every host call out of the runner behind two interfaces, so GitLab and the new config can be added without touching the loop. Behaviour and config shape stay exactly as today.
 
