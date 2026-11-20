@@ -25,14 +25,19 @@ export const defaults = {
   pollIntervalMs: 15_000,
   quotaTimeoutMs: 12_000,
   maxReviewRounds: 3,
-  models: {
-    codex: { implementation: "gpt-6.1-terra", review: "gpt-6.1-sol" },
-    claude: { implementation: "claude-sonnet-5-5", review: "claude-opus-5-5" },
-  } as Record<Provider, Record<Role, string>>,
-  skills: {
-    implementation: ["tdd", "diagnosing-bugs", "codebase-design", "ponytail"],
-    review: ["code-review", "ponytail-review", "codebase-design"],
-  } as Record<Role, string[]>,
+  roles: {
+    implementation: {
+      skills: ["tdd", "diagnosing-bugs", "codebase-design", "ponytail"],
+      models: { codex: "gpt-6.1-terra", claude: "claude-sonnet-5-5" },
+    },
+    review: {
+      skills: ["code-review", "ponytail-review", "codebase-design"],
+      models: { codex: "gpt-6.1-sol", claude: "claude-opus-5-5" },
+    },
+  } satisfies Record<
+    Role,
+    { skills: string[]; models: Record<Provider, string> }
+  >,
 };
 export type Defaults = typeof defaults;
 export interface Config extends Defaults {
@@ -66,11 +71,50 @@ export function loadConfig(
       "No .sandcastle/config.json in this project; run toddler init",
     );
   const project = JSON.parse(readFileSync(path, "utf8"));
+  if ("models" in project || "skills" in project)
+    throw new Error(
+      `${path}: obsolete setting; use roles.<role>.models and roles.<role>.skills; see README`,
+    );
+  const isObject = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+  if (project.roles !== undefined) {
+    if (!isObject(project.roles)) throw new Error(`${path}: invalid roles`);
+    for (const [role, settings] of Object.entries(project.roles)) {
+      const rolePath = `roles.${role}`;
+      if (!Object.hasOwn(defaults.roles, role) || !isObject(settings))
+        throw new Error(`${path}: invalid ${rolePath}`);
+      for (const [field, value] of Object.entries(settings)) {
+        const fieldPath = `${rolePath}.${field}`;
+        if (field !== "skills" && field !== "models")
+          throw new Error(`${path}: invalid ${fieldPath}`);
+        if (field === "models") {
+          if (!isObject(value))
+            throw new Error(`${path}: invalid ${fieldPath}`);
+          for (const [provider, model] of Object.entries(value)) {
+            if (
+              !providers.includes(provider as Provider) ||
+              typeof model !== "string" ||
+              !model.trim()
+            )
+              throw new Error(`${path}: invalid ${fieldPath}.${provider}`);
+          }
+        }
+      }
+    }
+  }
   const config: Config = {
     ...defaults,
     ...project,
-    models: { ...defaults.models, ...project.models },
-    skills: { ...defaults.skills, ...project.skills },
+    roles: Object.fromEntries(
+      Object.entries(defaults.roles).map(([role, settings]) => [
+        role,
+        {
+          ...settings,
+          ...project.roles?.[role],
+          models: { ...settings.models, ...project.roles?.[role]?.models },
+        },
+      ]),
+    ) as Defaults["roles"],
     stopAt: Object.fromEntries(
       providers.map((provider) => [
         provider,
@@ -163,19 +207,32 @@ export function loadConfig(
   if (typeof config.openPr !== "boolean")
     throw new Error(`${path}: "openPr" must be true or false`);
   const skills = options.checkSkillNames === false ? undefined : indexSkills();
-  for (const [role, names] of Object.entries(config.skills)) {
+  for (const [role, { skills: names }] of Object.entries(config.roles)) {
     if (
       !Array.isArray(names) ||
       names.some((name) => typeof name !== "string")
     ) {
-      throw new Error(`${path}: skills: ${role} set must be an array of names`);
+      throw new Error(
+        `${path}: roles.${role}.skills must be an array of names`,
+      );
     }
     for (const name of names) {
       if (skills && !skills.has(name))
         throw new Error(
-          `skills: "${name}" in ${role} set is not in vendor/skills; add it to vendor/skills.json and re-run scripts/vendor-skills.sh`,
+          `${path}: roles.${role}.skills: "${name}" is not in vendor/skills; add it to vendor/skills.json and re-run scripts/vendor-skills.sh`,
         );
     }
   }
   return config;
+}
+
+export function modelsForProvider(
+  config: Pick<Config, "roles">,
+  provider: Provider,
+): string[] {
+  return [
+    ...new Set(
+      Object.values(config.roles).map((role) => role.models[provider]),
+    ),
+  ];
 }

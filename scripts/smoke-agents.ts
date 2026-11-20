@@ -83,7 +83,7 @@ try {
   }
   for (const provider of providers) {
     for (const role of ["implementation", "review"] as const) {
-      const model = config.models[provider][role];
+      const model = config.roles[role].models[provider];
       const base =
         provider === "codex"
           ? codex(model, { captureSessions: false })

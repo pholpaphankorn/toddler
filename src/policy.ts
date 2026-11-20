@@ -83,7 +83,7 @@ export function ranked(
   ranker: Ranker = makeRanker(config),
 ): Provider[] {
   const candidates = config.providers.flatMap((provider) => {
-    const model = config.models[provider][role];
+    const model = config.roles[role].models[provider];
     const reading = quotas.values.get(provider);
     return reading && quotas.available(provider, model)
       ? [{ provider, model, reading }]

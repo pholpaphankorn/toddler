@@ -1,3 +1,4 @@
+import { modelsForProvider } from "./config.ts";
 import { readFile, readdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -291,7 +292,7 @@ export class Runner {
     const sandcastle = this.sandcastle!;
     return this.quotas.run(
       provider,
-      this.config.models[provider][role],
+      this.config.roles[role].models[provider],
       async (signal) => {
         signal.throwIfAborted();
         const sandbox = await sandcastle.createSandbox({
@@ -310,13 +311,13 @@ export class Runner {
             throw new Error(`Sandbox install failed: ${this.config.install}`);
           }
           let agent: AgentProvider;
-          const model = this.config.models[provider][role];
+          const model = this.config.roles[role].models[provider];
           const auth =
             provider === "codex"
               ? await this.authentication.codex()
               : undefined;
           const setupCommand =
-            `umask 077; ${skillLinks(this.config.skills[role])}` +
+            `umask 077; ${skillLinks(this.config.roles[role].skills)}` +
             (provider === "codex"
               ? ' && mkdir -p "$HOME/.codex" && cat > "$HOME/.codex/auth.json"'
               : "");
@@ -447,7 +448,7 @@ export class Runner {
     );
   }
   skillInstructions(provider: Provider, role: Role, job: Job): string {
-    const names = this.config.skills[role];
+    const names = this.config.roles[role].skills;
     let line = skillLoadLine(provider, names);
     if (role === "review" && names.includes("code-review")) {
       line += `For code-review: the fixed point is \`${job.baseSha}\`; the spec is the issue text in this prompt. Do not look up an issue tracker.\n`;
@@ -513,7 +514,7 @@ export class Runner {
             this.config.providers.includes(job.implementer) &&
             this.quotas.available(
               job.implementer,
-              this.config.models[job.implementer].implementation,
+              this.config.roles.implementation.models[job.implementer],
             )
               ? job.implementer
               : ranked(
@@ -557,7 +558,7 @@ export class Runner {
             if (
               !this.quotas.available(
                 provider,
-                this.config.models[provider].implementation,
+                this.config.roles.implementation.models[provider],
               )
             )
               continue; // Resume with the remaining provider.
@@ -570,7 +571,10 @@ export class Runner {
             job.implementer,
             (name) =>
               this.config.providers.includes(name) &&
-              this.quotas.available(name, this.config.models[name].review),
+              this.quotas.available(
+                name,
+                this.config.roles.review.models[name],
+              ),
           );
           if (!provider) return;
           const prompt = await this.prompt("review.md");
@@ -589,7 +593,7 @@ export class Runner {
             if (
               !this.quotas.available(
                 provider,
-                this.config.models[provider].review,
+                this.config.roles.review.models[provider],
               )
             )
               continue;
@@ -679,7 +683,7 @@ export class Runner {
       const bodyFile = join(directory, "body.md");
       await writeFile(
         bodyFile,
-        `## Summary\n\nIssue ${ref} → implementation → review → pull request\n\n${job.report!.summary}\n\n${this.local() ? "" : `Closes #${issue.number}\n\n`}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\n${this.config.verify.trim() ? `Coordinator verification (\`${this.config.verify}\`): ${job.verification || "passed"}.` : "Coordinator verification: none configured."}\n\nReviewed by ${this.config.models[job.reviewer!].review} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`,
+        `## Summary\n\nIssue ${ref} → implementation → review → pull request\n\n${job.report!.summary}\n\n${this.local() ? "" : `Closes #${issue.number}\n\n`}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\n${this.config.verify.trim() ? `Coordinator verification (\`${this.config.verify}\`): ${job.verification || "passed"}.` : "Coordinator verification: none configured."}\n\nReviewed by ${this.config.roles.review.models[job.reviewer!]} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`,
         { mode: 0o600 },
       );
       const url = await this.gh([
@@ -791,7 +795,7 @@ export class Runner {
       await this.quotas.refresh();
       if (
         !this.config.providers.some((name) =>
-          Object.values(this.config.models[name]).some((model) =>
+          modelsForProvider(this.config, name).some((model) =>
             this.quotas.available(name, model),
           ),
         )
@@ -805,7 +809,10 @@ export class Runner {
       const batch = assignments(
         issues,
         (name) =>
-          this.quotas.available(name, this.config.models[name].implementation),
+          this.quotas.available(
+            name,
+            this.config.roles.implementation.models[name],
+          ),
         this.config,
         this.quotas,
         this.ranker,
