@@ -44,6 +44,8 @@ export interface Job {
   pr?: string;
   /** reviewedSha plus the commit that closes the local issue file. */
   publishSha?: string;
+  /** Fresh base SHA the branch conflicts with; the implementer merges it next. */
+  conflictBase?: string;
   lastError?: string;
 }
 export interface State {
@@ -482,6 +484,7 @@ export class Runner {
       while (!this.interrupted) {
         await this.quotas.refresh();
         if (job.status === "approved") {
+          if (await this.conflicted(job)) continue;
           await this.publish(issue, job);
           return;
         }
@@ -513,10 +516,18 @@ export class Runner {
                 (job.feedback
                   ? `\nResolve these review findings:\n${JSON.stringify(job.feedback)}\n`
                   : "") +
+                (job.conflictBase
+                  ? `\nThe base branch moved and now conflicts with this branch. Run \`git merge ${job.conflictBase}\` (a local merge is allowed for this), resolve every conflict keeping the intent of both sides, rerun the checks, and commit the merge.\n`
+                  : "") +
                 "\nContinue any existing changes on this branch; do not discard prior progress.",
             );
             this.persist(job, {
               status: "review",
+              // Review the diff against the base the conflicts were resolved on.
+              ...(job.conflictBase && {
+                baseSha: job.conflictBase,
+                conflictBase: undefined,
+              }),
               implementer: provider,
               implementationSha: result.sha,
               verification: result.verification,
@@ -534,6 +545,7 @@ export class Runner {
           }
         }
         if (job.status === "review") {
+          if (await this.conflicted(job)) continue;
           const provider = reviewer(
             job.implementer,
             (name) =>
@@ -670,6 +682,34 @@ export class Runner {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  }
+  // shortcut: TEMPORARY PATCH. Conflicts with the fresh base go back to the implementer before review and before
+  // publishing, so a PR never opens unmergeable; a conflict after the PR opens still needs a human. Remove with spec 5.
+  async conflicted(job: Job): Promise<boolean> {
+    if (offline(this.config)) return false;
+    await this.git(["fetch", this.config.remote, job.baseBranch]);
+    const base = await this.git([
+      "rev-parse",
+      `${this.config.remote}/${job.baseBranch}`,
+    ]);
+    try {
+      await this.git(["merge-tree", "--write-tree", base, job.branch]);
+      return false;
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 1) throw error; // 1 = conflicts
+    }
+    this.persist(job, {
+      status: "implementation",
+      conflictBase: base,
+      rounds: job.rounds + 1,
+      publishSha: undefined,
+    });
+    console.log(
+      `[issue #${job.number}] conflicts with ${this.config.remote}/${job.baseBranch}; back to the implementer`,
+    );
+    if (job.rounds >= this.config.maxReviewRounds)
+      throw new Error("Review round limit reached; needs human attention");
+    return true;
   }
   // shortcut: TEMPORARY PATCH. The coordinator merges once review approves, until autoMerge (#52) and the PM role (spec 5) take this over.
   // --auto merges now when GitHub allows it, else waits for checks; --merge keeps the close-issue commit separate.

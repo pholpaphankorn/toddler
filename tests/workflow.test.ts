@@ -1022,6 +1022,55 @@ test("implementation -> opposite-provider review -> push exact SHA -> PR -> merg
   );
   assert.ok(!events.some((event) => event.includes("close")));
 });
+test("a conflict with the moved base goes back to the implementer before review", async () => {
+  const { runner, events, state } = fixture();
+  const git = runner.gitCommand;
+  let conflicts = 1;
+  runner.gitCommand = async (file, args = [], options) => {
+    if (args[0] === "merge-tree") {
+      events.push(["git", ...args]);
+      if (conflicts-- > 0)
+        throw Object.assign(new Error("conflict"), { code: 1 });
+      return "tree";
+    }
+    if (args[0] === "rev-parse" && args[1] === "origin/main" && state.jobs[1])
+      return "moved";
+    return git(file, args, options);
+  };
+  const prompts: string[] = [];
+  const stage = runner.stage;
+  runner.stage = async (job, provider, role, prompt) => {
+    if (role === "implementation") prompts.push(prompt);
+    return stage(job, provider, role, prompt);
+  };
+  await runner.work(issue(1), "codex", "main");
+  assert.deepEqual(
+    events.filter((event) => event[0] === "stage"),
+    [
+      ["stage", "codex", "implementation"],
+      ["stage", "codex", "implementation"],
+      ["stage", "claude", "review"],
+    ],
+  );
+  assert.ok(!prompts[0].includes("git merge"));
+  assert.ok(prompts[1].includes("`git merge moved`"));
+  assert.equal(state.jobs[1].baseSha, "moved");
+  assert.equal(state.jobs[1].conflictBase, undefined);
+  assert.equal(state.jobs[1].status, "pr");
+  assert.equal(state.jobs[1].rounds, 1);
+});
+test("a merge-tree failure that is not a conflict pauses the job", async () => {
+  const { runner, events, state } = fixture();
+  const git = runner.gitCommand;
+  runner.gitCommand = async (file, args = [], options) => {
+    if (args[0] === "merge-tree")
+      throw Object.assign(new Error("fatal"), { code: 128 });
+    return git(file, args, options);
+  };
+  await runner.work(issue(1), "codex", "main");
+  assert.equal(state.jobs[1].lastError, "fatal");
+  assert.ok(!events.some((event) => event[2] === "review"));
+});
 test("a refused merge leaves the PR open and the job at pr", async () => {
   const { runner, state } = fixture();
   const gh = runner.ghCommand;
