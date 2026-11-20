@@ -3,7 +3,7 @@ title: Specs on each tracker
 labels: []
 blocked_by: [54]
 parent: 3
-status: open
+status: closed
 ---
 Implement `Tracker.spec(id)` on every tracker so the [PM role](../../5-pm-role/spec.md) can read specs later. Nothing in the run loop calls it: a spec groups issues and never gates picking, and an issue outside any spec is still worked.
 

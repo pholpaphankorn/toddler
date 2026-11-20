@@ -32,11 +32,17 @@ export async function validatePushRemote(
       );
   }
 }
+export interface Spec {
+  id: number;
+  title: string;
+  body: string;
+  issues: { number: number; title: string; state: "open" | "closed" }[];
+}
 export interface Tracker {
   issues(): Promise<Issue[]>;
   blocked(issue: Issue, done?: (number: number) => boolean): Promise<boolean>;
   comments(issue: Issue): Promise<string[]>;
-  spec(id: number): Promise<unknown>;
+  spec(id: number): Promise<Spec>;
   requestReference(issue: Issue): { ref: string; closes: string };
 }
 export interface Forge {
@@ -110,8 +116,40 @@ export class FilesTracker implements Tracker {
   async comments(_issue: Issue): Promise<string[]> {
     return [];
   }
-  async spec(_id: number): Promise<unknown> {
-    throw new Error("Spec is not implemented");
+  async spec(id: number): Promise<Spec> {
+    const prefix = join(this.root, ".sandcastle/specs");
+    const folders = (await readdir(prefix)).filter((name) =>
+      name.startsWith(`${id}-`),
+    );
+    if (folders.length !== 1)
+      throw new Error(`Expected one folder for spec ${id}`);
+    const folder = folders[0];
+    const body = await readFile(join(prefix, folder, "spec.md"), "utf8");
+    const dir = join(prefix, folder, "issues");
+    const files = existsSync(dir) ? await readdir(dir) : [];
+    const issues = await Promise.all(
+      files
+        .filter((file) => file.endsWith(".md"))
+        .map(async (file) => {
+          const issue = localIssue(
+            `${folder}/issues/${file}`,
+            await readFile(join(dir, file), "utf8"),
+          );
+          return {
+            number: issue.number,
+            title: issue.title,
+            state: issue.closed ? ("closed" as const) : ("open" as const),
+          };
+        }),
+    );
+    return {
+      id,
+      title:
+        /^#\s+(.+)\s*$/m.exec(body)?.[1].trim() ??
+        folder.slice(String(id).length + 1).replace(/-/g, " "),
+      body,
+      issues,
+    };
   }
   requestReference(issue: Issue) {
     return { ref: `local issue ${issue.number}`, closes: "" };
@@ -195,8 +233,38 @@ export class GitHubForge implements Forge {
         ref: `#${issue.number}`,
         closes: `Closes #${issue.number}\n\n`,
       }),
-      spec: async (_id) => {
-        throw new Error("Spec is not implemented");
+      spec: async (id) => {
+        const [owner, name] = config.repository.split("/");
+        const result = JSON.parse(
+          await gh([
+            "api",
+            "graphql",
+            "-f",
+            `query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { number title body subIssues(first: 100) { nodes { number title state } } } } }`,
+            "-f",
+            `owner=${owner}`,
+            "-f",
+            `name=${name}`,
+            "-F",
+            `number=${id}`,
+          ]),
+        );
+        if (result.errors?.length)
+          throw new Error(JSON.stringify(result.errors));
+        const issue = result.data?.repository?.issue;
+        if (!issue) throw new Error(`Spec ${id} not found`);
+        return {
+          id: issue.number,
+          title: issue.title,
+          body: issue.body,
+          issues: issue.subIssues.nodes.map(
+            (child: { number: number; title: string; state: string }) => ({
+              number: child.number,
+              title: child.title,
+              state: child.state.toLowerCase() as "open" | "closed",
+            }),
+          ),
+        };
       },
     };
   }
@@ -425,8 +493,36 @@ export class GitLabForge implements Forge {
         ref: `#${issue.number}`,
         closes: `Closes #${issue.number}\n\n`,
       }),
-      spec: async () => {
-        throw new Error("Spec is not implemented");
+      spec: async (id) => {
+        const spec = await this.api(`${this.project}/issues/${id}`);
+        const items = await this.list(
+          `${this.project}/issues?scope=all&per_page=100`,
+        );
+        const issues: Spec["issues"] = [];
+        for (const item of items) {
+          const lines = (item.description ?? "")
+            .split(/\r?\n/)
+            .filter((line: string) => /^Spec:/i.test(line));
+          if (
+            !lines.some((line: string) =>
+              new RegExp(`^Spec:\\s*#${id}\\s*$`, "i").test(line),
+            )
+          )
+            continue;
+          if (lines.length > 1)
+            throw new Error(`Issue #${item.iid} has duplicate Spec: lines`);
+          issues.push({
+            number: item.iid,
+            title: item.title,
+            state: item.state === "opened" ? "open" : "closed",
+          });
+        }
+        return {
+          id: spec.iid,
+          title: spec.title,
+          body: spec.description ?? "",
+          issues,
+        };
       },
     };
   }

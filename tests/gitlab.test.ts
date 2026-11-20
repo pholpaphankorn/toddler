@@ -13,6 +13,54 @@ const config = {
   verify: "",
 } as Config;
 
+test("GitLab reads spec references and reports duplicate lines only when reading", async () => {
+  let duplicate = false;
+  const tracker = new GitLabForge(
+    ".",
+    config,
+    async () => "",
+    async (_, args = []) => {
+      if (args[1].endsWith("/issues/12"))
+        return JSON.stringify({ iid: 12, title: "Spec", description: "Text" });
+      return JSON.stringify([
+        {
+          iid: 3,
+          title: "Child",
+          description: duplicate ? "Spec: #12\nSpec: #99" : "Spec: #12",
+          state: "opened",
+          labels: [config.issueLabel],
+        },
+        {
+          iid: 4,
+          title: "Closed",
+          description: "Spec: #12",
+          state: "closed",
+          labels: [],
+        },
+        {
+          iid: 5,
+          title: "Other",
+          description: "Spec: #99",
+          state: "opened",
+          labels: [],
+        },
+      ]);
+    },
+  ).tracker;
+  assert.deepEqual(await tracker.spec(12), {
+    id: 12,
+    title: "Spec",
+    body: "Text",
+    issues: [
+      { number: 3, title: "Child", state: "open" },
+      { number: 4, title: "Closed", state: "closed" },
+    ],
+  });
+  duplicate = true;
+  assert.equal((await tracker.issues()).length, 1);
+  await assert.rejects(tracker.spec(12), /#3.*[Dd]uplicate|[Dd]uplicate.*#3/);
+});
+
 test("GitLab doctor requires Developer access and checks the issue label", async () => {
   let project: any = {
     path_with_namespace: "group/sub/project",

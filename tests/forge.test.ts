@@ -25,6 +25,77 @@ const config = {
   remote: "origin",
 } as Config;
 
+test("files tracker reads a spec and its issues", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tracker-spec-"));
+  try {
+    const dir = join(root, ".sandcastle/specs/12-example");
+    await mkdir(join(dir, "issues"), { recursive: true });
+    await writeFile(join(dir, "spec.md"), "# Example spec\n\nDescription\n");
+    await writeFile(
+      join(dir, "issues/3-first.md"),
+      "---\ntitle: First\nparent: 99\n---\nBody",
+    );
+    await writeFile(
+      join(dir, "issues/4-second.md"),
+      "---\nstatus: closed\n---\n",
+    );
+    assert.deepEqual(await new FilesTracker(root).spec(12), {
+      id: 12,
+      title: "Example spec",
+      body: "# Example spec\n\nDescription\n",
+      issues: [
+        { number: 3, title: "First", state: "open" },
+        { number: 4, title: "second", state: "closed" },
+      ],
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("GitHub reads only direct sub-issues in one GraphQL call", async () => {
+  const calls: string[][] = [];
+  const tracker = new GitHubForge(
+    ".",
+    config,
+    async () => "",
+    async (_, args = []) => {
+      calls.push(args);
+      return JSON.stringify({
+        data: {
+          repository: {
+            issue: {
+              number: 12,
+              title: "Spec",
+              body: "Text",
+              subIssues: {
+                nodes: [
+                  {
+                    number: 3,
+                    title: "Child",
+                    state: "OPEN",
+                    subIssues: {
+                      nodes: [{ number: 4, title: "Nested", state: "CLOSED" }],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    },
+  ).tracker;
+  assert.deepEqual(await tracker.spec(12), {
+    id: 12,
+    title: "Spec",
+    body: "Text",
+    issues: [{ number: 3, title: "Child", state: "open" }],
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][1], "graphql");
+});
+
 test("doctor checks the configured issue label only for forge issues", async () => {
   const gh = async (_: string, args: string[] = []) => {
     if (args[0] === "api") throw new Error("label not found");
