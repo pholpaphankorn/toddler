@@ -440,8 +440,12 @@ export class Runner {
   // Role prompt and workflow rules, followed by optional project notes.
   async prompt(role: Role): Promise<string> {
     const notes = join(this.root, ".sandcastle/project.md");
+    const override = this.config.roles[role].prompt;
     return (
-      (await readFile(own(`${role}.md`), "utf8")) +
+      (await readFile(
+        override ? join(this.root, override) : own(`${role}.md`),
+        "utf8",
+      )) +
       "\n" +
       (await readFile(own("rules.md"), "utf8")) +
       "\n" +

@@ -128,7 +128,11 @@ GitHub is still used for the base branch and, with `openPr`, the PR.
 
 `.sandcastle/project.md` (optional) is appended to the implementation and review
 prompts as "Project notes": stack, how to check changes, what not to do.
-Role instructions live in `prompts/implementation.md` and `prompts/review.md`.
+Set `roles.<role>.prompt` to a non-empty Markdown file path relative to the
+project root (for example, `".sandcastle/prompts/review.md"`) to replace that
+role's instructions. Unset roles use the bundled prompts. To customize one,
+copy [implementation.md](prompts/implementation.md) or [review.md](prompts/review.md)
+and edit it. Workflow rules and project notes are still appended.
 Shared workflow rules live in `prompts/rules.md`, with role-specific rules in
 `prompts/rules/implementation.md` and `prompts/rules/review.md`.
 

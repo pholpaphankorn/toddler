@@ -34,6 +34,32 @@ test("role overrides merge by role, field and provider", () => {
   }
 });
 
+test("role prompt paths load from the project and reject invalid files", () => {
+  const root = mkdtempSync(join(tmpdir(), "role-prompt-"));
+  try {
+    mkdirSync(join(root, ".sandcastle"));
+    const write = (prompt: unknown) =>
+      writeFileSync(
+        join(root, ".sandcastle/config.json"),
+        JSON.stringify({
+          repository: "owner/repo",
+          roles: { review: { prompt } },
+        }),
+      );
+    writeFileSync(join(root, "review.md"), "Custom review");
+    write("review.md");
+    assert.equal(loadConfig(root).roles.review.prompt, "review.md");
+    assert.equal(loadConfig(root).roles.implementation.prompt, undefined);
+    writeFileSync(join(root, "empty.md"), " \n");
+    for (const prompt of [null, 42, "", "  ", "missing.md", "empty.md"]) {
+      write(prompt);
+      assert.throws(() => loadConfig(root), /roles\.review\.prompt/);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("role settings validate paths and reject obsolete keys", () => {
   const root = mkdtempSync(join(tmpdir(), "roles-"));
   try {
