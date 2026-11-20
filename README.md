@@ -194,7 +194,7 @@ is required before that SHA is pushed to `toddler/issue-N` and a PR is opened.
 PRs reference the issue for closure on merge. The runner never merges PRs or closes
 issues itself. Human changes to a branch after approval cause publication to stop.
 
-After requested changes, implementation and review repeat up to three rounds per
+After requested changes, implementation and review repeat up to ten rounds per
 invocation. Failed tasks pause for human inspection while other issues can continue.
 Already-open or merged workflow PRs are not assigned again.
 

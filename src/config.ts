@@ -24,7 +24,7 @@ export const defaults = {
   } as Record<Provider, { fiveHour: number; weekly: number }>,
   pollIntervalMs: 15_000,
   quotaTimeoutMs: 12_000,
-  maxReviewRounds: 3,
+  maxReviewRounds: 10,
   roles: {
     implementation: {
       skills: ["tdd", "diagnosing-bugs", "codebase-design", "ponytail"],
