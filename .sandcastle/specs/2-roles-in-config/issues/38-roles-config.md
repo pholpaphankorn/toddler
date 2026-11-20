@@ -3,7 +3,7 @@ title: roles config replaces models and skills
 labels: []
 blocked_by: []
 parent: 2
-status: open
+status: closed
 ---
 Move each built-in role's settings into one place in `.sandcastle/config.json`. Implementation and review must behave exactly as they do today.
 
