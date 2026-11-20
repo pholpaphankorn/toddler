@@ -3,7 +3,7 @@ title: "GitLab forge: issues to merge requests"
 labels: []
 blocked_by: [51]
 parent: 3
-status: open
+status: closed
 ---
 With `forge: "gitlab"`, a GitLab issue labelled `issueLabel` ends up as an open merge request, as GitHub issues do today. All GitLab calls go through the host `glab` login (`glab api`), taken as a `Command` so tests use a fake `glab`.
 
