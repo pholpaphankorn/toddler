@@ -23,6 +23,8 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 
 ## Decisions so far
 
+- [What Sandcastle already does that toddler duplicates](issues/60-sandcastle-coverage.md): 0.14.0 gives sandbox, worktrees and provider adapters only, nothing toddler builds on top; the 1.0 pre-release adds spec orchestration, in-sandbox PRs and a one-round review, but no quota handling and against toddler's host-only-push guarantee.
+
 ## Not yet specified
 
 - How cross-review and requested-changes rounds work under the scheduling answer (per-issue loop vs batch phases; how a review's changes route back to one issue's branch).
