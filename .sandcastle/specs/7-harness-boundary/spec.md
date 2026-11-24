@@ -25,6 +25,7 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 
 - [What Sandcastle already does that toddler duplicates](issues/60-sandcastle-coverage.md): 0.14.0 gives sandbox, worktrees and provider adapters only, nothing toddler builds on top; the 1.0 pre-release adds spec orchestration, in-sandbox PRs and a one-round review, but no quota handling and against toddler's host-only-push guarantee.
 - [What Codex can orchestrate headless in Seatbelt](issues/59-codex-headless-orchestration.md): subagents are on by default but model-driven, share one checkout (no per-worker branch), can pick their own model, and show only partly in `--json`; toddler cannot drive them, so per-issue fan-out still means one `codex exec` per worker.
+- [What Claude Code can orchestrate headless in Seatbelt](issues/58-claude-headless-orchestration.md): parallel subagents with own prompts and fresh context work under `-p`, and stream-json reports each one; but Claude's built-in worktree isolation writes where the sandbox can't, so per-issue branches need toddler (or a hook) to place worktrees; subagents share quota.
 
 ## Not yet specified
 
