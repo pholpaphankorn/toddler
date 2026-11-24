@@ -209,7 +209,7 @@ Already-open or merged workflow PRs are not assigned again.
 Each subscription is a shared budget: implementation, review, subagents, and other
 usage on that account consume it. Four roles do not provide four separate allowances.
 
-The runner checks remaining quota before each stage and every 15 seconds during
+The runner checks remaining quota before each stage and every 60 seconds during
 model work. By default, at **5% five-hour** or **10% all-models weekly** remaining,
 all active sessions for that provider are cancelled. A per-model weekly bucket at
 or below **10%** stops only that provider and model, cancelling only sessions on

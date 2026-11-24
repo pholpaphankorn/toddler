@@ -394,10 +394,10 @@ export class Quotas {
         let usage: Reading;
         try {
           usage = validateUsage(await this.read(provider, this.config));
-        } catch {
+        } catch (error) {
           this.disable(
             provider,
-            "subscription usage could not be verified (run doctor for details)",
+            `subscription usage could not be verified: ${error instanceof Error ? error.message : error} (run doctor for details)`,
           );
           return;
         }

@@ -21,7 +21,7 @@ export const defaults = {
     codex: { fiveHour: 5, weekly: 10 },
     claude: { fiveHour: 5, weekly: 10 },
   } as Record<Provider, { fiveHour: number; weekly: number }>,
-  pollIntervalMs: 15_000,
+  pollIntervalMs: 60_000,
   quotaTimeoutMs: 12_000,
   maxReviewRounds: 10,
   roles: {
