@@ -23,7 +23,7 @@ import {
   StopConditionError,
   type Quotas,
 } from "./quota.ts";
-import { privateHomeAgent } from "./agents.ts";
+import { privateHomeAgent, stopAgent } from "./agents.ts";
 import { skillLinks, skillLoadLine } from "./skills.ts";
 import { connect, type Tracker, type Forge } from "./forge.ts";
 
@@ -352,6 +352,8 @@ export class Runner {
             verification: verification.stdout.trim(),
           };
         } finally {
+          // A no-op unless the agent is still running (cancel, timeout, failure).
+          await stopAgent(sandbox, provider);
           const closed = await sandbox.close();
           if (closed.preservedWorktreePath)
             console.log(

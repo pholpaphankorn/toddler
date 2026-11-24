@@ -1734,7 +1734,7 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
     assert.equal(captured.logging.type, "file");
     assert.match(
       captured.agent.buildPrintCommand({}).command,
-      /^unset CODEX_HOME /,
+      /toddler-agent\.pid"; unset CODEX_HOME .*; native-cli; /,
     );
     if (provider === "claude")
       assert.ok(
@@ -1802,7 +1802,9 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
       "task",
     );
     assert.ok(
-      !commands.some(({ options }) => !options),
+      !commands.some(
+        ({ cmd, options }) => !options && !cmd.includes("toddler-agent.pid"),
+      ),
       "no verify command runs when verify is empty",
     );
     assert.equal(unverified.verification, "");
