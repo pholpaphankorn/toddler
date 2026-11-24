@@ -7,4 +7,4 @@ status: open
 ---
 ## Question
 
-What rule decides whether a toddler feature stays as code, is delegated to the provider's harness, or is cut? Candidate inputs: enforces a guarantee the agent can't be trusted to keep; spans both providers; deterministic and repeated; needs judgement; token cost; reliability; maintenance cost. Settle the rule and test it against a few features from [Inventory of toddler's features](57-feature-inventory.md).
+What rule decides whether a toddler feature stays as code, is delegated to the provider's harness, or is cut? Nothing is assumed (see the map's reset note). Candidate inputs: enforces something the agent can't be trusted to keep; must both Claude Code and Codex be able to do it before it counts as delegated; deterministic and repeated; needs judgement; token cost (and whether that alone is a reason); reliability; maintenance cost. Settle the rule and test it against a few features from [Inventory of toddler's features](57-feature-inventory.md).

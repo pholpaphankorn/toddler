@@ -12,11 +12,7 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 ## Notes
 
 - Started 2026-11-24 from phol's experience that Claude Code already spawns and orchestrates subagents; toddler should not reinvent what the harnesses do.
-- Settled while charting:
-  - **Guarantees stay as code, outside the agent**: unattended runs from a queue; every stage in its own Seatbelt sandbox; one provider builds, the other reviews; quota stops; only work that passed `verify` and an approving review leaves the sandbox. Everything else (scheduling, concurrency, forge/tracker modules, ranking, skills, doctor, state) is on the table.
-  - **Scheduling is the open core question**: today the runner assigns one issue per session (`parallel-safe` label, two pipelines). Candidate: one provider session takes a batch of ready issues and parallelises with its own subagents, one branch per issue; toddler gates each branch; cross-review is a second phase by the other provider.
-  - **Codex is a full equal**: a feature counts as delegated only if both Claude Code and Codex can do it unattended; otherwise it stays code, or is delegated per provider.
-  - Token savings alone is a weak reason to keep code; enforcing what the agent can't be trusted to enforce on itself is a strong one.
+- **Reset 2026-11-24: nothing is settled.** Charting first recorded four "settled" notes: the five guarantees (queue-driven unattended runs, a Seatbelt sandbox per stage, cross-provider review, quota stops, only verified + approved work leaves the sandbox) stay as code; scheduling batch-vs-per-issue as the core question; Codex as a full equal; token savings as a weak reason. phol dropped all four: every feature, guarantees included, is discussed from empty, one ticket at a time, at phol's pace. They are open questions now, not premises.
 - Tracker: these files, same conventions as [spec 4](../4-quota-aware-scheduling/spec.md). Claim = `assignee:` frontmatter; resolve = `## Answer` + `status: closed`; blocking = `blocked_by`.
 - Vocabulary: [GLOSSARY.md](../../../GLOSSARY.md) (**Provider**, **Role**, **Agent**, **Tracker**, **Forge**).
 - Skills: grilling + domain-modeling (HITL), research (research tickets), codebase-design for where seams go.

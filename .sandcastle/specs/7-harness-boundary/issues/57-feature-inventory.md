@@ -12,7 +12,7 @@ List every toddler feature (CLI commands, runner stages, sandbox/worktree handli
 
 ## Answer
 
-Done 2026-11-24 by reading `src/`, `scripts/`, `prompts/` and `tests/` at `b3a25f4`. Line counts are rough (whole file or function span). Guarantees, from the map's Notes: **G1** unattended runs from a queue · **G2** every stage in its own Seatbelt sandbox · **G3** one provider builds, the other reviews · **G4** quota stops · **G5** only work that passed `verify` and an approving review leaves the sandbox.
+Done 2026-11-24 by reading `src/`, `scripts/`, `prompts/` and `tests/` at `b3a25f4`. Line counts are rough (whole file or function span). Guarantees, from the map's Notes at the time (dropped in the 2026-11-24 reset; the tags show what each row supports today, not that it must stay): **G1** unattended runs from a queue · **G2** every stage in its own Seatbelt sandbox · **G3** one provider builds, the other reviews · **G4** quota stops · **G5** only work that passed `verify` and an approving review leaves the sandbox.
 
 Total: ~3.6k lines in `src/` + `scripts/`; ~3.7k lines of tests, 2k of them in `workflow.test.ts`.
 
