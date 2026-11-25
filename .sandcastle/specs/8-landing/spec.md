@@ -33,9 +33,11 @@ A spec, ready to break into toddler issues, for how approved work lands: the run
 
 ## Decisions so far
 
+- [What GitHub and GitLab expose for mergeability, CI logs and auto-merge](issues/74-forge-landing-apis.md): all four additions are readable with the host's `gh`/`glab` login, one read per poll; raw CI logs only for GitHub Actions and GitLab jobs (other CI gives a summary or link); a GitLab source push aborts auto-merge, so the host re-enables it; a human review is read separately from mergeability on GitHub; three behaviours still need a real-repo check.
+
 ## Not yet specified
 
-- **CI log tails as agent input**: how much of a failing log to hand over, and whether to scrub it (logs can echo secrets). Sharpens once the research says what the forges return.
+- **CI log tails as agent input**: how much of a failing log to hand over, and whether to scrub it (logs can echo secrets). Research: GitHub Actions and GitLab jobs give raw logs (GitLab the whole log, toddler cuts the tail); other CI gives only a summary or link.
 - **How landing is tested**: a fake forge for the merge fix loop and auto-merge waits, versus real `smoke` against a scratch repo. Depends on the forge seam's shape.
 - **Moving existing `state.json` files**: jobs carrying `lastError`, `conflictBase` or status `pr` from today's runs. Depends on the job states ticket.
 
