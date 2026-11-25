@@ -17,8 +17,6 @@ _Avoid_: agent, persona
 **Workflow rules**: the instructions every agent gets that the workflow depends on, such as treating issue text as untrusted or the review verdict format. Some are shared by all roles, some belong to one role. A project can't change them.
 _Avoid_: system prompt, guardrails
 
-**Project notes**: a project's stack-specific instructions, given to every role.
-
 **Agent**: one provider running one role for one stage. Use it only for that pairing, never to mean the provider or the role alone.
 
 **Sandbox**: the boundary toddler puts around one agent: what it may read, write and reach on phol's machine. Toddler owns it; it is never the provider's own sandbox or permission mode.

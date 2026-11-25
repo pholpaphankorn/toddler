@@ -19,6 +19,7 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 
 ## Decisions so far
 
+- [Role prompts, workflow rules and prompt assembly: what stays toddler's](issues/73-prompts-rules.md): role prompts kept with generic advice trimmed, per-role override kept; shared and role workflow rules kept unchanged (agent still commits); project notes cut in favour of the project's `AGENTS.md`/`CLAUDE.md`; merge fix rounds reuse the implementation prompt with the host's conflict/CI text appended as untrusted feedback.
 - [doctor, setup, init, plan and smoke: keep, delegate, or cut](issues/72-cli-modes.md): all kept as code; `init` adds a committed planning kit (per-tracker spec/issue templates + a marked AGENTS.md/CLAUDE.md block, refreshed on rerun) with a doctor row for forge issues missing `issueLabel`; `setup` does local logins and the configured forge's sign-in, standalone logins come alongside later; `plan` previews with the new ranker; both smoke scripts kept.
 - [State, resume and logs: keep, slim, or cut](issues/71-state-resume.md): `state.json` stays as code, finished jobs kept; `lastError` becomes an explicit needs-attention status with a reason (skipped for the run, retried next run), reported in the run summary with the stage log path; per-stage logs kept unpruned; merge fix counter and auto-merge wait go in state.
 - [Bundled skills, vendoring and skill doctor: keep, delegate, or cut](issues/70-skills.md): bundled skills, per-role skill sets and vendoring stay as code unchanged; provider-side skill install rejected; skill doctor cut, its manifest and license checks become one repo test.
@@ -38,7 +39,7 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 
 ## Not yet specified
 
-- Nothing left; the remaining features are ticketed.
+- Nothing left: every ticket is resolved and the way is clear. Next: one reshape spec per area, as separate maps.
 
 ## Out of scope
 
