@@ -20,4 +20,4 @@ Settled with phol 2026-11-25. **Toddler's own Seatbelt sandbox, one per agent, s
 - **The sandbox is not widened for subagents.** Subagents inside one issue share its worktree or make git worktrees inside it or under `$TMPDIR`; Claude's `.claude/worktrees` stays unwritable. How subagents get branches is left to a reshape spec.
 - **Subscription-only env stays** (row 37): API keys are stripped from the sandbox and from host calls, so a run never bills an API account. Forge tokens are decided in [What may leave the sandbox, and who pushes it](68-what-leaves-the-sandbox.md).
 - **Stop on cancel stays** (row 19). Known gap for the reshape spec: Codex starts shell commands under `setsid()`, so a process-group SIGTERM may orphan one ([What Codex can orchestrate headless in Seatbelt](59-codex-headless-orchestration.md)).
-- **Smoke** (row 5): `smoke-seatbelt` stays; `smoke-agents` (one real model call per role) is cut.
+- **Smoke** (row 5): `smoke-seatbelt` stays; `smoke-agents` (one real model call per role) was cut here, then **kept** by phol in [doctor, setup, init, plan and smoke](72-cli-modes.md).
