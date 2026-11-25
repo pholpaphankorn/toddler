@@ -7,4 +7,4 @@ status: open
 ---
 ## Question
 
-Which of toddler's side commands stay as code, become agent work, or go: `init`, `setup` wizard, `doctor` (ranking, stop modules, forge, logins checks), `plan` dry-run, and `smoke-seatbelt` (`smoke-agents` is already cut in [A Seatbelt sandbox per stage](65-sandbox-per-stage.md))? Inventory rows 1–6. Spec 6 Provider logins is paused; only note where this changes it.
+Which of toddler's side commands stay as code, become agent work, or go: `init`, `setup` wizard, `doctor` (ranking, stop modules, forge, logins checks; its skill checks are already cut in [Bundled skills, vendoring and skill doctor](70-skills.md)), `plan` dry-run, and `smoke-seatbelt` (`smoke-agents` is already cut in [A Seatbelt sandbox per stage](65-sandbox-per-stage.md))? Inventory rows 1–6. Spec 6 Provider logins is paused; only note where this changes it.
