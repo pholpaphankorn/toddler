@@ -41,5 +41,8 @@ _Avoid_: issue source, backend
 **Forge**: where a project's code is pushed and its pull or merge requests are opened: GitHub, GitLab, or none. Chosen apart from the tracker, so local issues can still open GitHub pull requests.
 _Avoid_: remote, host, tracker
 
+**Landing**: getting an approved issue's work into the base branch, through a pull or merge request or a local fast-forward, including the fixes needed along the way when it cannot merge.
+_Avoid_: shipping, publishing
+
 **Provider login**: the subscription sign-in toddler holds for one provider, made through toddler and kept apart from the user's own sign-ins to that provider's CLI on the same machine.
 _Avoid_: host login, auth, token

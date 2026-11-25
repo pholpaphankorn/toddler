@@ -19,6 +19,7 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 
 ## Decisions so far
 
+- [Unattended runs from a queue: keep, delegate, or drop](issues/64-unattended-queue.md): kept as code; phol starts `toddler run` and walks away; approved work lands one at a time through toddler's queue, and a merge fix loop (`maxMergeFixRounds`, default 10) sends conflicts and CI failures back to the agent; a stuck issue blocks only its dependents.
 - [One orchestrator session per batch or one session per issue](issues/62-orchestrator-session.md): one session per issue stays; toddler runs up to `maxParallelIssues` at once (`parallel-safe` label kept, several sessions per provider allowed); subagents only inside one issue.
 - [Rule for code, harness or cut](issues/61-code-or-harness-rule.md): guards → code; not missed → cut; needs thinking and the agent can do it → agent, with a code check where a wrong result matters; otherwise deterministic → code ([ADR 0001](../../../docs/adr/0001-code-agent-or-cut.md)). Ranking stays, reshaped to split work by quota left.
 - [What Sandcastle already does that toddler duplicates](issues/60-sandcastle-coverage.md): 0.14.0 gives sandbox, worktrees and provider adapters only, nothing toddler builds on top; the 1.0 pre-release adds spec orchestration, in-sandbox PRs and a one-round review, but no quota handling and against toddler's host-only-push guarantee.
