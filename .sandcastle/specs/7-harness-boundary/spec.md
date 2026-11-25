@@ -19,6 +19,7 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 
 ## Decisions so far
 
+- [How work is split across providers by quota left](issues/69-provider-split.md): ranking stays a module with `running` added per candidate; built-in `balanced` (default, quota left ÷ (running + 1)) and `most-quota` (weekly, five-hour, coin flip); picked at each stage start; implementer sticky, reviewer re-picked each round; `order` and today's built-in rule dropped.
 - [Forge and tracker modules: keep, slim, or delegate](issues/63-forge-tracker-modules.md): all stay as code, nothing delegated or cut (GitHub, GitLab, files tracker, local mode; tracker and forge chosen separately); the forge gains mergeability and up-to-date reads, CI status with failing log tails, pushing the host's base merge, and waiting on auto-merge, for every forge.
 - [What may leave the sandbox, and who pushes it](issues/68-what-leaves-the-sandbox.md): `verify` + approved review stay the gate; only the host pushes, opens PRs and enables auto-merge, no forge token in sandboxes; when the base moves the host merges it in (never rebases), a clean merge that passes `verify` lands without re-review, anything else goes to the merge fix loop; same rule locally and on forges.
 - [Quota stops: keep, delegate, or drop](issues/67-quota-stops.md): kept as code with polling and live cancels; stop conditions kept and open to non-quota reasons later; new: a provider-limit failure counts as a quota stop, stops lift when quota recovers, and the runner sleeps to the next reset instead of exiting; continuation is from the preserved worktree.
@@ -34,7 +35,7 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 
 ## Not yet specified
 
-- Classifying the remaining features with the rule: bundled skills and skill doctor, state/resume, `doctor`/`setup`/`smoke`, role prompts and workflow rules.
+- Nothing left; the remaining features are ticketed.
 
 ## Out of scope
 
