@@ -49,3 +49,6 @@ _Avoid_: shipping, publishing
 
 **Provider login**: the subscription sign-in toddler holds for one provider, made through toddler and kept apart from the user's own sign-ins to that provider's CLI on the same machine.
 _Avoid_: host login, auth, token
+
+**Needs attention**: an issue toddler has given up on until phol looks at it, with the reason why (a failed stage, too many review or merge fix rounds, a required human review). A later run phol starts tries it again. Never caused by a provider running out of quota.
+_Avoid_: paused, stuck, failed

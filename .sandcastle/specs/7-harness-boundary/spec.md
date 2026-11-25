@@ -19,6 +19,7 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 
 ## Decisions so far
 
+- [State, resume and logs: keep, slim, or cut](issues/71-state-resume.md): `state.json` stays as code, finished jobs kept; `lastError` becomes an explicit needs-attention status with a reason (skipped for the run, retried next run), reported in the run summary with the stage log path; per-stage logs kept unpruned; merge fix counter and auto-merge wait go in state.
 - [Bundled skills, vendoring and skill doctor: keep, delegate, or cut](issues/70-skills.md): bundled skills, per-role skill sets and vendoring stay as code unchanged; provider-side skill install rejected; skill doctor cut, its manifest and license checks become one repo test.
 - [How work is split across providers by quota left](issues/69-provider-split.md): ranking stays a module with `running` added per candidate; built-in `balanced` (default, quota left ÷ (running + 1)) and `most-quota` (weekly, five-hour, coin flip); picked at each stage start; implementer sticky, reviewer re-picked each round; `order` and today's built-in rule dropped.
 - [Forge and tracker modules: keep, slim, or delegate](issues/63-forge-tracker-modules.md): all stay as code, nothing delegated or cut (GitHub, GitLab, files tracker, local mode; tracker and forge chosen separately); the forge gains mergeability and up-to-date reads, CI status with failing log tails, pushing the host's base merge, and waiting on auto-merge, for every forge.
