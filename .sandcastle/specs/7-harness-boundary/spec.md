@@ -19,6 +19,7 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 
 ## Decisions so far
 
+- [A Seatbelt sandbox per stage: keep, delegate, or drop](issues/65-sandbox-per-stage.md): kept as code, one sandbox and fresh worktree per agent; agents run with their own guards off, so it guards against agent mistakes and untrusted issue text; not widened for subagents; API-key stripping and stop-on-cancel stay; `smoke-agents` cut, `smoke-seatbelt` kept.
 - [Unattended runs from a queue: keep, delegate, or drop](issues/64-unattended-queue.md): kept as code; phol starts `toddler run` and walks away; approved work lands one at a time through toddler's queue, and a merge fix loop (`maxMergeFixRounds`, default 10) sends conflicts and CI failures back to the agent; a stuck issue blocks only its dependents.
 - [One orchestrator session per batch or one session per issue](issues/62-orchestrator-session.md): one session per issue stays; toddler runs up to `maxParallelIssues` at once (`parallel-safe` label kept, several sessions per provider allowed); subagents only inside one issue.
 - [Rule for code, harness or cut](issues/61-code-or-harness-rule.md): guards → code; not missed → cut; needs thinking and the agent can do it → agent, with a code check where a wrong result matters; otherwise deterministic → code ([ADR 0001](../../../docs/adr/0001-code-agent-or-cut.md)). Ranking stays, reshaped to split work by quota left.

@@ -21,6 +21,9 @@ _Avoid_: system prompt, guardrails
 
 **Agent**: one provider running one role for one stage. Use it only for that pairing, never to mean the provider or the role alone.
 
+**Sandbox**: the boundary toddler puts around one agent: what it may read, write and reach on phol's machine. Toddler owns it; it is never the provider's own sandbox or permission mode.
+_Avoid_: container, jail
+
 **Stop threshold**: the least quota left, per provider and per window (five-hour or weekly), at which toddler stops using that provider, or that provider for one model, for the rest of a run.
 _Avoid_: reserve, limit
 
