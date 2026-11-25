@@ -1289,8 +1289,16 @@ test("offline auto-merge fast-forwards only when safe", async () => {
         status: "approved",
       } as Job;
       state.jobs[1] = job;
-      await runner.publish(issue(1), job);
-      assert.equal(job.status, "done");
+      if (scenario === "diverged") {
+        await assert.rejects(
+          runner.publish(issue(1), job),
+          /cannot fast-forward/,
+        );
+        assert.equal(job.status, "approved");
+      } else {
+        await runner.publish(issue(1), job);
+        assert.equal(job.status, "done");
+      }
       assert.equal(
         run("rev-parse", "main"),
         ["clean", "unchecked", "dirty"].includes(scenario) ? reviewed : before,
@@ -1346,14 +1354,17 @@ test("concurrent offline approvals finish on a clean checked-out base", async ()
       }
       return command(file, args, options);
     };
-    await Promise.all(
+    const results = await Promise.allSettled(
       jobs.map((job) => runner.publish(issue(job.number), job)),
     );
-    assert.deepEqual(
-      jobs.map((job) => job.status),
-      ["done", "done"],
-    );
-    assert.ok(jobs.some((job) => job.reviewedSha === run("rev-parse", "main")));
+    // Both start from the same base: the second cannot land and must not be reported done.
+    assert.deepEqual(jobs.map((job) => job.status).sort(), [
+      "approved",
+      "done",
+    ]);
+    assert.equal(results.filter((r) => r.status === "rejected").length, 1);
+    const landed = jobs.find((job) => job.status === "done")!;
+    assert.equal(run("rev-parse", "main"), landed.reviewedSha);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

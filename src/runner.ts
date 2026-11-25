@@ -648,10 +648,10 @@ export class Runner {
         await this.git(["merge-base", "--is-ancestor", base, job.reviewedSha!]);
       } catch (error) {
         if ((error as { code?: unknown }).code !== 1) throw error;
-        console.log(
-          `[issue #${job.number}] cannot fast-forward ${job.baseBranch}; leaving ${job.branch}`,
+        // shortcut: pauses for a human; the merge fix loop (spec 7, Unattended runs from a queue) replaces this.
+        throw new Error(
+          `cannot fast-forward ${job.baseBranch}; approved work left on ${job.branch}`,
         );
-        return;
       }
       const current = await this.git(["branch", "--show-current"]);
       try {
