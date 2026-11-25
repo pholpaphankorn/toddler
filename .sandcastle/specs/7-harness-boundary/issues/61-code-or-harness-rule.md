@@ -20,7 +20,7 @@ Tested against inventory rows (the real decisions stay with their own tickets):
 
 | Row | Rule says |
 |---|---|
-| 10, 12, 13 scheduling, concurrency slots, per-issue loop | Agent, plus a code check on branches and clean trees. Each worker can make its own branch with `git worktree add` under `$TMPDIR`, which the Claude research saw working in Seatbelt; branch refs outlive the sandbox. |
+| 10, 12, 13 scheduling, concurrency slots, per-issue loop | Code: one session per issue, more issues in parallel (overrides the first "Agent" verdict; see [One orchestrator session per batch or one session per issue](62-orchestrator-session.md)). |
 | 20 post-stage gates | Code, if the guard is kept |
 | 21 format after implementation | Code (deterministic) |
 | 23 base conflicts | Agent resolves, code detects |

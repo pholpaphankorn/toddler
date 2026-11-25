@@ -9,6 +9,6 @@ Every toddler feature is sorted by one rule, applied in order:
 
 Token cost only breaks ties. A feature counts as delegated only if every supported provider's agent can do it. Working code is deleted only after one real run inside toddler's sandbox shows the agent doing the job.
 
-We chose this over keeping toddler as a coordinator of agent sessions. Claude Code and Codex already spawn and run subagents, and a one-off check costs far less than coordination code. For example, one session can be told to give each issue its own `git worktree add` branch, and toddler only checks the branches afterwards.
+Scheduling is not delegated: toddler keeps one provider session per issue and runs several issues in parallel itself. A provider's subagents only help inside one issue; see [One orchestrator session per batch or one session per issue](../../.sandcastle/specs/7-harness-boundary/issues/62-orchestrator-session.md).
 
 Decided in [Rule for code, harness or cut](../../.sandcastle/specs/7-harness-boundary/issues/61-code-or-harness-rule.md).
