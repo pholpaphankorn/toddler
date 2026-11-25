@@ -19,6 +19,7 @@ A decision record that sorts every toddler feature into **keep as code**, **dele
 
 ## Decisions so far
 
+- [Quota stops: keep, delegate, or drop](issues/67-quota-stops.md): kept as code with polling and live cancels; stop conditions kept and open to non-quota reasons later; new: a provider-limit failure counts as a quota stop, stops lift when quota recovers, and the runner sleeps to the next reset instead of exiting; continuation is from the preserved worktree.
 - [One provider builds, the other reviews: keep, delegate, or drop](issues/66-cross-provider-review.md): review stage and round loop stay; the reviewer is picked by quota left and may be the same provider, in its own fresh session; no in-session subagent review; Codex stays a full equal for capacity; verdict parsing stays code.
 - [A Seatbelt sandbox per stage: keep, delegate, or drop](issues/65-sandbox-per-stage.md): kept as code, one sandbox and fresh worktree per agent; agents run with their own guards off, so it guards against agent mistakes and untrusted issue text; not widened for subagents; API-key stripping and stop-on-cancel stay; `smoke-agents` cut, `smoke-seatbelt` kept.
 - [Unattended runs from a queue: keep, delegate, or drop](issues/64-unattended-queue.md): kept as code; phol starts `toddler run` and walks away; approved work lands one at a time through toddler's queue, and a merge fix loop (`maxMergeFixRounds`, default 10) sends conflicts and CI failures back to the agent; a stuck issue blocks only its dependents.

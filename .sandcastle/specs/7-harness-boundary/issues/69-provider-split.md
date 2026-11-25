@@ -12,3 +12,5 @@ phol wants providers chosen by quota left (see [Rule for code, harness or cut](6
 Scheduling answer: one session per issue, up to `maxParallelIssues` at once, and one provider may run several of them. So the rule assigns a provider to each of up to N ready issues.
 
 From [One provider builds, the other reviews](66-cross-provider-review.md): the reviewer is also chosen by quota left and may be the implementer's provider, so the rule assigns a provider to each review stage too, not only to each implementation.
+
+From [Quota stops](67-quota-stops.md): stops now lift when quota recovers and the runner sleeps to the next reset, so a provider can drop out and come back within one run; the split is recomputed as that happens.

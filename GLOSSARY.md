@@ -24,10 +24,10 @@ _Avoid_: system prompt, guardrails
 **Sandbox**: the boundary toddler puts around one agent: what it may read, write and reach on phol's machine. Toddler owns it; it is never the provider's own sandbox or permission mode.
 _Avoid_: container, jail
 
-**Stop threshold**: the least quota left, per provider and per window (five-hour or weekly), at which toddler stops using that provider, or that provider for one model, for the rest of a run.
+**Stop threshold**: the least quota left, per provider and per window (five-hour or weekly), at which toddler stops using that provider, or that provider for one model, until a fresh reading is above it again.
 _Avoid_: reserve, limit
 
-**Stop condition**: a check toddler runs on each fresh quota reading that can stop a provider, or that provider for one model, for the rest of a run. The stop thresholds are the built-in one; a project can add its own.
+**Stop condition**: a check toddler runs on each fresh quota reading that can stop a provider, or that provider for one model, for as long as the check keeps returning that stop. The stop thresholds are the built-in one; a project can add its own.
 _Avoid_: guard, rule
 
 **Ranking**: the order in which toddler prefers the providers still available for a choice of implementer. Either built in (by quota left, or a fixed preference order) or supplied by the project.
