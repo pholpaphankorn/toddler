@@ -3,7 +3,7 @@ title: Landing module with local landing through NoneForge
 labels: []
 blocked_by: [82, 84]
 parent: 8
-status: open
+status: closed
 ---
 Approved work lands one job at a time through a landing queue. Locally, the base only moves when the merged result passes `verify`, and dependents unblock only once their blocker has actually landed.
 
