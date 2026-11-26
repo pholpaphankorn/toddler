@@ -1,4 +1,9 @@
-import { FilesTracker, NoneForge, type Polled } from "../src/forge.ts";
+import {
+  FilesTracker,
+  GitHubForge,
+  NoneForge,
+  type Polled,
+} from "../src/forge.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
@@ -1972,23 +1977,6 @@ test("fake forge: each forge needs-attention reason stops landing at once", asyn
     assert.equal(delivered.length, 1);
   }
 });
-test("fake forge: a foreign head on the PR is refused needs attention", async () => {
-  const { runner, state } = fixture({ autoMerge: true });
-  const polls: Polled[] = [
-    { state: "none" },
-    {
-      state: "refused",
-      reason: "pr head is foreign, not the delivered reviewed",
-    },
-  ];
-  runner.forge.poll = async () => polls.shift()!;
-  await runner.work(issue(1), "codex", "main");
-  assert.equal(await quiet(() => runner.landing.land(issue(1))), "attention");
-  assert.deepEqual(
-    [state.jobs[1].attention?.reason, state.jobs[1].attention?.detail],
-    ["refused", "pr head is foreign, not the delivered reviewed"],
-  );
-});
 test("an issue without a job whose only request is closed is skipped before any agent runs", async () => {
   const { runner, state, events } = fixture({ autoMerge: true });
   runner.tracker.issues = async () => [issue(1)];
@@ -2208,6 +2196,140 @@ test("fake forge: behind means a host merge and verify with no agent, then the m
           assert.equal(job.mergeFix, undefined);
         }
       }
+    } finally {
+      rmSync(repo.top, { recursive: true, force: true });
+    }
+  }
+});
+// Real git and the real GitHubForge.poll over raw `gh` JSON; deliver is recorded and moves the PR head,
+// and the first poll wait lets auto-merge land it.
+function githubLanding(
+  repo: ReturnType<typeof landingRepo>,
+  head: string,
+  job: Partial<Job> = {},
+) {
+  const { runner, state } = landing(repo, pass, {
+    forge: "github",
+    issues: "forge",
+  });
+  Object.assign(state.jobs[1], { status: "landing", ...job });
+  let merged = false;
+  const github = new GitHubForge(
+    repo.root,
+    runner.config,
+    command,
+    async (_file, args = []) => {
+      assert.deepEqual(args.slice(0, 2), ["pr", "list"]);
+      return JSON.stringify(
+        merged
+          ? [{ url: "pr", state: "MERGED" }]
+          : [
+              {
+                url: "pr",
+                state: "OPEN",
+                headRefOid: head,
+                mergeable: "MERGEABLE",
+                mergeStateStatus: "BLOCKED",
+                reviewDecision: "APPROVED",
+                autoMergeRequest: { mergeMethod: "MERGE" },
+                statusCheckRollup: [],
+              },
+            ],
+      );
+    },
+  );
+  const delivered: string[] = [];
+  github.base = async (branch = "main") => {
+    repo.git("fetch", "-q", "origin", branch);
+    return { branch, ref: `origin/${branch}` };
+  };
+  github.deliver = async (input) => {
+    delivered.push(input.sha);
+    head = input.sha;
+    return { state: "waiting", url: "pr" };
+  };
+  runner.forge = github;
+  runner.wait = async () => {
+    merged = true;
+  };
+  return { runner, state, delivered };
+}
+// A clean host merge of a moved main into the reviewed work, as landing would make it.
+function hostMerge(repo: ReturnType<typeof landingRepo>) {
+  repo.commit("main", "other");
+  repo.git("push", "-q", "origin", "main");
+  repo.git("checkout", "-q", "--detach", repo.reviewed);
+  repo.git(
+    "merge",
+    "-q",
+    "--no-ff",
+    "-m",
+    "Merge main into toddler/local-1",
+    "main",
+  );
+  const merge = repo.git("rev-parse", "HEAD");
+  repo.git("checkout", "-q", "main");
+  return merge;
+}
+test("GitHub head: an older push of toddler's own is delivered over, never refused", async () => {
+  for (const scenario of ["after a merge fix round", "after a failed push"]) {
+    const repo = landingRepo();
+    try {
+      let job: Partial<Job>, expected: string;
+      if (scenario === "after a merge fix round") {
+        // The PR still shows the earlier push; the round's approved head builds on it.
+        const fixed = repo.commit("toddler/local-1", "fix");
+        repo.git("checkout", "-q", "main");
+        job = { reviewedSha: fixed, deliveredSha: repo.reviewed };
+        expected = fixed;
+      } else {
+        // deliveredSha was saved, then the push failed: the PR still shows the reviewed SHA.
+        expected = hostMerge(repo);
+        job = { deliveredSha: expected };
+      }
+      const { runner, state, delivered } = githubLanding(
+        repo,
+        repo.reviewed,
+        job,
+      );
+      assert.equal(await quiet(() => runner.landing.land(issue(1))), "landed");
+      assert.equal(state.jobs[1].attention, undefined);
+      assert.deepEqual(delivered, [expected]);
+    } finally {
+      rmSync(repo.top, { recursive: true, force: true });
+    }
+  }
+});
+test("GitHub head: an unrecorded proven host push is adopted without pushing again", async () => {
+  const repo = landingRepo();
+  try {
+    const merge = hostMerge(repo);
+    const { runner, state, delivered } = githubLanding(repo, merge);
+    assert.equal(await quiet(() => runner.landing.land(issue(1))), "landed");
+    assert.deepEqual(delivered, []);
+    assert.equal(state.jobs[1].deliveredSha, merge);
+  } finally {
+    rmSync(repo.top, { recursive: true, force: true });
+  }
+});
+test("GitHub head: someone else's push is refused needs attention", async () => {
+  for (const scenario of ["on top of the reviewed work", "unknown here"]) {
+    const repo = landingRepo();
+    try {
+      let head = "f".repeat(40);
+      if (scenario === "on top of the reviewed work") {
+        repo.git("checkout", "-qb", "evil", repo.reviewed);
+        head = repo.commit("evil", "sneak");
+        repo.git("checkout", "-q", "main");
+      }
+      const { runner, state, delivered } = githubLanding(repo, head);
+      assert.equal(
+        await quiet(() => runner.landing.land(issue(1))),
+        "attention",
+      );
+      assert.equal(state.jobs[1].attention?.reason, "refused");
+      assert.deepEqual(delivered, []);
+      assert.equal(state.jobs[1].status, "landing");
     } finally {
       rmSync(repo.top, { recursive: true, force: true });
     }

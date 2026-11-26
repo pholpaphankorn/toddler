@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeIssueFile, type Delivered } from "./forge.ts";
+import { closeIssueFile, type Delivered, type Polled } from "./forge.ts";
 import { logTail } from "./logtail.ts";
 import type { Issue } from "./policy.ts";
 import type { Job, Runner } from "./runner.ts";
@@ -81,8 +81,32 @@ export class Landing {
     const { forge, config } = this.runner;
     // Build on what was already pushed, so the next plain push fast-forwards it.
     let sha = (await this.pushed(job)) ?? job.reviewedSha!;
-    const poll = () =>
-      forge.poll({ branch: job.branch, sha, base: job.baseBranch });
+    const poll = async (): Promise<Polled> => {
+      const polled = await forge.poll({
+        branch: job.branch,
+        sha,
+        base: job.baseBranch,
+      });
+      const head = polled.head;
+      if (!head || head === sha) return polled;
+      // A head object missing locally is no push of ours.
+      const is = (older: string, newer: string) =>
+        this.ancestor(older, newer).catch(() => false);
+      // Toddler's own earlier push (before a merge fix round, or a push that then failed): a plain push fast-forwards it.
+      if (await is(head, sha)) return { state: "none" };
+      // Host commits pushed on reviewedSha but not recorded: carry on from them once proven.
+      if (await is(job.reviewedSha!, head)) {
+        const { ref } = await forge.base(job.baseBranch);
+        await this.prove(job, head, await this.runner.git(["rev-parse", ref]));
+        sha = head;
+        this.runner.persist(job, { deliveredSha: sha });
+        return polled;
+      }
+      throw new AttentionError(
+        "refused",
+        `${job.pr ?? job.branch} head is ${head}, not ${sha}: someone else pushed; refusing to land it`,
+      );
+    };
     // Resume re-checks the forge (or the local base) before acting.
     let polled = await poll();
     while (!this.runner.interrupted) {
@@ -138,8 +162,6 @@ export class Landing {
             "auto-merge-off",
             `auto-merge was turned off on ${job.pr ?? job.branch}`,
           );
-        case "refused":
-          throw new AttentionError("refused", polled.reason);
         case "ci-failed":
           return await this.mergeFix(job, {
             trigger: "ci-failed",

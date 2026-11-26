@@ -530,12 +530,9 @@ const pollRows: [string, object[], object][] = [
     { state: "waiting" },
   ],
   [
-    "a foreign head + ci-failed",
+    "another head is reported, not judged",
     [{ ...open, headRefOid: "foreign", ...failing }],
-    {
-      state: "refused",
-      reason: "pr head is foreign, not the delivered abc",
-    },
+    ciFailed,
   ],
   [
     "mergeable unknown",
@@ -556,9 +553,19 @@ for (const [name, requests, expected] of pollRows)
         return JSON.stringify(requests);
       },
     );
-    assert.deepEqual(
-      await forge.poll({ branch: "branch", sha: "abc", base: "main" }),
-      expected,
+    const { head, ...polled } = await forge.poll({
+      branch: "branch",
+      sha: "abc",
+      base: "main",
+    });
+    assert.deepEqual(polled, expected);
+    // An open request reports its head; landing decides whether it is toddler's.
+    const reported = requests as { state: string; headRefOid?: string }[];
+    assert.equal(
+      head,
+      reported.some((item) => item.state === "MERGED")
+        ? undefined
+        : reported.find((item) => item.state === "OPEN")?.headRefOid,
     );
     assert.equal(
       calls[0],
@@ -585,6 +592,7 @@ test("GitHub poll: an expired Actions log keeps name and link", async () => {
   assert.deepEqual(await forge.poll({ branch: "b", sha: "", base: "" }), {
     state: "ci-failed",
     checks: ciFailed.checks.map(({ name, link }) => ({ name, link })),
+    head: "abc",
   });
 });
 

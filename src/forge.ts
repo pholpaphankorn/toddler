@@ -64,7 +64,8 @@ export type Delivered =
   | { state: "landed" | "moved" }
   | { state: "waiting"; url: string }
   | { state: "refused"; reason: string };
-export type Polled =
+// `head`: the open request's head commit where the forge reports it; landing decides whether it is toddler's.
+export type Polled = (
   | {
       state:
         | "none"
@@ -76,11 +77,11 @@ export type Polled =
         | "auto-merge-off"
         | "waiting";
     }
-  | { state: "refused"; reason: string }
   | {
       state: "ci-failed";
       checks: { name: string; link: string; tail?: string }[];
-    };
+    }
+) & { head?: string };
 export interface Forge {
   tracker?: Tracker;
   base(branch?: string): Promise<{ branch: string; ref: string }>;
@@ -405,12 +406,9 @@ export class GitHubForge implements Forge {
     if (find("MERGED")) return { state: "landed" };
     const pr = find("OPEN");
     if (!pr) return { state: find("CLOSED") ? "closed" : "none" };
-    // Someone else pushed to the PR branch: unreviewed, so never wait on or land it.
-    if (job.sha && pr.headRefOid !== job.sha)
-      return {
-        state: "refused",
-        reason: `${pr.url} head is ${pr.headRefOid}, not the delivered ${job.sha}`,
-      };
+    return { ...(await this.openState(pr)), head: pr.headRefOid };
+  }
+  private async openState(pr: GitHubRequest): Promise<Polled> {
     if (["REVIEW_REQUIRED", "CHANGES_REQUESTED"].includes(pr.reviewDecision!))
       return { state: "review-required" };
     // Still being computed: ask again next poll.
