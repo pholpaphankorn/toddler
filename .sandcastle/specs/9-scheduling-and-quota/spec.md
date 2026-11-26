@@ -21,6 +21,8 @@ A spec, ready to break into toddler issues, for how toddler schedules agents by 
 
 ## Decisions so far
 
+- [What each CLI reports when a session hits the provider's own limit](issues/90-provider-limit-signals.md): Claude gives typed `api_error: "usage_limit_reached"` + `rateLimitType`/`resetsAt` in stream-json, Codex only a text message (no reset time); sandcastle flattens both to `exited with code 1`, but `onAgentStreamEvent` sees raw lines; `ordinaryUsageAllowed` is the backend's own flag, not derived from percentages. Source-read only, nothing reproduced live.
+
 ## Not yet specified
 
 - Whether `Reading` should carry Codex's `ordinaryUsageAllowed` (a backend yes/no its source trusts over percentages) as a built-in stop condition; carried over from spec 4, and likely shaped by [What each CLI reports when a session hits the provider's own limit](issues/90-provider-limit-signals.md).
