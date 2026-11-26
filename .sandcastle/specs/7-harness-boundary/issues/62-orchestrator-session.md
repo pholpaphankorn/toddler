@@ -8,13 +8,13 @@ assignee: claude
 ---
 ## Question
 
-Should toddler keep scheduling one provider session per issue (today's runner), or hand a batch of ready issues to one provider session that parallelises with its own subagents, one branch per issue? Which gates, if any, sit outside that session follows from the guarantee tickets; don't assume them. Weigh against the facts in [What Claude Code can orchestrate headless in Seatbelt](58-claude-headless-orchestration.md) and [What Codex can orchestrate headless in Seatbelt](59-codex-headless-orchestration.md), and the rule from [Rule for code, harness or cut](61-code-or-harness-rule.md).
+Should infant keep scheduling one provider session per issue (today's runner), or hand a batch of ready issues to one provider session that parallelises with its own subagents, one branch per issue? Which gates, if any, sit outside that session follows from the guarantee tickets; don't assume them. Weigh against the facts in [What Claude Code can orchestrate headless in Seatbelt](58-claude-headless-orchestration.md) and [What Codex can orchestrate headless in Seatbelt](59-codex-headless-orchestration.md), and the rule from [Rule for code, harness or cut](61-code-or-harness-rule.md).
 
 ## Answer
 
-Settled with phol 2026-11-25. **One provider session per issue stays.** No batch goes into one session. What phol wants is more issues at once, and toddler can do that itself; a provider's subagents are only for the work inside one issue. Reason: one session per issue keeps each issue isolated with its own sandbox and checks (rule 1, a guard), and it is simpler.
+Settled with phol 2026-11-25. **One provider session per issue stays.** No batch goes into one session. What phol wants is more issues at once, and infant can do that itself; a provider's subagents are only for the work inside one issue. Reason: one session per issue keeps each issue isolated with its own sandbox and checks (rule 1, a guard), and it is simpler.
 
-- **Toddler picks the ready issues** (no open blockers, not on hold). That work is deterministic, so it stays code.
+- **Infant picks the ready issues** (no open blockers, not on hold). That work is deterministic, so it stays code.
 - **New config `maxParallelIssues`** (default 2, today's effective cap) limits how many issues run at once.
 - **The `parallel-safe` label stays**: an issue without it always runs alone; issues with it share the run up to the cap.
 - **One provider can run several issue sessions at once.** The one-session-per-provider-and-role queue (inventory row 12) goes. Which provider gets which issue is decided in [How work is split across providers by quota left](69-provider-split.md).

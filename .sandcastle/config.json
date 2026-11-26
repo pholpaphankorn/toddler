@@ -1,7 +1,7 @@
 {
   "forge": "github",
   "issues": "files",
-  "repository": "pholpaphankorn/toddler",
+  "repository": "pholpaphankorn/infant",
   "install": "npm ci",
   "format": "npm run format",
   "verify": "npm run format:check && npm test"

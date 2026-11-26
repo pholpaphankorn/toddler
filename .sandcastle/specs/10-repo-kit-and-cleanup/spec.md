@@ -3,11 +3,11 @@ title: Repo kit and cleanup
 labels: [wayfinder:map, on-hold]
 status: open
 ---
-<!-- Wayfinder map. Tickets are files in issues/ with `parent: 10`. All carry `on-hold` so `toddler` never tries to implement them. -->
+<!-- Wayfinder map. Tickets are files in issues/ with `parent: 10`. All carry `on-hold` so `infant` never tries to implement them. -->
 
 ## Destination
 
-A spec, ready to break into toddler issues, for the third reshape area: `setup` writes and refreshes a committed planning kit (per-tracker templates + the toddler block in `AGENTS.md`/`CLAUDE.md`) and gains a `glab` step, `init` goes back to config only, `doctor` flags spec children missing `issueLabel`; plus the cleanup: skill doctor cut to one repo test, role prompts trimmed and project notes cut, legacy config/state shims removed, the sandbox leftovers from spec 7 settled, and README/GLOSSARY brought in line.
+A spec, ready to break into infant issues, for the third reshape area: `setup` writes and refreshes a committed planning kit (per-tracker templates + the infant block in `AGENTS.md`/`CLAUDE.md`) and gains a `glab` step, `init` goes back to config only, `doctor` flags spec children missing `issueLabel`; plus the cleanup: skill doctor cut to one repo test, role prompts trimmed and project notes cut, legacy config/state shims removed, the sandbox leftovers from spec 7 settled, and README/GLOSSARY brought in line.
 
 ## Notes
 
@@ -19,11 +19,11 @@ A spec, ready to break into toddler issues, for the third reshape area: `setup` 
 - Research to reuse: [github-spec-facts](../../../docs/research/github-spec-facts.md), [gitlab-facts](../../../docs/research/gitlab-facts.md), [Claude](../7-harness-boundary/issues/58-claude-headless-orchestration.md) / [Codex](../7-harness-boundary/issues/59-codex-headless-orchestration.md) headless orchestration.
 - Tracker: these files, same conventions as spec 9. Claim = `assignee:` frontmatter; resolve = `## Answer` + `status: closed`; blocking = `blocked_by` (works across specs). Ticket numbers continue from spec 9 (108+).
 - Vocabulary: [GLOSSARY.md](../../../GLOSSARY.md) (**Tracker**, **Forge**, **Local login**, **Role**, **Provider**).
-- Skills: grilling + domain-modeling (HITL), research (research tickets), prototype (prototype tickets), writing-for-agents for the toddler block and templates.
+- Skills: grilling + domain-modeling (HITL), research (research tickets), prototype (prototype tickets), writing-for-agents for the infant block and templates.
 
 ## Decisions so far
 
-- [What happens to Codex's setsid() children when a stage is cancelled](issues/111-codex-setsid-children.md): Codex kills its `setsid()`'d commands only on SIGINT; toddler's `stopAgent` sends SIGINT, but Ctrl+C/SIGTERM on toddler (sandcastle SIGKILLs and exits first), a slow shutdown, a crash, or self-detached commands leave orphans; reaping works only from the host (descendant list, `lsof` cwd), not from inside the sandbox.
+- [What happens to Codex's setsid() children when a stage is cancelled](issues/111-codex-setsid-children.md): Codex kills its `setsid()`'d commands only on SIGINT; infant's `stopAgent` sends SIGINT, but Ctrl+C/SIGTERM on infant (sandcastle SIGKILLs and exits first), a slow shutdown, a crash, or self-detached commands leave orphans; reaping works only from the host (descendant list, `lsof` cwd), not from inside the sandbox.
 
 ## Not yet specified
 
@@ -34,4 +34,4 @@ A spec, ready to break into toddler issues, for the third reshape area: `setup` 
 
 - [Spec 5 PM role](../5-pm-role/spec.md) and [spec 6 Provider logins](../6-provider-logins/spec.md): postponed/paused; `setup` keeps local logins only, standalone logins come with spec 6.
 - Landing (spec 8) and scheduling (spec 9), beyond the shim removal above.
-- Running toddler off macOS.
+- Running infant off macOS.

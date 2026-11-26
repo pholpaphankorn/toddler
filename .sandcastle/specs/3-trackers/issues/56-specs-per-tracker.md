@@ -10,7 +10,7 @@ Implement `Tracker.spec(id)` on every tracker so the [PM role](../../5-pm-role/s
 1. **What it returns**: `{ id, title, body, issues: { number, title, state }[] }`. No ordering or nesting.
 2. **Files**: a spec is its folder (`spec.md` + `issues/`). Issue files' `parent:` stays ignored.
 3. **GitHub**: a spec is a parent issue; its **direct** sub-issues are its issues (deeper levels don't count). Read in one GraphQL call. The parent carries no `issueLabel`, so it is never picked as work.
-4. **GitLab**: a spec is a plain issue. Its issues are those in the same project with a body line `Spec: #<iid>` naming it. A missing target or a second `Spec:` line in an issue doesn't stop that issue being picked; toddler reports it only when reading the spec.
+4. **GitLab**: a spec is a plain issue. Its issues are those in the same project with a body line `Spec: #<iid>` naming it. A missing target or a second `Spec:` line in an issue doesn't stop that issue being picked; infant reports it only when reading the spec.
 
 Done when each adapter has tests for reading a spec, including GitHub ignoring nested sub-issues and GitLab reporting a duplicate `Spec:` line.
 

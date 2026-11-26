@@ -1,6 +1,6 @@
 # Glossary
 
-**Bundled skill**: a skill that ships inside toddler itself and is available to sandboxed agents on any machine toddler is installed on. Toddler bundles only the skills it uses, plus every skill those refer to. Never read from the host user's own skill or plugin folders.
+**Bundled skill**: a skill that ships inside infant itself and is available to sandboxed agents on any machine infant is installed on. Infant bundles only the skills it uses, plus every skill those refer to. Never read from the host user's own skill or plugin folders.
 _Avoid_: host skill, installed skill
 
 **Skill set**: the bundled skills a role is given for one stage, all loaded explicitly when the stage starts. Two roles working the same issue can have different skill sets.
@@ -9,29 +9,29 @@ _Avoid_: skill profile, allowlist
 **Provider**: a coding-agent CLI and the subscription that pays for it, e.g. Claude Code or Codex. Each provider has its own usage limits.
 _Avoid_: agent, vendor, model
 
-**Role**: a job in toddler's workflow (implementation, review, pm). A role decides what a provider is asked to do in a stage and with which prompt, skill set and model.
+**Role**: a job in infant's workflow (implementation, review, pm). A role decides what a provider is asked to do in a stage and with which prompt, skill set and model.
 _Avoid_: agent, persona
 
-**Role prompt**: the instructions for how a role does its job. Toddler ships one per role; a project may replace it for any role.
+**Role prompt**: the instructions for how a role does its job. Infant ships one per role; a project may replace it for any role.
 
 **Workflow rules**: the instructions every agent gets that the workflow depends on, such as treating issue text as untrusted or the review verdict format. Some are shared by all roles, some belong to one role. A project can't change them.
 _Avoid_: system prompt, guardrails
 
 **Agent**: one provider running one role for one stage. Use it only for that pairing, never to mean the provider or the role alone.
 
-**Sandbox**: the boundary toddler puts around one agent: what it may read, write and reach on phol's machine. Toddler owns it; it is never the provider's own sandbox or permission mode.
+**Sandbox**: the boundary infant puts around one agent: what it may read, write and reach on phol's machine. Infant owns it; it is never the provider's own sandbox or permission mode.
 _Avoid_: container, jail
 
-**Stop threshold**: the least quota left, per provider and per window (five-hour or weekly), at which toddler stops using that provider, or that provider for one model, until a fresh reading is above it again.
+**Stop threshold**: the least quota left, per provider and per window (five-hour or weekly), at which infant stops using that provider, or that provider for one model, until a fresh reading is above it again.
 _Avoid_: reserve, limit
 
-**Stop condition**: a check toddler runs on each fresh quota reading that can stop a provider, or that provider for one model, for as long as the check keeps returning that stop. The stop thresholds and the provider's own yes/no on whether ordinary usage may continue are built in; a project can add its own.
+**Stop condition**: a check infant runs on each fresh quota reading that can stop a provider, or that provider for one model, for as long as the check keeps returning that stop. The stop thresholds and the provider's own yes/no on whether ordinary usage may continue are built in; a project can add its own.
 _Avoid_: guard, rule
 
 **Provider limit**: the usage limit the provider itself enforces. Hitting it stops that provider, or that provider for one model, until its reset, like a stop threshold.
 _Avoid_: hard limit, rate limit
 
-**Ranking**: the order in which toddler prefers the providers still available when a stage starts, for any role. Either one of toddler's own (balancing by quota left against sessions already running, or always the most quota left) or supplied by the project.
+**Ranking**: the order in which infant prefers the providers still available when a stage starts, for any role. Either one of infant's own (balancing by quota left against sessions already running, or always the most quota left) or supplied by the project.
 _Avoid_: priority, prioritization
 
 **Slot**: room for one issue to be worked by agents at once in a run. A run has a fixed number; an issue waiting for quota or landing holds none.
@@ -57,23 +57,23 @@ _Avoid_: shipping, publishing
 **Landed**: an issue whose work is in the base branch. Only a landed issue lets the issues that depend on it start; approved is not enough.
 _Avoid_: done, merged
 
-**Host merge**: a merge of the base branch into an issue's reviewed branch, made by toddler itself with no agent, and landed without another review when it is clean and passes the project's verify.
+**Host merge**: a merge of the base branch into an issue's reviewed branch, made by infant itself with no agent, and landed without another review when it is clean and passes the project's verify.
 _Avoid_: rebase, sync, update branch
 
 **Merge fix round**: one return of an approved issue to implement → review because something an agent can fix blocks it from landing (a conflict with the base, failing CI, a failing verify). Its review looks only at what changed since the last approval.
 _Avoid_: rework, conflict round, retry
 
-**Provider login**: the subscription sign-in toddler holds for one provider, made through toddler and kept apart from the user's own sign-ins to that provider's CLI on the same machine.
+**Provider login**: the subscription sign-in infant holds for one provider, made through infant and kept apart from the user's own sign-ins to that provider's CLI on the same machine.
 _Avoid_: auth, token
 
-**Local login**: the user's own sign-in to a provider's CLI on this machine, which toddler reads instead of holding a provider login of its own.
+**Local login**: the user's own sign-in to a provider's CLI on this machine, which infant reads instead of holding a provider login of its own.
 _Avoid_: host login
 
-**Run**: one `toddler run` that phol starts and leaves alone. It works ready issues and lands approved ones, and ends only when nothing is ready, no agent is working and nothing is waiting to land. Every provider being stopped never ends it; it sleeps instead.
+**Run**: one `infant run` that phol starts and leaves alone. It works ready issues and lands approved ones, and ends only when nothing is ready, no agent is working and nothing is waiting to land. Every provider being stopped never ends it; it sleeps instead.
 _Avoid_: session, batch
 
 **Sleeping**: a run that can start nothing because every provider is stopped, waiting for a quota reset before it tries again. It sleeps for as long as that takes, until phol interrupts it.
 _Avoid_: paused, idle, waiting
 
-**Needs attention**: an issue toddler has given up on until phol looks at it, with the reason why (a failed stage, too many review or merge fix rounds, a required human review). A later run phol starts tries it again. Never caused by a provider running out of quota.
+**Needs attention**: an issue infant has given up on until phol looks at it, with the reason why (a failed stage, too many review or merge fix rounds, a required human review). A later run phol starts tries it again. Never caused by a provider running out of quota.
 _Avoid_: paused, stuck, failed

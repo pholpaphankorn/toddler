@@ -269,7 +269,7 @@ export function claudeUsage(result: ClaudeUsage, now = Date.now()): Reading {
 export async function claudeToken(): Promise<string> {
   const native = await nativeClaudeToken();
   if (native) return native;
-  throw new Error("Claude subscription login unavailable; run toddler setup");
+  throw new Error("Claude subscription login unavailable; run infant setup");
 }
 async function nativeClaudeToken(): Promise<string | undefined> {
   try {

@@ -64,7 +64,7 @@ export type Delivered =
   | { state: "landed" | "moved" }
   | { state: "waiting"; url: string }
   | { state: "refused"; reason: string };
-// `head`: the open request's head commit where the forge reports it; landing decides whether it is toddler's.
+// `head`: the open request's head commit where the forge reports it; landing decides whether it is infant's.
 export type Polled = (
   | {
       state:

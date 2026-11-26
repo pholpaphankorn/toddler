@@ -3,15 +3,15 @@ title: Quota-aware scheduling
 labels: [wayfinder:map, on-hold]
 status: closed
 ---
-<!-- Wayfinder map. Tickets are files in issues/ with `parent: 4`. All carry `on-hold` so `toddler` never tries to implement them. -->
+<!-- Wayfinder map. Tickets are files in issues/ with `parent: 4`. All carry `on-hold` so `infant` never tries to implement them. -->
 
 ## Destination
 
-A spec for how toddler chooses providers by quota: config lists the enabled providers and an optional preference order; by default the provider with more weekly quota left goes first, then more five-hour quota left, then random; a run stops on configurable weekly and five-hour thresholds (whichever is hit first); ranking and stop conditions are both extensible. The spec is ready to break into toddler issues.
+A spec for how infant chooses providers by quota: config lists the enabled providers and an optional preference order; by default the provider with more weekly quota left goes first, then more five-hour quota left, then random; a run stops on configurable weekly and five-hour thresholds (whichever is hit first); ranking and stop conditions are both extensible. The spec is ready to break into infant issues.
 
 ## Notes
 
-- Domain: toddler on `@ai-hero/sandcastle` 0.14.0. Today [quota.ts](../../../src/quota.ts) reads only the five-hour remaining %, with weekly as an "exhausted" flag; `reservePercent` (5) is the only stop threshold; [policy.ts](../../../src/policy.ts) `assignments` always tries Codex first, and `reviewer` picks the other provider.
+- Domain: infant on `@ai-hero/sandcastle` 0.14.0. Today [quota.ts](../../../src/quota.ts) reads only the five-hour remaining %, with weekly as an "exhausted" flag; `reservePercent` (5) is the only stop threshold; [policy.ts](../../../src/policy.ts) `assignments` always tries Codex first, and `reviewer` picks the other provider.
 - Known bugs this spec must fix, not fix separately (user's call): weekly-only plans (Codex Pro, Claude Ultra) are disabled for lacking a five-hour window; Claude's weekly check counts `seven_day_oauth_apps` and misses `weekly_scoped` limits. See [What weekly usage each provider reports](issues/18-weekly-usage-data.md).
 - Supported providers stay Claude Code and Codex. The code is extensible for ranking and stop conditions, not for new provider adapters.
 - Tracker: these files, same conventions as [spec 1](../1-skills-in-the-sandbox/spec.md). Claim = `assignee:` frontmatter; resolve = `## Answer` section + `status: closed`; blocking = `blocked_by` (works across specs).

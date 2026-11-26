@@ -1,4 +1,4 @@
-// `toddler smoke forge <github|gitlab> <scratch-repository>`: by hand only, never in CI or tests against a real forge.
+// `infant smoke forge <github|gitlab> <scratch-repository>`: by hand only, never in CI or tests against a real forge.
 // Opens a request one commit behind the base, pushes a host merge of the base, and reports the forge behaviours
 // nobody has tried yet; then closes the request and deletes the branch.
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -9,7 +9,7 @@ import { GitHubForge, GitLabForge, validatePushRemote } from "./forge.ts";
 import { command, type Command } from "./process.ts";
 
 export const smokeForgeUsage =
-  "Usage: toddler smoke forge <github|gitlab> <scratch-repository>  (a scratch repository you own: toddler opens, pushes to and closes a request there)";
+  "Usage: infant smoke forge <github|gitlab> <scratch-repository>  (a scratch repository you own: infant opens, pushes to and closes a request there)";
 
 export async function smokeForge(
   args: string[],
@@ -21,7 +21,7 @@ export async function smokeForge(
   // Never falls back to the current repository: the scratch one must be named.
   if (!["github", "gitlab"].includes(kind) || !repository?.includes("/"))
     throw new Error(smokeForgeUsage);
-  // Never the project toddler is run from (its config or its origin remote): that base is not scratch.
+  // Never the project infant is run from (its config or its origin remote): that base is not scratch.
   const root = await run("git", ["rev-parse", "--show-toplevel"]).catch(
     () => "",
   );
@@ -39,7 +39,7 @@ export async function smokeForge(
     );
   const gitlab = kind === "gitlab";
   const cli = gitlab ? "glab" : "gh";
-  const dir = await mkdtemp(join(tmpdir(), "toddler-forge-smoke-"));
+  const dir = await mkdtemp(join(tmpdir(), "infant-forge-smoke-"));
   const git = (args: string[]) => run("git", args, { cwd: dir });
   const config = {
     ...defaults,
@@ -54,7 +54,7 @@ export async function smokeForge(
       : new GitHubForge(dir, { ...config, autoMerge }, run, run);
   const forge = connect(true);
   const project = `projects/${encodeURIComponent(repository)}`;
-  const branch = `toddler-smoke-${Date.now()}`;
+  const branch = `infant-smoke-${Date.now()}`;
   let url: string | undefined;
   const request = () =>
     `${project}/merge_requests/${/\/merge_requests\/(\d+)/.exec(url!)?.[1]}`;
@@ -97,15 +97,15 @@ export async function smokeForge(
     const { branch: base, ref } = await forge.base();
     // One commit behind the base, so the request starts out behind and the host merge has work to do.
     await git(["checkout", "-b", branch, `${ref}~1`]);
-    await writeFile(join(dir, `${branch}.txt`), "toddler smoke forge\n");
+    await writeFile(join(dir, `${branch}.txt`), "infant smoke forge\n");
     await git(["add", `${branch}.txt`]);
-    await git(["commit", "-m", "toddler smoke forge (scratch)"]);
+    await git(["commit", "-m", "infant smoke forge (scratch)"]);
     const first = await git(["rev-parse", "HEAD"]);
     const delivery = {
       branch,
       base,
-      title: "toddler smoke forge (scratch, closed when done)",
-      body: "Opened by `toddler smoke forge`; it closes this request and deletes the branch when it finishes.",
+      title: "infant smoke forge (scratch, closed when done)",
+      body: "Opened by `infant smoke forge`; it closes this request and deletes the branch when it finishes.",
     };
     pushed = true;
     // Opened without auto-merge first: it is turned on only once the request cannot merge at once.
@@ -129,7 +129,7 @@ export async function smokeForge(
     log(`opened: ${url} (${describe(before)})`);
     await git(["merge", "--no-edit", ref]);
     const merge = await git(["rev-parse", "HEAD"]);
-    // A plain push, as toddler's own deliver does, but without re-enabling auto-merge yet.
+    // A plain push, as infant's own deliver does, but without re-enabling auto-merge yet.
     await git(["push", "origin", `${merge}:refs/heads/${branch}`]);
     const after = await read();
     log(`host merge pushed: ${merge} (${describe(after)})`);

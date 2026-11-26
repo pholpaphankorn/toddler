@@ -19,7 +19,7 @@ Replace "Codex always first" with a ranking chosen in config.
      candidates: { provider: Provider; model: string; reading: Reading }[];
    }) => Provider[];   // same candidates, best first
    ```
-   toddler drops candidates not available for the role's provider and model first; with one candidate or none the ranker is not called.
+   infant drops candidates not available for the role's provider and model first; with one candidate or none the ranker is not called.
 3. **Built-ins, both of that type, made from config:**
    - `"order"` closes over `providers`: first listed wins while available.
    - `"quota"` compares weekly left (`weeklyLeft` for the role's model), then five-hour left (no window = 100%), then a fresh random pick per decision. Compare whole points (rounded down: 61.2 and 61.8 tie). The random source is injected so tests are deterministic.

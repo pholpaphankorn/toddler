@@ -26,7 +26,7 @@ Researched 2026-11-25 from docs, first-party source and local `--help` (`gh` 2.1
   - GitLab: the MR's `detailed_merge_status` (`need_rebase`, `not_approved`, `conflict`, `ci_must_pass`, `ci_still_running`, …). `need_rebase` exists only on fast-forward and semi-linear projects; merge-commit projects have no "must be up to date" block. Required approvals need Premium.
 - **CI status and log tails.**
   - GitHub: `gh pr checks --json name,state,bucket,link`. Raw logs exist only for Actions (`gh run view --log-failed`, or the jobs logs endpoint, whose link expires in 1 minute; logs kept 90 days by default). Checks from other apps give only a summary or text (up to 65535 chars) and a link.
-  - GitLab: the MR's `head_pipeline`, then its failed jobs (drop `allow_failure` jobs), then the job trace. The trace returns the whole log, so toddler cuts the tail itself. External CI gives no logs.
+  - GitLab: the MR's `head_pipeline`, then its failed jobs (drop `allow_failure` jobs), then the job trace. The trace returns the whole log, so infant cuts the tail itself. External CI gives no logs.
 - **Pushing the host's base merge.**
   - GitHub: a plain push passes unless rules on the head branch block it. A push from someone with write access should not cancel auto-merge. Stale-approval dismissal and "approval of the most recent push" rules can turn the PR into review-required. A base branch that requires linear history clashes with merge commits.
   - GitLab: **any push to the source branch aborts auto-merge**, so the host must re-enable it after pushing. On rebase-only projects, source code says a merge commit clears `need_rebase`, while the docs say "rebase": unverified.

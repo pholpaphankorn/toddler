@@ -33,7 +33,7 @@ for (const [provider, handled] of [
           command: `bash -c 'set -m; sleep ${seconds} & child=$!; trap "kill -9 -- -$child; exit 1" ${handled}; wait'`,
         }),
       } as unknown as AgentProvider;
-      const root = mkdtempSync(join(tmpdir(), "toddler-stop-"));
+      const root = mkdtempSync(join(tmpdir(), "infant-stop-"));
       try {
         execFileSync("git", ["init", "-q", "-b", "main", root]);
         writeFileSync(join(root, "f"), "f\n");

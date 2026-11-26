@@ -85,7 +85,7 @@ test("smoke forge reports what GitHub did, then closes the request and deletes t
     async () => {},
     (line) => lines.push(line),
   );
-  const branch = /toddler-smoke-\d+/.exec(lines.join("\n"))![0];
+  const branch = /infant-smoke-\d+/.exec(lines.join("\n"))![0];
   assert.deepEqual(
     lines.map((line) => line.replace(branch, "BRANCH")),
     [
@@ -121,7 +121,7 @@ test("smoke forge cleans up when a step fails", async () => {
   );
   assert.ok(
     calls.some((call) =>
-      /^git push origin --delete toddler-smoke-\d+$/.test(call),
+      /^git push origin --delete infant-smoke-\d+$/.test(call),
     ),
   );
 });
@@ -157,7 +157,7 @@ test("smoke forge never turns auto-merge on for a request that could merge at on
   );
   assert.ok(
     calls.some((call) =>
-      /^git push origin --delete toddler-smoke-\d+$/.test(call),
+      /^git push origin --delete infant-smoke-\d+$/.test(call),
     ),
   );
 });

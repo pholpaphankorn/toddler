@@ -36,7 +36,7 @@ Source shorthand: `manager.rs` = [`codex-rs/login/src/auth/manager.rs`](https://
 
 - **[src]** Yes, in effect. The client persists a returned `refresh_token` over the old one, and the server's error codes include `refresh_token_reused`, surfaced as "your refresh token was already used" (`manager.rs` L207, L1688). A reused refresh token is classified as a **permanent** failure, cached so later attempts fail fast without network (L1799-1801, L2557).
 - **[doc]** The CI/CD guide requires "one `auth.json` per runner or per serialized workflow stream", says "Do not share the same file across concurrent jobs or multiple machines", and lists "another machine or concurrent job rotated the token first" as a reason to reseed. That is: **after one copy refreshes, other copies holding the old refresh token stop being able to refresh** (their current access token keeps working until it expires). The docs never state the rotation rule explicitly; the mechanism above is from source.
-- **Implication for toddler [inference]:** today's `codexAuth` copies host tokens (including the refresh token) into every sandbox. The first sandbox or quota read that refreshes rotates the family, and every other copy, including the host's, then fails its next refresh with `refresh_token_reused`.
+- **Implication for infant [inference]:** today's `codexAuth` copies host tokens (including the refresh token) into every sandbox. The first sandbox or quota read that refreshes rotates the family, and every other copy, including the host's, then fails its next refresh with `refresh_token_reused`.
 
 ## 2. Running with only an access token
 

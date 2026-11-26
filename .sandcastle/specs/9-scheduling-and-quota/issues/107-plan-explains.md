@@ -5,7 +5,7 @@ blocked_by: [100, 101, 103, 105, 106]
 parent: 9
 status: open
 ---
-`toddler plan` shows in plain text what a run would do next and why: which provider each stage would get, which are stopped and how they lift, which slots are full, and whether the run would sleep.
+`infant plan` shows in plain text what a run would do next and why: which provider each stage would get, which are stopped and how they lift, which slots are full, and whether the run would sleep.
 
 1. **Text by default**; today's JSON moves behind `--json`.
 2. **Providers**: per provider 5h and weekly left with reset times and `running`; each stop with its key, reason and how it lifts: threshold → "lifts when a reading is above N%" plus the window's reset; limit failure → "held until <time>"; failed read → "recheck on next read"; ordinary usage → "lifts when a reading allows it; recheck on next read".

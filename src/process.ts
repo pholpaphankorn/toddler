@@ -92,7 +92,7 @@ export function codexRpc<T>(
       id: 1,
       method: "initialize",
       params: {
-        clientInfo: { name: "toddler", version: "1.0.0" },
+        clientInfo: { name: "infant", version: "1.0.0" },
       },
     });
   });

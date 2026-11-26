@@ -200,7 +200,7 @@ finish() {
 
 run_wizard() {
 TOTAL_STAGES=3
-TODDLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+INFANT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE=".sandcastle/.env"
 banner "Sandcastle subscription logins"
 stage "GitHub: authorize this repository"
@@ -238,7 +238,7 @@ else
 fi
 say "No API keys or GitHub secrets are needed."
 say "Checking Seatbelt, model availability, logins and usage reporting..."
-node "$TODDLER_DIR/src/main.ts" doctor || warn "Resolve the FAIL lines before starting. See the toddler README for quota adapters."
+node "$INFANT_DIR/src/main.ts" doctor || warn "Resolve the FAIL lines before starting. See the infant README for quota adapters."
 finish
 }
 

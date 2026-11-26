@@ -7,4 +7,4 @@ status: open
 ---
 ## Question
 
-Who renews each provider login and when (toddler itself vs the provider CLI run against toddler's store; before each stage, on expiry, on a failed call), how renewals are written back safely, and exactly which credential each sandbox gets (per the "shortest-lived credential that works" rule) so a refresh inside a sandbox can never invalidate toddler's copy.
+Who renews each provider login and when (infant itself vs the provider CLI run against infant's store; before each stage, on expiry, on a failed call), how renewals are written back safely, and exactly which credential each sandbox gets (per the "shortest-lived credential that works" rule) so a refresh inside a sandbox can never invalidate infant's copy.

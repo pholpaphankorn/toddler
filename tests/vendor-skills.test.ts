@@ -15,7 +15,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 test("vendors selected nested skills from a local git repository", () => {
-  const root = mkdtempSync(join(tmpdir(), "toddler-vendor-test-"));
+  const root = mkdtempSync(join(tmpdir(), "infant-vendor-test-"));
   try {
     const upstream = join(root, "upstream"),
       checkout = join(root, "checkout");

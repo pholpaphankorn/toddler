@@ -5,7 +5,7 @@ blocked_by: [102, 104]
 parent: 9
 status: open
 ---
-When Codex's backend says ordinary usage is not allowed, toddler stops Codex even if the percentages still show quota left, so it never loops on refusals or spends paid credits.
+When Codex's backend says ordinary usage is not allowed, infant stops Codex even if the percentages still show quota left, so it never loops on refusals or spends paid credits.
 
 1. **`Reading` gains `allowed: boolean | null`**: Codex fills it from `ordinaryUsageAllowed`; Claude and a Codex reading without the flag give `null`. Project stop conditions see it through the `Reading` they already get.
 2. **Built-in stop condition, always on**, no config: `allowed: false` stops Codex provider-wide (no model). Registered before the threshold condition; if both fire they share one stop.

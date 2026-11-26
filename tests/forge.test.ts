@@ -559,7 +559,7 @@ for (const [name, requests, expected] of pollRows)
       base: "main",
     });
     assert.deepEqual(polled, expected);
-    // An open request reports its head; landing decides whether it is toddler's.
+    // An open request reports its head; landing decides whether it is infant's.
     const reported = requests as { state: string; headRefOid?: string }[];
     assert.equal(
       head,

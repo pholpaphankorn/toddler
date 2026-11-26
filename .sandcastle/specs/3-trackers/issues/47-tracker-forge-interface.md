@@ -11,9 +11,9 @@ status: closed
 What interface do `src/runner.ts` and `src/policy.ts` code against so the five valid setups from [Tracker and forge config shape](44-tracker-forge-config.md) plug in without per-host branches in the loop? Those setups are GitHub or GitLab with their own issues, GitHub or GitLab with issue files, and none with issue files. Today the GitHub calls (`gh api` for labelled issues, dependencies, PR creation) and the local file reader sit directly in `runner.ts`.
 
 - One host module, the **forge** (GitHub, GitLab or none), built from `forge`. A GitHub or GitLab forge owns both its issues and its pull/merge requests. `issues: "files"` swaps only the issues side for the files reader. There is no separate tracker host: a remote tracker is always the forge.
-- Issues side: list workable issues with labels and blockers, read a spec and its issues, comments for context. Toddler doesn't close or comment today.
+- Issues side: list workable issues with labels and blockers, read a spec and its issues, comments for context. Infant doesn't close or comment today.
 - Requests side: base branch, find an existing PR/MR for an issue's branch, push and open one.
-- Toddler writes all of these: sandcastle offers none (see [What sandcastle offers for trackers and forges](41-sandcastle-forge-support.md)). Today local issues ignore `parent:`; the interface should say whether it starts reading it.
+- Infant writes all of these: sandcastle offers none (see [What sandcastle offers for trackers and forges](41-sandcastle-forge-support.md)). Today local issues ignore `parent:`; the interface should say whether it starts reading it.
 - Seams for tests: how the GitHub and GitLab implementations are tested without a network (today `gh` is injected as `command`).
 
 ## Answer
@@ -27,7 +27,7 @@ Grilled with phol, 2026-11-16. The ticket was charted before [Tracker and forge 
   const tracker = config.issues === "files" ? files : forge.tracker
   ```
 
-  None has no tracker side, which is why `issues: "forge"` with `forge: "none"` is rejected at load. Two independent tracker/forge interfaces were rejected because they invite the cross-host pairs ruled out of scope. The only `issues === "files"` check left in the loop is the branch prefix (`toddler/local-N`).
+  None has no tracker side, which is why `issues: "forge"` with `forge: "none"` is rejected at load. Two independent tracker/forge interfaces were rejected because they invite the cross-host pairs ruled out of scope. The only `issues === "files"` check left in the loop is the branch prefix (`infant/local-N`).
 - **`Tracker`** (the glossary word, used as the type name). Adapters: files, GitHub, GitLab. Read-only, with no close or comment operations:
   - `issues()`: the open work issues, sorted by number. Forge: the ones labelled `issueLabel`. Files: every open issue.
   - `blocked(issue): Promise<boolean>`: each adapter keeps its own rule (files: `blocked_by` against the open set; GitHub: native dependencies; GitLab: [native links + `Blocked by:` line](46-gitlab-blocking-labels.md)). It is separate from `issues()` so the runner still skips tried or finished issues before an API call.

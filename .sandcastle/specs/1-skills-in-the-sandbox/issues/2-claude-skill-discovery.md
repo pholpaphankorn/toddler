@@ -8,7 +8,7 @@ status: closed
 ---
 ## Question
 
-Where does Claude Code (the version toddler runs, invoked by sandcastle's `claudeCode` provider with `-p`) look for skills, and does it load them in print mode? Cover: user-level paths under `HOME` / `CLAUDE_CONFIG_DIR`, project `.claude/skills`, whether `--setting-sources` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` affect it, the SKILL.md format it needs, and which source wins when a user-level and a project skill share a name. Cite the official docs.
+Where does Claude Code (the version infant runs, invoked by sandcastle's `claudeCode` provider with `-p`) look for skills, and does it load them in print mode? Cover: user-level paths under `HOME` / `CLAUDE_CONFIG_DIR`, project `.claude/skills`, whether `--setting-sources` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` affect it, the SKILL.md format it needs, and which source wins when a user-level and a project skill share a name. Cite the official docs.
 
 ## Answer
 

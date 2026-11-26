@@ -1,12 +1,12 @@
 # Getting a skills directory into a seatbelt() sandbox's private HOME
 
-Question: how can toddler make a directory of files (skill folders, about 100 files) readable by the agent under the sandbox's private `HOME` (`$HOME/.claude/skills`, `$HOME/.codex/skills`, `$HOME/.agents/skills`) or at another readable path? This note covers `seatbelt()` in `@ai-hero/sandcastle` 0.14.0.
+Question: how can infant make a directory of files (skill folders, about 100 files) readable by the agent under the sandbox's private `HOME` (`$HOME/.claude/skills`, `$HOME/.codex/skills`, `$HOME/.agents/skills`) or at another readable path? This note covers `seatbelt()` in `@ai-hero/sandcastle` 0.14.0.
 
 Date: 2026-11-04.
 
 ## Sources
 
-- Installed package: `toddler/node_modules/@ai-hero/sandcastle` (version 0.14.0), in particular `dist/sandboxes/seatbelt.js`, `dist/sandboxes/seatbelt.d.ts`, `dist/index.d.ts` and `dist/chunk-HSXPRZKG.js`.
+- Installed package: `infant/node_modules/@ai-hero/sandcastle` (version 0.14.0), in particular `dist/sandboxes/seatbelt.js`, `dist/sandboxes/seatbelt.d.ts`, `dist/index.d.ts` and `dist/chunk-HSXPRZKG.js`.
 - Sandcastle checkout: `../sandcastle/src`, including `sandboxes/seatbelt.ts`, `seatbeltSandbox.ts`, `seatbeltProfile.ts`, `identityMounts.ts`, `MountConfig.ts`, `SandboxProvider.ts`, `createSandbox.ts` and `nativeSandboxIo.ts`. Its `package.json` says 0.12.0, with unreleased changesets on top.
 - Docs: `../sandcastle/docs/guide/sandbox-providers.md`, section "Native sandboxes".
 - An empirical probe run against the installed 0.14.0 on this Mac. The script is outside the repo (`scratchpad/probe/probe.mjs`), and its results are quoted below as **[probe]**.
@@ -30,7 +30,7 @@ seatbelt({ mounts: [{ hostPath: dir, sandboxPath: dir, readonly: true }] });
 
 - **Where the files land:** only at their own host path. `resolveIdentityMounts` throws at construction when the resolved `sandboxPath` differs from `hostPath` (`identityMounts.ts`; the same text is in `dist/chunk-HSXPRZKG.js`). **A mount can't target a path inside the private HOME.** `sandboxPath: "~/.claude/skills"` expands to `/home/agent/.claude/skills`, which fails the check. **[probe]**: "THROWS: seatbelt() mounts appear at their host path, so sandboxPath must equal hostPath".
 - **How it is enforced:** a read-only mount is added to `readableRoots` (`file-read* file-map-executable`) and to `protectedPaths`, which get `(deny file-write* (subpath …))` at the end of the profile so nothing earlier can reopen them (`seatbeltProfile.ts` `buildSeatbeltPolicy`). **[probe]**: `touch` and `rm` inside the mount both fail with "Operation not permitted". Reads work.
-- **Granularity:** mounts belong to the provider instance, not to a `createSandbox` call. `CreateSandboxOptions` has no `mounts` field (checked in both `createSandbox.ts` and `dist/index.d.ts`). They are captured as `userMounts` in the `seatbelt()` closure and applied to every sandbox that provider creates. To vary mounts per stage, build a new `seatbelt({...})` per stage. That is cheap, because `assertSeatbeltUsable` checks once per process (`seatbelt.ts` docstring). **[probe]**: a second `createSandbox` with its own `seatbelt()` instance could not read the first instance's mount ("Operation not permitted"), so instances really are independent. Today toddler builds one provider in `main.ts:131` and stores it on `runner.sandboxProvider`.
+- **Granularity:** mounts belong to the provider instance, not to a `createSandbox` call. `CreateSandboxOptions` has no `mounts` field (checked in both `createSandbox.ts` and `dist/index.d.ts`). They are captured as `userMounts` in the `seatbelt()` closure and applied to every sandbox that provider creates. To vary mounts per stage, build a new `seatbelt({...})` per stage. That is cheap, because `assertSeatbeltUsable` checks once per process (`seatbelt.ts` docstring). **[probe]**: a second `createSandbox` with its own `seatbelt()` instance could not read the first instance's mount ("Operation not permitted"), so instances really are independent. Today infant builds one provider in `main.ts:131` and stores it on `runner.sandboxProvider`.
 - **Host-home paths are fine:** a read-only mount under the host's `~` was readable **[probe]**. The profile only denies container-engine dirs under the host home (`.docker`, `.colima`, …).
 - **A path that doesn't exist** is dropped silently when the sandbox is created (`realMount` uses `Effect.option(fs.realPath(...))`). Symlinked host paths are resolved to their real path first.
 - **Per-stage cost:** nothing beyond the profile. There is no copying.
@@ -46,7 +46,7 @@ await sandbox.exec(
 );
 ```
 
-- **Where the files land:** anywhere under `$HOME`, at the exact paths each agent CLI looks in. This is the same mechanism toddler uses for `auth.json` today (`runner.ts:152`).
+- **Where the files land:** anywhere under `$HOME`, at the exact paths each agent CLI looks in. This is the same mechanism infant uses for `auth.json` today (`runner.ts:152`).
 - **Writable:** yes. `HOME` is a writable root, so the agent can edit or delete its own copy. **[probe]**: appending to a copied `SKILL.md` succeeded. The copy is gone on `close()`, so edits never reach the host.
 - **Per-stage cost:** **[probe]** 100 files (about 10 KB as tgz) took about 160 ms, including host-side `tar`, against about 23 ms for a bare `exec`. Cost grows with total size.
 - **Limits:**
@@ -58,7 +58,7 @@ await sandbox.exec(
 ### 3. Sandcastle copy APIs
 
 - **`copyIn` / `copyToSandbox`:** these don't exist on the public API. `copyIn` exists only on `IsolatedSandboxHandle` (Daytona, Vercel and so on), not on bind-mount providers like seatbelt (`SandboxProvider.ts`).
-- **`copyFileIn(hostPath, sandboxPath)`:** this exists on seatbelt's `BindMountSandboxHandle`. It copies **one file**, creates parents, and maps `/home/agent/...` to the private home (`seatbelt.ts` `createHandle`, `nativeSandboxIo.ts` `copyCreatingParents`). It is **not reachable from toddler**: the public `Sandbox` returned by `createSandbox` exposes only `branch`, `worktreePath`, `sandboxId`, `run`, `interactive`, `exec`, `close` (`dist/index.d.ts`). The bind-mount handle is internal (`SandboxHandleContext.bindMountHandle`). Using it would mean a custom provider wrapping `seatbelt()`, or calling `fs.cp` straight into the private home dir. You can learn that dir's host path by running `echo $HOME` through `exec`, since seatbelt's HOME is a real host dir, but that depends on a seatbelt implementation detail. **Not recommended.**
+- **`copyFileIn(hostPath, sandboxPath)`:** this exists on seatbelt's `BindMountSandboxHandle`. It copies **one file**, creates parents, and maps `/home/agent/...` to the private home (`seatbelt.ts` `createHandle`, `nativeSandboxIo.ts` `copyCreatingParents`). It is **not reachable from infant**: the public `Sandbox` returned by `createSandbox` exposes only `branch`, `worktreePath`, `sandboxId`, `run`, `interactive`, `exec`, `close` (`dist/index.d.ts`). The bind-mount handle is internal (`SandboxHandleContext.bindMountHandle`). Using it would mean a custom provider wrapping `seatbelt()`, or calling `fs.cp` straight into the private home dir. You can learn that dir's host path by running `echo $HOME` through `exec`, since seatbelt's HOME is a real host dir, but that depends on a seatbelt implementation detail. **Not recommended.**
 - **`copyToWorktree: string[]`:** this copies paths from the host **repo root** into the **worktree** when the sandbox is created (`createSandbox.ts`). The files land inside the repo checkout, where they are writable, visible to `git status`, and can be committed by the agent. The source must also be inside the repo. That makes it a poor fit for skills that live outside the repo.
 - **`hooks.sandbox.onSandboxReady: { command }[]`:** shell commands run inside the sandbox once it is ready. There is no stdin, so this can't carry file contents, but it can run the `ln -s` from option 4. That is equivalent to one `sandbox.exec`.
 
@@ -80,12 +80,12 @@ await sandbox.exec(
 - **Per-stage cost:** one `exec`, about 20–30 ms, regardless of how many files there are.
 - **Gotchas:**
   - **Unverified:** whether Claude Code and Codex discover skills through a symlinked `skills` dir, or through symlinked skill folders inside a real `skills` dir. Some directory scanners skip symlinks or resolve them with realpath. Check this with a real `run()` before relying on it. The fallback is option 2, which needs no symlinks.
-  - **Unverified:** the exact skill search paths of each CLI version (`~/.claude/skills` for Claude Code; `$CODEX_HOME/skills`, which is `~/.codex/skills`, and/or `~/.agents/skills` for Codex). I didn't check them against the CLIs' docs here. Note that toddler sets `CODEX_HOME: ""` in the provider env (`main.ts:132`). How Codex treats an empty `CODEX_HOME` is also **unverified**.
+  - **Unverified:** the exact skill search paths of each CLI version (`~/.claude/skills` for Claude Code; `$CODEX_HOME/skills`, which is `~/.codex/skills`, and/or `~/.agents/skills` for Codex). I didn't check them against the CLIs' docs here. Note that infant sets `CODEX_HOME: ""` in the provider env (`main.ts:132`). How Codex treats an empty `CODEX_HOME` is also **unverified**.
   - The mount applies to every sandbox from that provider instance, including stages that don't need skills. Use per-stage providers if that matters.
 
 ### Not an option: putting files in a default-readable system root
 
-`/Library`, `/opt`, `/usr` and similar paths are readable in every sandbox (`SYSTEM_READ_ROOTS`). Files placed there would be readable without a mount, but they would be readable by every sandbox, and toddler would need root or a global install to write them there. It's included here only to rule it out.
+`/Library`, `/opt`, `/usr` and similar paths are readable in every sandbox (`SYSTEM_READ_ROOTS`). Files placed there would be readable without a mount, but they would be readable by every sandbox, and infant would need root or a global install to write them there. It's included here only to rule it out.
 
 ## Comparison
 
