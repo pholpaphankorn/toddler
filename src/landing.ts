@@ -174,7 +174,12 @@ export class Landing {
         directory,
         job.reviewedSha!,
       ]);
-      if (!(await closeIssueFile(directory, job.number))) return;
+      const closing = await closeIssueFile(directory, job.number).catch(
+        (error) => {
+          throw new AttentionError("refused", (error as Error).message);
+        },
+      );
+      if (!closing) return;
       await runner.git(
         ["commit", "--no-verify", "-qam", `Close local issue ${job.number}`],
         directory,

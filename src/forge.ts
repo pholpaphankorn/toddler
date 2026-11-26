@@ -1,4 +1,11 @@
-import { readFile, readdir, mkdtemp, writeFile, rm } from "node:fs/promises";
+import {
+  readFile,
+  readdir,
+  mkdtemp,
+  writeFile,
+  rm,
+  lstat,
+} from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -806,6 +813,7 @@ export function connect(
 }
 
 // Sets `status: closed` in issue `number`'s file under root; false when it is already closed or has no file.
+// root is agent-written: throws unless every path component is a real directory and the file a regular file.
 export async function closeIssueFile(
   root: string,
   number: number,
@@ -814,9 +822,18 @@ export async function closeIssueFile(
   const files = existsSync(prefix)
     ? await readdir(prefix, { recursive: true })
     : [];
-  for (const file of files.filter((file) =>
-    /^[^/]+\/issues\/[^/]+\.md$/.test(file),
+  for (const file of files.filter(
+    (file) =>
+      Number(/^\d+-[^/]+\/issues\/(\d+)[^/]*\.md$/.exec(file)?.[1]) === number,
   )) {
+    const parts = [".sandcastle", "specs", ...file.split("/")];
+    for (let i = 1; i <= parts.length; i++) {
+      const stat = await lstat(join(root, ...parts.slice(0, i)));
+      if (i === parts.length ? !stat.isFile() : !stat.isDirectory())
+        throw new Error(
+          `.sandcastle/specs/${file}: not a regular file inside the repository`,
+        );
+    }
     const text = await readFile(join(prefix, file), "utf8");
     const issue = localIssue(file, text);
     if (issue.number !== number) continue;

@@ -22,6 +22,7 @@ import {
   readFileSync,
   rmSync,
   chmodSync,
+  symlinkSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -1801,6 +1802,49 @@ test("close commit: none when the file is already closed, re-added after an agen
           /^status: closed$/m,
         );
       }
+    } finally {
+      rmSync(repo.top, { recursive: true, force: true });
+    }
+  }
+});
+test("close commit: a symlinked issue file or specs directory is refused and the outside file is untouched", async () => {
+  for (const link of ["issue file", "specs directory"] as const) {
+    const repo = landingRepo();
+    try {
+      // Outside the repository: what the agent's symlink points at.
+      const outside = join(repo.top, "outside");
+      mkdirSync(join(outside, "1-landing/issues"), { recursive: true });
+      const secret = join(outside, "1-landing/issues/1-thing.md");
+      writeFileSync(secret, "---\nstatus: open\n---\nhost file\n");
+      repo.git("checkout", "-q", "toddler/local-1");
+      mkdirSync(join(repo.root, ".sandcastle/specs/1-landing/issues"), {
+        recursive: true,
+      });
+      if (link === "issue file")
+        symlinkSync(secret, join(repo.root, issueFile));
+      else {
+        rmSync(join(repo.root, ".sandcastle/specs"), { recursive: true });
+        symlinkSync(outside, join(repo.root, ".sandcastle/specs"));
+      }
+      repo.git("add", ".");
+      repo.git("commit", "-qm", "link");
+      const reviewed = repo.git("rev-parse", "HEAD");
+      repo.git("checkout", "-q", "main");
+      const before = repo.git("rev-parse", "main");
+      const { runner, state } = landing(repo, pass);
+      state.jobs[1].reviewedSha = reviewed;
+      assert.equal(
+        await quiet(() => runner.landing.land(issue(1))),
+        "attention",
+      );
+      assert.equal(state.jobs[1].attention?.reason, "refused");
+      assert.match(state.jobs[1].attention!.detail, /not a regular file/);
+      assert.equal(
+        readFileSync(secret, "utf8"),
+        "---\nstatus: open\n---\nhost file\n",
+      );
+      assert.equal(repo.git("rev-parse", "main"), before);
+      assert.equal(repo.git("worktree", "list").split("\n").length, 1);
     } finally {
       rmSync(repo.top, { recursive: true, force: true });
     }
