@@ -22,6 +22,13 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
     assert.equal(load({ forge: "none" }).issues, "files");
     assert.equal(load({ repository: "owner/name" }).autoMerge, false);
     assert.equal(load({ forge: "none", autoMerge: true }).autoMerge, true);
+    assert.equal(load({ repository: "a/b" }).landingPollSeconds, 60);
+    assert.equal(
+      load({ repository: "a/b", landingPollSeconds: 10 }).landingPollSeconds,
+      10,
+    );
+    // Ignored without a forge.
+    assert.equal(load({ forge: "none", landingPollSeconds: 1 }).forge, "none");
     assert.ok(
       connect(
         root,
@@ -35,6 +42,8 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
       [{ forge: "other", repository: "a/b" }, /forge/],
       [{ issues: "other", repository: "a/b" }, /issues/],
       [{ autoMerge: "true", repository: "a/b" }, /autoMerge/],
+      [{ landingPollSeconds: 9, repository: "a/b" }, /landingPollSeconds/],
+      [{ landingPollSeconds: "60", repository: "a/b" }, /landingPollSeconds/],
       [
         { forge: "none", repository: "a/b" },
         /repository.*only used with a forge/,

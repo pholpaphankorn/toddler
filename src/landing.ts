@@ -36,7 +36,6 @@ export type LandingEvent =
 // Gets approved jobs into the base: host merge + verify + deliver one job at a time, then polls until landed.
 export class Landing {
   jobs = new Set<number>();
-  pollInterval = 60_000;
   private runner: Runner;
   private turn: Promise<void> = Promise.resolve();
   constructor(runner: Runner) {
@@ -55,9 +54,33 @@ export class Landing {
       this.jobs.delete(issue.number);
     }
   }
+  // Once per run: a request left to phol (no auto-merge) that was merged by hand becomes landed.
+  async recheck(): Promise<void> {
+    const { config, forge, state } = this.runner;
+    if (config.autoMerge || config.forge === "none") return;
+    for (const job of Object.values(state.jobs)) {
+      if (job.status !== "approved" || !job.pr) continue;
+      try {
+        const { state: polled } = await forge.poll({
+          branch: job.branch,
+          sha: job.reviewedSha!,
+          base: job.baseBranch,
+        });
+        if (polled !== "landed") continue;
+        this.runner.persist(job, { status: "landed", attention: undefined });
+        this.runner.landedThisRun.add(job.number);
+        console.log(`[issue #${job.number}] landed on ${job.baseBranch}`);
+      } catch (error) {
+        console.error(
+          `[issue #${job.number}] could not poll ${job.pr}: ${(error as Error).message}`,
+        );
+      }
+    }
+  }
   private async follow(issue: Issue, job: Job): Promise<LandingEvent> {
     const { forge, config } = this.runner;
-    let sha = job.reviewedSha!;
+    // Build on what was already pushed, so the next plain push fast-forwards it.
+    let sha = (await this.pushed(job)) ?? job.reviewedSha!;
     const poll = () =>
       forge.poll({ branch: job.branch, sha, base: job.baseBranch });
     // Resume re-checks the forge (or the local base) before acting.
@@ -70,13 +93,14 @@ export class Landing {
           console.log(`[issue #${job.number}] landed on ${job.baseBranch}`);
           return "landed";
         case "none":
-        case "behind": {
+        case "behind":
+        case "conflict": {
           let result;
           try {
             result = await this.serial(() => this.deliver(issue, job, sha));
           } catch (error) {
             if (!(error instanceof MergeFixNeeded)) throw error;
-            return this.mergeFix(job, error.fix);
+            return await this.mergeFix(job, error.fix);
           }
           if (!result) return;
           sha = result.sha;
@@ -114,16 +138,38 @@ export class Landing {
             "auto-merge-off",
             `auto-merge was turned off on ${job.pr ?? job.branch}`,
           );
-        default:
-          // #88: a forge conflict goes through the host merge; ci-failed becomes a merge fix.
-          throw new Error(`${job.pr ?? job.branch}: ${polled.state}`);
+        case "ci-failed":
+          return await this.mergeFix(job, {
+            trigger: "ci-failed",
+            checks: polled.checks,
+          });
       }
-      await this.runner.wait(this.pollInterval);
+      await this.runner.wait(
+        config.landingPollSeconds * 1000,
+        this.runner.stopping.signal,
+      );
+      if (this.runner.interrupted) return;
       polled = await poll();
     }
   }
+  // The host commits last handed to the forge on top of reviewedSha (host merges, close commit), if any.
+  private async pushed(job: Job): Promise<string | undefined> {
+    const sha = job.deliveredSha;
+    if (
+      sha &&
+      sha !== job.reviewedSha &&
+      (await this.ancestor(job.reviewedSha!, sha))
+    )
+      return sha;
+  }
   // One trigger = one round; the job leaves landing and takes a slot ahead of fresh issues.
-  private mergeFix(job: Job, fix: NonNullable<Job["mergeFix"]>): LandingEvent {
+  // The round starts from the pushed head (`from`), so its result fast-forwards the PR branch.
+  private async mergeFix(
+    job: Job,
+    fix: NonNullable<Job["mergeFix"]>,
+  ): Promise<LandingEvent> {
+    const from = await this.pushed(job);
+    if (from) fix = { ...fix, from };
     if (job.mergeFixRounds >= this.runner.config.maxMergeFixRounds)
       throw new AttentionError(
         "merge-fix-cap",
@@ -174,6 +220,9 @@ export class Landing {
         if (runner.interrupted) return;
       }
       await this.prove(job, sha, base);
+      // Recorded before the push: on resume the next round or delivery builds on it either way.
+      if (runner.config.forge !== "none")
+        runner.persist(job, { deliveredSha: sha });
       const delivered = await runner.forge.deliver({
         branch: job.branch,
         sha,

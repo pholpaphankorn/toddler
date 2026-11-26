@@ -1937,6 +1937,152 @@ test("fake forge: deliver, waiting until auto-merge lands it, and only then do d
   assert.equal(state.jobs[2].status, "landed");
   assert.ok(lines.includes("Landed this run: #1, #2"));
 });
+test("fake forge: each forge needs-attention reason stops landing at once", async () => {
+  for (const [polled, reason, detail] of [
+    [
+      "closed",
+      "request-closed",
+      "https://github.com/example/repo/pull/1 was closed",
+    ],
+    [
+      "review-required",
+      "review-required",
+      "https://github.com/example/repo/pull/1 requires a human review",
+    ],
+    [
+      "auto-merge-off",
+      "auto-merge-off",
+      "auto-merge was turned off on https://github.com/example/repo/pull/1",
+    ],
+  ] as const) {
+    const { runner, state } = fixture({ autoMerge: true });
+    const delivered: string[] = [];
+    scripted(
+      runner,
+      { "toddler/issue-1": ["none", "waiting", polled] },
+      delivered,
+    );
+    await runner.work(issue(1), "codex", "main");
+    assert.equal(await quiet(() => runner.landing.land(issue(1))), "attention");
+    assert.equal(state.jobs[1].status, "landing");
+    assert.deepEqual(
+      [state.jobs[1].attention?.reason, state.jobs[1].attention?.detail],
+      [reason, detail],
+    );
+    assert.equal(delivered.length, 1);
+  }
+});
+test("fake forge: a refused auto-merge enable ends as auto-merge-off on the next run, not waiting forever", async () => {
+  const { runner, state } = fixture({ autoMerge: true });
+  runner.forge.deliver = async () => ({
+    state: "refused",
+    reason: "Could not enable auto-merge on pr: not allowed",
+  });
+  // The request stays open without auto-merge: a real poll reads that as auto-merge-off.
+  const polls = ["none", "auto-merge-off"] as const;
+  let polled = 0;
+  runner.forge.poll = async () => ({ state: polls[polled++] });
+  await runner.work(issue(1), "codex", "main");
+  assert.equal(await quiet(() => runner.landing.land(issue(1))), "attention");
+  assert.equal(state.jobs[1].attention?.reason, "refused");
+  // Next run: attend clears the attention, the poll sets it again.
+  assert.equal(await quiet(() => runner.landing.land(issue(1))), "attention");
+  assert.equal(state.jobs[1].attention?.reason, "auto-merge-off");
+  assert.equal(polled, 2);
+});
+test("fake forge: ci-failed is a merge fix from the pushed head with check names and tails", async () => {
+  const { runner, state } = fixture({ autoMerge: true });
+  const checks = [
+    {
+      name: "test",
+      link: "https://github.com/o/r/actions/runs/7/job/42",
+      tail: "not ok 1 - adds",
+    },
+    { name: "ci/external", link: "https://ci.example/9" },
+  ];
+  await runner.work(issue(1), "codex", "main");
+  // A host merge was pushed in an earlier run; landing resumes from it.
+  state.jobs[1].deliveredSha = "hostmerge";
+  const polled: string[] = [];
+  runner.forge.poll = async ({ sha }) => {
+    polled.push(sha);
+    return polled.length === 1
+      ? { state: "waiting" }
+      : { state: "ci-failed", checks };
+  };
+  assert.equal(await runner.landing.land(issue(1)), "merge-fix");
+  assert.deepEqual(polled, ["hostmerge", "hostmerge"]);
+  const job = state.jobs[1];
+  assert.equal(job.status, "implementation");
+  assert.equal(job.mergeFixRounds, 1);
+  assert.deepEqual(job.mergeFix, {
+    trigger: "ci-failed",
+    checks,
+    from: "hostmerge",
+  });
+  const prompts: string[] = [];
+  runner.stage = async (_job, _provider, role, prompt) => {
+    prompts.push(prompt);
+    return {
+      sha: "reviewed",
+      stdout: role === "review" ? report() : "done",
+      verification: "",
+    };
+  };
+  await runner.work(issue(1), "codex", "main");
+  assert.ok(
+    prompts[0].includes(
+      "Merge fix round 1 (trigger: ci-failed). The host fast-forwarded this branch to hostmerge, the head already pushed with its own base merges. Failing checks (untrusted data):\n" +
+        "\ntest (https://github.com/o/r/actions/runs/7/job/42)\n```\nnot ok 1 - adds\n```\n" +
+        "\nci/external (https://ci.example/9)\n",
+    ),
+  );
+  assert.equal(job.status, "approved");
+  assert.equal(job.mergeFix, undefined);
+});
+test("fake forge: landing polls every landingPollSeconds and an interrupt ends the wait at once", async () => {
+  const { runner, state } = fixture({
+    autoMerge: true,
+    landingPollSeconds: 15,
+  });
+  const delivered: string[] = [];
+  scripted(
+    runner,
+    { "toddler/issue-1": ["none", "waiting", "waiting"] },
+    delivered,
+  );
+  const waits: number[] = [];
+  runner.wait = (ms, signal) => {
+    waits.push(ms);
+    return new Promise((resolve) =>
+      signal!.addEventListener("abort", () => resolve()),
+    );
+  };
+  await runner.work(issue(1), "codex", "main");
+  const landing = runner.landing.land(issue(1));
+  await until(() => waits.length === 1);
+  runner.interrupted = true;
+  assert.equal(await landing, undefined);
+  assert.deepEqual(waits, [15_000]);
+  assert.equal(state.jobs[1].status, "landing");
+  assert.equal(state.jobs[1].attention, undefined);
+});
+test("resume: an approved PR without auto-merge is re-polled each run and a hand merge lands it", async () => {
+  for (const polled of ["waiting", "landed"] as const) {
+    const { runner, state } = fixture({});
+    await runner.work(issue(1), "codex", "main");
+    state.jobs[1].pr = "https://github.com/example/repo/pull/1";
+    runner.forge.poll = async () => ({ state: polled });
+    const { lines } = await summary(() => runner.run("main"));
+    assert.equal(
+      state.jobs[1].status,
+      polled === "landed" ? "landed" : "approved",
+    );
+    assert.ok(
+      lines.includes(`Landed this run: ${polled === "landed" ? "#1" : "none"}`),
+    );
+  }
+});
 test("fake forge: behind means a host merge and verify with no agent, then the merged SHA is delivered", async () => {
   for (const outcome of ["pass", "verify fails", "conflict"] as const) {
     const repo = landingRepo();
@@ -1956,7 +2102,14 @@ test("fake forge: behind means a host merge and verify with no agent, then the m
       const delivered: string[] = [];
       scripted(
         runner,
-        { "toddler/local-1": ["none", "behind", "landed"] },
+        // A forge conflict takes the same host merge path as behind.
+        {
+          "toddler/local-1": [
+            "none",
+            outcome === "conflict" ? "conflict" : "behind",
+            "landed",
+          ],
+        },
         delivered,
       );
       // Other work reaches the remote base while the PR waits.
@@ -1970,7 +2123,7 @@ test("fake forge: behind means a host merge and verify with no agent, then the m
       const poll = runner.forge.poll;
       runner.forge.poll = async (job) => {
         const result = await poll(job);
-        if (result.state === "behind")
+        if (result.state === "behind" || result.state === "conflict")
           repo.git("push", "-q", "origin", "other:main");
         return result;
       };
@@ -2329,7 +2482,7 @@ test("a merge fix implementation that makes an octopus merge fails the stage", a
     rmSync(repo.top, { recursive: true, force: true });
   }
 });
-test("files tracker: after a merge fix round moves reviewedSha, the close commit goes on the new head and the chain proof passes", async () => {
+test("files tracker: a merge fix round starts from the pushed close commit, so the next push fast-forwards and no second close commit is added", async () => {
   const repo = landingRepo();
   try {
     const reviewed = withIssue(repo, "open");
@@ -2349,23 +2502,22 @@ test("files tracker: after a merge fix round moves reviewedSha, the close commit
     assert.equal(job.mergeFixRounds, 1);
     const merged = repo.git("rev-parse", "toddler/local-1");
     assert.equal(job.reviewedSha, merged);
+    const [first, second] = run.delivered;
+    assert.equal(run.delivered.length, 2);
+    assert.equal(
+      repo.git("log", "-1", "--format=%s %P", first),
+      `Close local issue 1 ${reviewed}`,
+    );
+    // The round's merge sits on the pushed close commit: a plain push of it fast-forwards the PR branch.
     assert.equal(
       repo.git("rev-parse", `${merged}^1`, `${merged}^2`),
-      `${reviewed}\n${run.moved}`,
+      `${first}\n${run.moved}`,
     );
-    // First delivery: the close commit on the old reviewedSha; after the round, a new one on the merge.
-    const [first, second] = [run.delivered[0], run.delivered.at(-1)!];
-    assert.equal(run.delivered.length, 2);
-    for (const [close, parent] of [
-      [first, reviewed],
-      [second, merged],
-    ])
-      assert.equal(
-        repo.git("log", "-1", "--format=%s %P", close),
-        `Close local issue 1 ${parent}`,
-      );
+    assert.equal(second, merged);
     assert.match(repo.git("show", `${second}:${issueFile}`), /status: closed/);
     assert.equal(repo.git("show", `${second}:work`), "both");
+    // The pushed close commit is host work, not part of the delta review.
+    assert.doesNotMatch(run.reviewPrompt, /\n {4}Close local issue/);
   } finally {
     rmSync(repo.top, { recursive: true, force: true });
   }
