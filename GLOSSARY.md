@@ -51,6 +51,9 @@ _Avoid_: done, merged
 **Host merge**: a merge of the base branch into an issue's reviewed branch, made by toddler itself with no agent, and landed without another review when it is clean and passes the project's verify.
 _Avoid_: rebase, sync, update branch
 
+**Merge fix round**: one return of an approved issue to implement → review because something an agent can fix blocks it from landing (a conflict with the base, failing CI, a failing verify). Its review looks only at what changed since the last approval.
+_Avoid_: rework, conflict round, retry
+
 **Provider login**: the subscription sign-in toddler holds for one provider, made through toddler and kept apart from the user's own sign-ins to that provider's CLI on the same machine.
 _Avoid_: auth, token
 
