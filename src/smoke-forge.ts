@@ -1,11 +1,11 @@
 // `toddler smoke forge <github|gitlab> <scratch-repository>`: by hand only, never in CI or tests against a real forge.
 // Opens a request one commit behind the base, pushes a host merge of the base, and reports the forge behaviours
 // nobody has tried yet; then closes the request and deletes the branch.
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaults, type Config } from "./config.ts";
-import { GitHubForge, GitLabForge } from "./forge.ts";
+import { configPath, defaults, type Config } from "./config.ts";
+import { GitHubForge, GitLabForge, validatePushRemote } from "./forge.ts";
 import { command, type Command } from "./process.ts";
 
 export const smokeForgeUsage =
@@ -21,6 +21,22 @@ export async function smokeForge(
   // Never falls back to the current repository: the scratch one must be named.
   if (!["github", "gitlab"].includes(kind) || !repository?.includes("/"))
     throw new Error(smokeForgeUsage);
+  // Never the project toddler is run from (its config or its origin remote): that base is not scratch.
+  const root = await run("git", ["rev-parse", "--show-toplevel"]).catch(
+    () => "",
+  );
+  const own = await readFile(configPath(root), "utf8").then(
+    (text) => JSON.parse(text).repository,
+    () => undefined,
+  );
+  const origin = await validatePushRemote(run, "origin", repository, kind).then(
+    () => true,
+    () => false,
+  );
+  if (own === repository || origin)
+    throw new Error(
+      `${repository} is the current project's repository, not a scratch one`,
+    );
   const gitlab = kind === "gitlab";
   const cli = gitlab ? "glab" : "gh";
   const dir = await mkdtemp(join(tmpdir(), "toddler-forge-smoke-"));
@@ -32,9 +48,11 @@ export async function smokeForge(
     remote: "origin",
     autoMerge: true,
   } as Config;
-  const forge = gitlab
-    ? new GitLabForge(dir, config, run, run)
-    : new GitHubForge(dir, config, run, run);
+  const connect = (autoMerge: boolean) =>
+    gitlab
+      ? new GitLabForge(dir, { ...config, autoMerge }, run, run)
+      : new GitHubForge(dir, { ...config, autoMerge }, run, run);
+  const forge = connect(true);
   const project = `projects/${encodeURIComponent(repository)}`;
   const branch = `toddler-smoke-${Date.now()}`;
   let url: string | undefined;
@@ -90,16 +108,25 @@ export async function smokeForge(
       body: "Opened by `toddler smoke forge`; it closes this request and deletes the branch when it finishes.",
     };
     pushed = true;
-    const delivered = await forge.deliver({ ...delivery, sha: first });
+    // Opened without auto-merge first: it is turned on only once the request cannot merge at once.
+    const delivered = await connect(false).deliver({ ...delivery, sha: first });
     if (delivered.state !== "waiting")
       throw new Error(`deliver: ${JSON.stringify(delivered)}`);
     url = delivered.url;
+    const opened = await read();
+    if (
+      gitlab
+        ? opened.detailed_merge_status === "mergeable"
+        : !["BLOCKED", "BEHIND"].includes(opened.mergeStateStatus)
+    )
+      throw new Error(
+        `${url} could merge at once (${describe(opened)}), so auto-merge was not turned on: give the scratch repository a required check that never reports (see README)`,
+      );
+    const armed = await forge.deliver({ ...delivery, sha: first });
+    if (armed.state !== "waiting")
+      throw new Error(`deliver: ${JSON.stringify(armed)}`);
     const before = await read();
     log(`opened: ${url} (${describe(before)})`);
-    if (before.state === "MERGED" || before.state === "merged")
-      throw new Error(
-        "the request merged at once: give the scratch repository a required check that never reports (see README)",
-      );
     await git(["merge", "--no-edit", ref]);
     const merge = await git(["rev-parse", "HEAD"]);
     // A plain push, as toddler's own deliver does, but without re-enabling auto-merge yet.

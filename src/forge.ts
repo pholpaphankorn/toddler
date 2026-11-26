@@ -763,6 +763,9 @@ export class GitLabForge implements Forge {
     );
     if (requests.some((item) => item.state === "merged"))
       return { state: "landed" };
+    // `locked` is a request GitLab is merging right now.
+    if (requests.some((item) => item.state === "locked"))
+      return { state: "waiting" };
     const listed = requests.find((item) => item.state === "opened");
     if (!listed) return { state: requests.length ? "closed" : "none" };
     const mr: GitLabRequest = await this.api(
@@ -783,9 +786,9 @@ export class GitLabForge implements Forge {
       return { state: "waiting" };
     if (status === "conflict" || mr.has_conflicts) return { state: "conflict" };
     if (status === "need_rebase") return { state: "behind" };
-    // A pipeline is only `failed` once it has finished.
+    // Only finished pipelines count; a canceled one never merges either.
     const pipeline = mr.head_pipeline;
-    if (pipeline?.status === "failed")
+    if (pipeline && ["failed", "canceled"].includes(pipeline.status))
       return {
         state: "ci-failed",
         checks: await this.failedChecks(pipeline, mr.sha!),

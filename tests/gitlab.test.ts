@@ -476,6 +476,21 @@ const pollRows: [string, object[], object][] = [
     { state: "waiting" },
   ],
   [
+    "locked while GitLab merges it",
+    [{ ...open, state: "locked" }],
+    { state: "waiting" },
+  ],
+  [
+    "a canceled pipeline is ci-failed, not waiting forever",
+    [
+      {
+        ...open,
+        head_pipeline: { id: 7, status: "canceled", web_url: "pipeline" },
+      },
+    ],
+    ciFailed,
+  ],
+  [
     "another head is reported, not judged",
     [{ ...open, sha: "foreign", ...failing }],
     ciFailed,

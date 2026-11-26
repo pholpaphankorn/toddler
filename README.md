@@ -323,16 +323,22 @@ files are directed to Seatbelt's private temp directory with `CLAUDE_CODE_TMPDIR
 
 `toddler smoke forge <github|gitlab> <scratch-repository>` checks forge
 behaviours toddler relies on but nobody has tried yet. Run it by hand, never in
-CI, and only against a scratch repository you own: it refuses to run without
-one, and never uses the current repository. It clones the scratch repository
-into a temporary directory, opens a request from a new `toddler-smoke-<time>`
-branch that starts one commit behind the default branch (which needs at least
-two commits), turns on auto-merge as `deliver` does, merges the base into the
-branch and pushes that merge plainly, delivers again, and polls once. Whatever
-happens, it then closes the request and deletes the branch. For the answers to
-mean something, the scratch repository needs a required check that never
-reports (so auto-merge stays pending instead of merging at once) and, on
-GitHub, "require branches to be up to date" and "require linear history" on the
+CI, and only against a scratch repository you own. It refuses to run without
+one named, and refuses the repository of the project it is run from (its
+`.sandcastle/config.json` `repository` or its `origin` push remote); any other
+repository you name is taken to be scratch. It clones the scratch repository
+into a temporary directory and opens a request, without auto-merge, from a new
+`toddler-smoke-<time>` branch that starts one commit behind the default branch
+(which needs at least two commits). Auto-merge is turned on only when the
+request cannot merge at once (GitHub `mergeStateStatus` `BLOCKED` or `BEHIND`;
+GitLab `detailed_merge_status` other than `mergeable`); otherwise it stops
+without merging anything. It then merges the base into the branch, pushes that
+merge plainly, delivers again, and polls once. Whatever happens, it then closes
+the request and deletes the branch. A check or pipeline that later passes would
+let auto-merge merge the smoke commit into the scratch default branch, so the
+scratch repository needs a required check that never reports (on GitLab,
+"Pipelines must succeed" with a pipeline that never finishes) and, on GitHub,
+"require branches to be up to date" and "require linear history" on the
 default branch; on GitLab, the fast-forward or semi-linear merge method. Each
 line it prints:
 
