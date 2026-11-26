@@ -2039,11 +2039,12 @@ test("fake forge: behind means a host merge and verify with no agent, then the m
 function mergeFixRun(
   repo: ReturnType<typeof landingRepo>,
   implement: (git: (...args: string[]) => string, attempt: number) => void,
+  overrides: Partial<Config> = { issues: "forge" },
 ) {
   const worktree = join(repo.top, "issue-worktree");
   const { runner, state } = landing(repo, pass, {
     forge: "github",
-    issues: "forge",
+    ...overrides,
   });
   state.jobs[1].baseSha = repo.git("rev-parse", "main");
   runner.tracker.issues = async () => [issue(1)];
@@ -2261,6 +2262,87 @@ const approvedJob = (number: number, changes: Partial<Job> = {}): Job => ({
   reviewedSha: "reviewed",
   report: reviewReport(report()),
   ...changes,
+});
+test("a merge fix implementation that makes an octopus merge fails the stage", async () => {
+  const repo = landingRepo();
+  try {
+    const dir = join(repo.top, "issue-worktree");
+    const run = mergeFixRun(repo, (git) => {
+      // --remerge-diff would show nothing for this merge: any tree, pinned base among its parents.
+      git("merge", "--abort");
+      git("checkout", "-qb", "side", run.moved);
+      writeFileSync(join(dir, "extra"), "side");
+      git("add", "extra");
+      git("commit", "-qm", "side");
+      git("checkout", "-q", "toddler/local-1");
+      writeFileSync(join(dir, "work"), "both");
+      writeFileSync(join(dir, "extra"), "sneaky");
+      git("add", "-A");
+      const tree = git("write-tree");
+      const octopus = git(
+        "commit-tree",
+        tree,
+        "-p",
+        "HEAD",
+        "-p",
+        run.moved,
+        "-p",
+        "side",
+        "-m",
+        "octopus",
+      );
+      git("reset", "-q", "--hard", octopus);
+    });
+    await quiet(() => summary(() => run.runner.run("main")));
+    const job = run.state.jobs[1];
+    assert.equal(job.attention?.reason, "stage-failed");
+    assert.match(job.attention!.detail, /more than two parents/);
+    assert.ok(!run.seen.some((stage) => stage.role === "review"));
+    assert.equal(job.reviewedSha, repo.reviewed);
+  } finally {
+    rmSync(repo.top, { recursive: true, force: true });
+  }
+});
+test("files tracker: after a merge fix round moves reviewedSha, the close commit goes on the new head and the chain proof passes", async () => {
+  const repo = landingRepo();
+  try {
+    const reviewed = withIssue(repo, "open");
+    const run = mergeFixRun(
+      repo,
+      (git) => {
+        writeFileSync(join(repo.top, "issue-worktree", "work"), "both");
+        git("commit", "-qam", "resolve");
+      },
+      { issues: "files" },
+    );
+    run.state.jobs[1].reviewedSha = reviewed;
+    await quiet(() => summary(() => run.runner.run("main")));
+    const job = run.state.jobs[1];
+    assert.equal(job.attention, undefined);
+    assert.equal(job.status, "landed");
+    assert.equal(job.mergeFixRounds, 1);
+    const merged = repo.git("rev-parse", "toddler/local-1");
+    assert.equal(job.reviewedSha, merged);
+    assert.equal(
+      repo.git("rev-parse", `${merged}^1`, `${merged}^2`),
+      `${reviewed}\n${run.moved}`,
+    );
+    // First delivery: the close commit on the old reviewedSha; after the round, a new one on the merge.
+    const [first, second] = [run.delivered[0], run.delivered.at(-1)!];
+    assert.equal(run.delivered.length, 2);
+    for (const [close, parent] of [
+      [first, reviewed],
+      [second, merged],
+    ])
+      assert.equal(
+        repo.git("log", "-1", "--format=%s %P", close),
+        `Close local issue 1 ${parent}`,
+      );
+    assert.match(repo.git("show", `${second}:${issueFile}`), /status: closed/);
+    assert.equal(repo.git("show", `${second}:work`), "both");
+  } finally {
+    rmSync(repo.top, { recursive: true, force: true });
+  }
 });
 test("merge fix caps: past maxMergeFixRounds is merge-fix-cap; review rejections count from 0 each round up to review-cap", async () => {
   {

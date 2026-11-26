@@ -457,6 +457,22 @@ export class Runner {
             throw new Error(
               `Merge fix round did not commit the merge of ${job.mergeFix.base}`,
             );
+          // The delta review's --remerge-diff skips octopus merges, so a merge fix round may not make one.
+          if (
+            role === "implementation" &&
+            job.mergeFix &&
+            (await this.git(
+              [
+                "rev-list",
+                "--min-parents=3",
+                `${job.reviewedSha ?? job.baseSha}..${after}`,
+              ],
+              sandbox.worktreePath,
+            ))
+          )
+            throw new Error(
+              "Merge fix round made a merge with more than two parents; merge only the pinned base",
+            );
           await this.git(
             ["merge-base", "--is-ancestor", job.baseSha, after],
             sandbox.worktreePath,
