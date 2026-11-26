@@ -21,10 +21,17 @@ A spec, ready to break into toddler issues, for how toddler schedules agents by 
 
 ## Decisions so far
 
+- [What each CLI reports when a session hits the provider's own limit](issues/90-provider-limit-signals.md): Claude gives typed `api_error: "usage_limit_reached"` + `rateLimitType`/`resetsAt` in stream-json, Codex only a text message (no reset time); sandcastle flattens both to `exited with code 1`, but `onAgentStreamEvent` sees raw lines; `ordinaryUsageAllowed` is the backend's own flag, not derived from percentages. Source-read only, nothing reproduced live.
+- [When a stop lifts, and what reads quota while a provider is stopped](issues/91-stops-lift.md): stopped providers are re-read on every refresh; stops are recomputed per (provider, model) from all conditions and lift when none returns them; a failed read lifts on the next good read and blocks new starts without cancelling live sessions; interrupt becomes a run state, not a stop; lifts are logged.
+- [Sleeping until the next reset: what wakeAt returns](issues/92-wake-at.md): wake at the earliest reset over all windows of all stops, capped at a 30 min recheck (which also covers stops with no reset); no cap on total sleep; still stopped on wake → sleep again; interrupt ends the run at once.
+- [A provider-limit failure counted as a quota stop](issues/93-provider-limit-failure.md): recognised by Claude's typed `usage_limit_reached` or Codex's error text, else a fresh reading decides; Claude per-model buckets stop provider + model, otherwise the whole provider; held until the failure's reset time (30 min if none) then the normal lifting rule, and that time feeds `wakeAt`; job back to ready, stage not counted as a round; other live sessions with the same key cancelled.
+- [pick and the new ranker contract](issues/94-pick-and-ranker-contract.md): new `scheduler.ts` with `admit`, `pick(role, job) → { provider, release() } | none` and `wakeAt`; `running` counts from pick to release; ranker sees only `{ candidates }` and only 2+; `"quota"`/`"order"` error, default `balanced`; built-ins are files through the same loader; a job with no provider gives up its slot and waits; sticky implementer via `Job.implementer`, moves at once when stopped.
+- [How plan and doctor explain a ranking or a stop](issues/95-plan-doctor-explain.md): `plan` prints text (Providers with stops and how they lift, Slots, Next stages with the picked provider or why not, would-sleep line), `--json` kept; fills slots like a dry run; no ranker reasons; doctor's ranking row only checks the ranker loads.
+
 ## Not yet specified
 
 - Whether `Reading` should carry Codex's `ordinaryUsageAllowed` (a backend yes/no its source trusts over percentages) as a built-in stop condition; carried over from spec 4, and likely shaped by [What each CLI reports when a session hits the provider's own limit](issues/90-provider-limit-signals.md).
-- How 60-second quota polling works once several sessions share one provider and nothing may be running while the run sleeps (one shared poller vs per-session timers).
+- How 60-second quota polling works once several sessions share one provider (one shared poller vs per-session timers). While the run sleeps nothing polls; the `wakeAt` timer does the re-read ([Sleeping until the next reset](issues/92-wake-at.md)).
 
 ## Out of scope
 
