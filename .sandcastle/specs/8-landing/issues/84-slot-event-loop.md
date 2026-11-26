@@ -3,7 +3,7 @@ title: Slot-based event loop
 labels: []
 blocked_by: [83]
 parent: 8
-status: open
+status: closed
 ---
 Issues start as soon as a slot frees instead of waiting for a whole batch, and one issue's failure no longer stops the run.
 
