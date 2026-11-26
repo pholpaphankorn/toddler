@@ -440,6 +440,23 @@ export class Runner {
             );
           if (role === "review" && before !== after)
             throw new Error("Reviewer modified commits; approval rejected");
+          if (
+            role === "implementation" &&
+            job.mergeFix?.base &&
+            !(await this.git(
+              ["merge-base", "--is-ancestor", job.mergeFix.base, after],
+              sandbox.worktreePath,
+            ).then(
+              () => true,
+              (error) => {
+                if ((error as { code?: unknown }).code !== 1) throw error;
+                return false;
+              },
+            ))
+          )
+            throw new Error(
+              `Merge fix round did not commit the merge of ${job.mergeFix.base}`,
+            );
           await this.git(
             ["merge-base", "--is-ancestor", job.baseSha, after],
             sandbox.worktreePath,
@@ -617,8 +634,9 @@ export class Runner {
                 this.skillInstructions(provider, "review", job) +
                 context +
                 // A legacy conflictBase job may not have been approved yet: it gets the full review.
+                // Every commit not in the approved head or the pinned base shows, so nothing rides in on a merge.
                 (job.mergeFix && job.reviewedSha
-                  ? `\nMerge fix round ${job.mergeFixRounds} (trigger: ${job.mergeFix.trigger}): the complete diff was approved at ${job.reviewedSha}; review only this delta to ${job.branch}, merges shown as remerge diffs:\n${fence(await this.git(["log", "-p", "--first-parent", "--remerge-diff", `${job.reviewedSha}..${job.branch}`]))}\n`
+                  ? `\nMerge fix round ${job.mergeFixRounds} (trigger: ${job.mergeFix.trigger}): the complete diff was approved at ${job.reviewedSha}; review only this delta to ${job.branch}, merges shown as remerge diffs:\n${fence(await this.git(["log", "-p", "--remerge-diff", `${job.reviewedSha}..${job.branch}`, ...(job.mergeFix.base ? [`^${job.mergeFix.base}`] : [])]))}\n`
                   : ""),
             );
           } catch (error) {

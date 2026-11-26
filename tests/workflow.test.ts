@@ -1874,97 +1874,111 @@ test("fake forge: behind means a host merge and verify with no agent, then the m
     }
   }
 });
+// behind → host merge conflict → a merge fix round with real stages on a real issue worktree, kept between
+// stages like a preserved one; `implement` scripts the implementer (attempt counts from 1), the reviewer approves.
+function mergeFixRun(
+  repo: ReturnType<typeof landingRepo>,
+  implement: (git: (...args: string[]) => string, attempt: number) => void,
+) {
+  const worktree = join(repo.top, "issue-worktree");
+  const { runner, state } = landing(repo, pass, {
+    forge: "github",
+    issues: "forge",
+  });
+  state.jobs[1].baseSha = repo.git("rev-parse", "main");
+  runner.tracker.issues = async () => [issue(1)];
+  runner.forge.base = async (branch = "main") => {
+    repo.git("fetch", "-q", "origin", branch);
+    return { branch, ref: `origin/${branch}` };
+  };
+  const delivered: string[] = [];
+  scripted(
+    runner,
+    { "toddler/local-1": ["none", "behind", "behind", "landed"] },
+    delivered,
+  );
+  repo.git("checkout", "-qb", "other", "main");
+  const moved = repo.commit("other", "work", "theirs");
+  repo.git("checkout", "-q", "main");
+  const poll = runner.forge.poll;
+  runner.forge.poll = async (job) => {
+    const result = await poll(job);
+    if (result.state === "behind")
+      repo.git("push", "-q", "origin", "other:main");
+    return result;
+  };
+  const git = (...args: string[]) => {
+    const result = spawnSync("git", args, { cwd: worktree, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  const seen: { role: string; mergeHead: string; work: string }[] = [];
+  const out = { runner, state, delivered, moved, seen, git, reviewPrompt: "" };
+  runner.stage = Runner.prototype.stage;
+  Object.assign(runner, {
+    quotas: fake({
+      ...runner.quotas,
+      run: async (
+        _p: Provider,
+        _m: string,
+        action: (s: AbortSignal) => unknown,
+      ) => action(new AbortController().signal),
+    }),
+    authentication: { codex: async () => "", claude: async () => "" },
+  });
+  const agent = (model: string) => ({
+    model,
+    buildPrintCommand: () => ({ command: "cli", stdin: "" }),
+  });
+  const verifySandbox = runner.sandcastle!.createSandbox;
+  let attempt = 0;
+  runner.sandcastle = fake({
+    codex: agent,
+    claudeCode: agent,
+    createSandbox: async (options: { branch: string }) => {
+      if (options.branch !== "toddler/local-1")
+        return verifySandbox(options as never);
+      if (!seen.length) repo.git("worktree", "add", worktree, options.branch);
+      return {
+        worktreePath: worktree,
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        close: async () => ({}),
+        run: async ({ name, prompt }: { name: string; prompt: string }) => {
+          const role = name.endsWith("review") ? "review" : "implementation";
+          seen.push({
+            role,
+            mergeHead: spawnSync(
+              "git",
+              ["rev-parse", "-q", "--verify", "MERGE_HEAD"],
+              { cwd: worktree, encoding: "utf8" },
+            ).stdout.trim(),
+            work: readFileSync(join(worktree, "work"), "utf8"),
+          });
+          if (role === "review") {
+            out.reviewPrompt = prompt;
+            return { stdout: report() };
+          }
+          implement(git, ++attempt);
+          return { stdout: "done" };
+        },
+      };
+    },
+  });
+  return out;
+}
 test("fake forge: behind → conflict → a merge fix round on MERGE_HEAD of the pinned SHA, a delta review, then landing again", async () => {
   const repo = landingRepo();
-  const worktree = join(repo.top, "issue-worktree");
   try {
-    const { runner, state } = landing(repo, pass, {
-      forge: "github",
-      issues: "forge",
+    const run = mergeFixRun(repo, (git, attempt) => {
+      // The first attempt stops half way; the retry finishes the same merge.
+      writeFileSync(
+        join(repo.top, "issue-worktree", "work"),
+        attempt === 1 ? "partial" : "both",
+      );
+      if (attempt === 1) throw new Error("agent stopped");
+      git("commit", "-qam", "resolve");
     });
-    state.jobs[1].baseSha = repo.git("rev-parse", "main");
-    runner.tracker.issues = async () => [issue(1)];
-    runner.forge.base = async (branch = "main") => {
-      repo.git("fetch", "-q", "origin", branch);
-      return { branch, ref: `origin/${branch}` };
-    };
-    const delivered: string[] = [];
-    scripted(
-      runner,
-      { "toddler/local-1": ["none", "behind", "behind", "landed"] },
-      delivered,
-    );
-    repo.git("checkout", "-qb", "other", "main");
-    const moved = repo.commit("other", "work", "theirs");
-    repo.git("checkout", "-q", "main");
-    const poll = runner.forge.poll;
-    runner.forge.poll = async (job) => {
-      const result = await poll(job);
-      if (result.state === "behind")
-        repo.git("push", "-q", "origin", "other:main");
-      return result;
-    };
-    // Real stages on a real issue worktree, kept between stages like a preserved one; the agents are scripted.
-    const inWorktree = (...args: string[]) =>
-      spawnSync("git", args, { cwd: worktree, encoding: "utf8" });
-    const seen: { role: string; mergeHead: string; work: string }[] = [];
-    let reviewPrompt = "";
-    runner.stage = Runner.prototype.stage;
-    Object.assign(runner, {
-      quotas: fake({
-        ...runner.quotas,
-        run: async (
-          _p: Provider,
-          _m: string,
-          action: (s: AbortSignal) => unknown,
-        ) => action(new AbortController().signal),
-      }),
-      authentication: { codex: async () => "", claude: async () => "" },
-    });
-    const agent = (model: string) => ({
-      model,
-      buildPrintCommand: () => ({ command: "cli", stdin: "" }),
-    });
-    const verifySandbox = runner.sandcastle!.createSandbox;
-    runner.sandcastle = fake({
-      codex: agent,
-      claudeCode: agent,
-      createSandbox: async (options: { branch: string }) => {
-        if (options.branch !== "toddler/local-1")
-          return verifySandbox(options as never);
-        if (!seen.length) repo.git("worktree", "add", worktree, options.branch);
-        return {
-          worktreePath: worktree,
-          exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
-          close: async () => ({}),
-          run: async ({ name, prompt }: { name: string; prompt: string }) => {
-            const role = name.endsWith("review") ? "review" : "implementation";
-            seen.push({
-              role,
-              mergeHead: inWorktree(
-                "rev-parse",
-                "-q",
-                "--verify",
-                "MERGE_HEAD",
-              ).stdout.trim(),
-              work: readFileSync(join(worktree, "work"), "utf8"),
-            });
-            if (role === "review") {
-              reviewPrompt = prompt;
-              return { stdout: report() };
-            }
-            // The first attempt stops half way; the retry finishes the same merge.
-            writeFileSync(
-              join(worktree, "work"),
-              seen.length === 1 ? "partial" : "both",
-            );
-            if (seen.length === 1) throw new Error("agent stopped");
-            assert.equal(inWorktree("commit", "-qam", "resolve").status, 0);
-            return { stdout: "done" };
-          },
-        };
-      },
-    });
+    const { runner, state, seen, moved, delivered } = run;
     const first = await quiet(() => summary(() => runner.run("main")));
     assert.equal(first.exitCode, 1);
     assert.equal(state.jobs[1].attention?.reason, "stage-failed");
@@ -1975,6 +1989,7 @@ test("fake forge: behind → conflict → a merge fix round on MERGE_HEAD of the
     await new Promise((resolve) => setTimeout(resolve, 2));
     await quiet(() => summary(() => runner.run("main")));
     const job = state.jobs[1];
+    const reviewPrompt = run.reviewPrompt;
     assert.equal(seen[0].mergeHead, moved);
     assert.match(
       seen[0].work,
@@ -1997,13 +2012,14 @@ test("fake forge: behind → conflict → a merge fix round on MERGE_HEAD of the
         `Merge fix round 1 (trigger: conflict): the complete diff was approved at ${repo.reviewed}`,
       ),
     );
-    // Only the resolution shows: the remerge diff of the merge, not the work it was approved with.
+    // Only the resolution shows: the remerge diff of the merge, not the work it was approved with or the base's commits.
     assert.match(
       reviewPrompt,
       /remerge CONFLICT \(add\/add\): Merge conflict in work/,
     );
     assert.match(reviewPrompt, /\n\+both\n/);
     assert.doesNotMatch(reviewPrompt, /new file mode/);
+    assert.doesNotMatch(reviewPrompt, /\n {4}work\n/);
     assert.ok(
       reviewPrompt.includes(
         `For code-review: the fixed point is \`${repo.reviewed}\``,
@@ -2014,6 +2030,49 @@ test("fake forge: behind → conflict → a merge fix round on MERGE_HEAD of the
     assert.equal(job.mergeFix, undefined);
     assert.equal(job.mergeFixRounds, 1);
     assert.deepEqual(delivered, [repo.reviewed, merged]);
+  } finally {
+    rmSync(repo.top, { recursive: true, force: true });
+  }
+});
+test("regression: a commit smuggled in through a side branch off the base shows in the merge fix review", async () => {
+  const repo = landingRepo();
+  try {
+    const run = mergeFixRun(repo, (git) => {
+      // Abort the host merge, commit extra work on a side branch from the base, merge that in instead.
+      git("merge", "--abort");
+      git("checkout", "-qb", "side", run.moved);
+      writeFileSync(join(repo.top, "issue-worktree", "extra"), "sneaky");
+      git("add", "extra");
+      git("commit", "-qm", "side");
+      git("checkout", "-q", "toddler/local-1");
+      spawnSync("git", ["merge", "-q", "side"], {
+        cwd: join(repo.top, "issue-worktree"),
+      });
+      writeFileSync(join(repo.top, "issue-worktree", "work"), "both");
+      git("commit", "-qam", "resolve");
+    });
+    await quiet(() => summary(() => run.runner.run("main")));
+    assert.equal(run.seen.at(-1)!.role, "review");
+    assert.match(run.reviewPrompt, /\n\+sneaky\n/);
+  } finally {
+    rmSync(repo.top, { recursive: true, force: true });
+  }
+});
+test("a merge fix implementation that does not commit the pinned base's merge fails the stage", async () => {
+  const repo = landingRepo();
+  try {
+    const run = mergeFixRun(repo, (git) => {
+      git("merge", "--abort");
+    });
+    await quiet(() => summary(() => run.runner.run("main")));
+    const job = run.state.jobs[1];
+    assert.equal(job.attention?.reason, "stage-failed");
+    assert.match(
+      job.attention!.detail,
+      new RegExp(`did not commit the merge of ${run.moved}`),
+    );
+    assert.ok(!run.seen.some((stage) => stage.role === "review"));
+    assert.equal(job.status, "implementation");
   } finally {
     rmSync(repo.top, { recursive: true, force: true });
   }
