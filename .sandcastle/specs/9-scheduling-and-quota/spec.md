@@ -28,10 +28,11 @@ A spec, ready to break into toddler issues, for how toddler schedules agents by 
 - [pick and the new ranker contract](issues/94-pick-and-ranker-contract.md): new `scheduler.ts` with `admit`, `pick(role, job) → { provider, release() } | none` and `wakeAt`; `running` counts from pick to release; ranker sees only `{ candidates }` and only 2+; `"quota"`/`"order"` error, default `balanced`; built-ins are files through the same loader; a job with no provider gives up its slot and waits; sticky implementer via `Job.implementer`, moves at once when stopped.
 - [How plan and doctor explain a ranking or a stop](issues/95-plan-doctor-explain.md): `plan` prints text (Providers with stops and how they lift, Slots, Next stages with the picked provider or why not, would-sleep line), `--json` kept; fills slots like a dry run; no ranker reasons; doctor's ranking row only checks the ranker loads.
 - [How scheduling is tested](issues/96-scheduling-tests.md): `scheduler.test.ts` at the `admit`/`pick`/`release`/`wakeAt` seam with scripted readings and one injected clock `{ now(), wait(ms) }`; rankers as plain functions with `Math.random` stubbed; hand-written limit fixtures; exact-text `plan` tests; no real-provider smoke; polling tests left to its own ticket.
+- [How quota polling works with several sessions per provider](issues/97-quota-polling.md): one scheduler-owned poller while `running` > 0, due `pollIntervalMs` after the last refresh; a poll's stop cancels same-key live sessions; a throwing stop-condition module is a failed read; `pick` returns a `signal`, `Quotas.run`/`active` go; the loop waits on `nextPollAt()`.
 
 ## Not yet specified
 
-- Whether `Reading` should carry Codex's `ordinaryUsageAllowed` (a backend yes/no its source trusts over percentages) as a built-in stop condition; carried over from spec 4, and likely shaped by [What each CLI reports when a session hits the provider's own limit](issues/90-provider-limit-signals.md).
+_(nothing left in the fog)_
 
 ## Out of scope
 
