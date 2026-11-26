@@ -12,6 +12,15 @@ Which of toddler's side commands stay as code, become agent work, or go: `init`,
 
 ## Answer
 
+> **Revised 2026-11-26 with phol: the planning kit moves from `init` to `setup`.** `init` = toddler's config; `setup` = make this repo and this machine ready for toddler and for planning sessions outside it. The kit itself (templates, marked block, commit rule, message) is unchanged; only who runs it changes:
+> - **`init`** writes the config on first run and nothing else. On a configured repo it prints "already exists" and does nothing (no kit refresh).
+> - **`setup`** first writes or refreshes the kit (in TypeScript, reading labels from the config), then runs the login wizard. No flags: always both steps; login steps already skip when signed in.
+> - **No config**: `setup` stops with "run `toddler init` first" (it never runs `init` itself).
+> - **Commit**: same rule, now in `setup`: only files written this run, by pathspec, `toddler: set up planning kit`; nothing changed (a teammate on a fresh clone) → no commit, repo untouched.
+> - **Config commit**: `init` commits the config it creates (same pathspec rule, message `toddler: add config`). `setup` does not change the config; if it ever did, it would commit it along with the kit.
+>
+> Where the original text below says `init` writes, refreshes or commits the kit, read `setup`.
+
 Resolved with phol 2026-11-25, applying [Rule for code, harness or cut](61-code-or-harness-rule.md). Every side command stays as code; nothing is delegated or cut.
 
 - **`init`: keep, and add a planning kit.** Forge detection and config writing stay unchanged (deterministic). New: `init` prepares a repo for planning sessions run outside toddler, so the specs and issues they write are in the format and labels toddler reads.
