@@ -228,14 +228,20 @@ test("GitLab publishing enables auto-merge and keeps the request open on refusal
     const original = console.error;
     console.error = (...args) => errors.push(args.join(" "));
     try {
-      await runner.publish(
+      const publishing = runner.publish(
         { number: 3, title: "Example", labels: [], body: "" },
         job,
       );
+      if (refused)
+        await assert.rejects(
+          publishing,
+          /Could not enable auto-merge.*merge refused/,
+        );
+      else await publishing;
     } finally {
       console.error = original;
     }
-    assert.equal(job.status, "pr");
+    assert.equal(job.status, "landing");
     assert.equal(job.pr, url);
     assert.ok(
       calls.some(
@@ -244,12 +250,7 @@ test("GitLab publishing enables auto-merge and keeps the request open on refusal
           "api projects/group%2Fsub%2Fproject/merge_requests/42/merge --method PUT --field auto_merge=true",
       ),
     );
-    if (refused)
-      assert.match(
-        errors.join("\n"),
-        /could not enable auto-merge.*merge refused/,
-      );
-    else assert.deepEqual(errors, []);
+    assert.deepEqual(errors, []);
   }
 });
 

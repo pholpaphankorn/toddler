@@ -19,6 +19,7 @@ import {
   mkdtempSync,
   mkdirSync,
   writeFileSync,
+  readFileSync,
   rmSync,
   chmodSync,
 } from "node:fs";
@@ -33,6 +34,127 @@ import {
   type Provider,
 } from "../src/config.ts";
 import { indexSkills } from "../src/skills.ts";
+
+test("legacy state fixtures translate phases and fields on load", async () => {
+  const { loadState } = await import("../src/runner.ts");
+  const load = (name: string, autoMerge = false) =>
+    loadState(
+      fileURLToPath(new URL(`fixtures/state/${name}.json`, import.meta.url)),
+      "repo",
+      autoMerge,
+    ).jobs[1] as Job & Record<string, unknown>;
+  const gone = (job: Record<string, unknown>) =>
+    ["rounds", "lastError", "conflictBase"].forEach((field) =>
+      assert.ok(!(field in job), field),
+    );
+  for (const name of ["pr", "done", "rounds", "last-error", "conflict-base"]) {
+    const job = load(name);
+    gone(job);
+    assert.equal(job.mergeFixRounds, 0);
+  }
+  assert.equal(load("pr", true).status, "landing");
+  assert.equal(load("pr", true).pr, "https://github.com/example/repo/pull/1");
+  assert.equal(load("pr").status, "approved");
+  assert.equal(load("done").status, "landed");
+  assert.equal(load("rounds").reviewRounds, 2);
+  const failed = load("last-error");
+  assert.equal(failed.attention?.reason, "stage-failed");
+  assert.equal(failed.attention?.detail, "codex exited 1");
+  assert.equal(failed.status, "review");
+  assert.deepEqual(load("conflict-base").mergeFix, {
+    trigger: "conflict",
+    base: "abc123",
+  });
+  const current = fileURLToPath(
+    new URL("fixtures/state/current.json", import.meta.url),
+  );
+  assert.deepEqual(
+    loadState(current, "repo", true),
+    JSON.parse(readFileSync(current, "utf8")),
+  );
+});
+
+test("failed stages appear in the summary and survive a run without retry", async () => {
+  const { runner, state } = fixture();
+  runner.tracker.issues = async () => [issue(1)];
+  runner.runStage = async () => {
+    throw Object.assign(new Error("stage broke"), { log: "stage.log" });
+  };
+  runner.stage = Runner.prototype.stage.bind(runner);
+  const lines: string[] = [];
+  const original = console.log;
+  const previousExit = process.exitCode;
+  console.log = (...args) => lines.push(args.join(" "));
+  try {
+    await runner.run("main");
+    assert.equal(state.jobs[1].attention?.reason, "stage-failed");
+    assert.equal(state.jobs[1].attention?.log, "stage.log");
+    assert.ok(
+      lines.some((line) =>
+        line.includes("#1 stage-failed: stage broke (stage.log)"),
+      ),
+    );
+    assert.equal(process.exitCode, 1);
+    runner.tracker.issues = async () => [];
+    await runner.run("main");
+    assert.equal(state.jobs[1].attention?.detail, "stage broke");
+  } finally {
+    console.log = original;
+    process.exitCode = previousExit;
+  }
+});
+
+async function summary(run: () => Promise<void>) {
+  const lines: string[] = [];
+  const original = console.log;
+  const previousExit = process.exitCode;
+  process.exitCode = undefined;
+  console.log = (...args) => lines.push(args.join(" "));
+  try {
+    await run();
+    return { lines, exitCode: process.exitCode };
+  } finally {
+    console.log = original;
+    process.exitCode = previousExit;
+  }
+}
+
+test("a run with only waiting-on-you jobs exits 0", async () => {
+  for (const forge of ["github", "none"] as const) {
+    const { runner, state } = fixture({ forge });
+    runner.tracker.issues = async () => [issue(1)];
+    const { lines, exitCode } = await summary(() => runner.run("main"));
+    assert.equal(state.jobs[1].status, "approved");
+    assert.equal(state.jobs[1].attention, undefined);
+    assert.equal(exitCode ?? 0, 0);
+    assert.ok(lines.includes("Stopped: no available issues."));
+    assert.ok(lines.includes("Landed this run: none"));
+    assert.ok(
+      lines.includes(
+        `Waiting on you: #1 ${forge === "none" ? "toddler/issue-1" : "https://github.com/example/repo/pull/1"}`,
+      ),
+    );
+    assert.ok(lines.includes("Needs attention: none"));
+  }
+});
+
+test("forge and tracker failures pause only their issue and the run continues", async () => {
+  const { runner, state } = fixture();
+  runner.tracker.issues = async () => [issue(1), issue(2), issue(3)];
+  runner.forge.openRequest = async (input) => {
+    if (input.branch.endsWith("-1"))
+      throw new Error("! [remote rejected] push declined");
+    if (input.branch.endsWith("-2")) throw new Error("fetch failed");
+    return "https://github.com/example/repo/pull/3";
+  };
+  const { lines, exitCode } = await summary(() => runner.run("main"));
+  assert.equal(state.jobs[1].attention?.reason, "refused");
+  assert.equal(state.jobs[2].attention?.reason, "stage-failed");
+  assert.equal(state.jobs[2].attention?.detail, "fetch failed");
+  assert.equal(state.jobs[3].pr, "https://github.com/example/repo/pull/3");
+  assert.ok(lines.includes("Stopped: no available issues."));
+  assert.equal(exitCode, 1);
+});
 
 test("custom stop conditions stop a provider and preserve the first reason", async () => {
   const quotas = new Quotas(config, async () => usage(50), [
@@ -1153,7 +1275,7 @@ test("implementation -> opposite-provider review -> push exact SHA -> PR without
     "Fix #1: Issue 1",
   ]);
   assert.match(request[5], /Closes #1/);
-  assert.equal(state.jobs[1].status, "pr");
+  assert.equal(state.jobs[1].status, "approved");
   assert.deepEqual(
     events.filter((event) => event[0] === "merge"),
     [],
@@ -1205,11 +1327,11 @@ test("a conflict with the moved base goes back to the implementer before review"
   assert.ok(!prompts[0].includes("git merge"));
   assert.ok(prompts[1].includes("`git merge moved`"));
   assert.equal(state.jobs[1].baseSha, "moved");
-  assert.equal(state.jobs[1].conflictBase, undefined);
-  assert.equal(state.jobs[1].status, "pr");
-  assert.equal(state.jobs[1].rounds, 1);
+  assert.equal(state.jobs[1].mergeFix, undefined);
+  assert.equal(state.jobs[1].status, "approved");
+  assert.equal(state.jobs[1].mergeFixRounds, 1);
 });
-test("a merge-tree failure that is not a conflict pauses the job", async () => {
+test("a merge-tree failure that is not a conflict is a host fault and ends the run", async () => {
   const { runner, events, state } = fixture();
   const git = runner.gitCommand;
   runner.gitCommand = async (file, args = [], options) => {
@@ -1217,11 +1339,11 @@ test("a merge-tree failure that is not a conflict pauses the job", async () => {
       throw Object.assign(new Error("fatal"), { code: 128 });
     return git(file, args, options);
   };
-  await runner.work(issue(1), "codex", "main");
-  assert.equal(state.jobs[1].lastError, "fatal");
+  await assert.rejects(runner.work(issue(1), "codex", "main"), /fatal/);
+  assert.equal(state.jobs[1].attention, undefined);
   assert.ok(!events.some((event) => event[2] === "review"));
 });
-test("a long verify failure keeps its last lines in lastError", async () => {
+test("a long verify failure keeps its last lines in attention.detail", async () => {
   const { runner, state, quotas } = fixture({ verify: "npm test" });
   runner.stage = Runner.prototype.stage;
   Object.assign(quotas, {
@@ -1263,7 +1385,7 @@ test("a long verify failure keeps its last lines in lastError", async () => {
   runner.gitCommand = async (file, args = [], options) =>
     args[0] === "branch" ? runner.branch(1) : git(file, args, options);
   await runner.work(issue(1), "codex", "main");
-  const error = state.jobs[1].lastError!;
+  const error = state.jobs[1].attention!.detail;
   assert.ok(error.length > 1000);
   assert.match(error, /some test name here\nnot ok 61/);
   assert.ok(error.endsWith("AssertionError: expected 1 to equal 2"));
@@ -1274,14 +1396,14 @@ test("a refused auto-merge leaves the PR open and the job at pr", async () => {
     throw new Error("auto-merge is not allowed");
   };
   await runner.work(issue(1), "codex", "main");
-  assert.equal(state.jobs[1].status, "pr");
-  assert.equal(state.jobs[1].lastError, undefined);
+  assert.equal(state.jobs[1].status, "landing");
+  assert.equal(state.jobs[1].attention?.reason, "refused");
 });
 test("auto-merge is enabled for GitHub PRs with either issue tracker", async () => {
   for (const issues of ["forge", "files"] as const) {
     const { runner, events, state } = fixture({ autoMerge: true, issues });
     await runner.work(issue(1), "codex", "main");
-    assert.equal(state.jobs[1].status, "pr");
+    assert.equal(state.jobs[1].status, "landing");
     assert.deepEqual(
       events.filter((event) => event[0] === "merge"),
       [["merge", "https://github.com/example/repo/pull/1"]],
@@ -1344,7 +1466,10 @@ test("offline auto-merge fast-forwards only when safe", async () => {
         assert.equal(job.status, "approved");
       } else {
         await runner.publish(issue(1), job);
-        assert.equal(job.status, "done");
+        assert.equal(
+          job.status,
+          scenario === "disabled" ? "approved" : "landed",
+        );
       }
       assert.equal(
         run("rev-parse", "main"),
@@ -1407,10 +1532,10 @@ test("concurrent offline approvals finish on a clean checked-out base", async ()
     // Both start from the same base: the second cannot land and must not be reported done.
     assert.deepEqual(jobs.map((job) => job.status).sort(), [
       "approved",
-      "done",
+      "landed",
     ]);
     assert.equal(results.filter((r) => r.status === "rejected").length, 1);
-    const landed = jobs.find((job) => job.status === "done")!;
+    const landed = jobs.find((job) => job.status === "landed")!;
     assert.equal(run("rev-parse", "main"), landed.reviewedSha);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -1438,7 +1563,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
       [2],
     );
     await runner.work(candidates[0], "codex", "main");
-    assert.equal(state.jobs[2].status, "done");
+    assert.equal(state.jobs[2].status, "approved");
     assert.equal(state.jobs[2].branch, "toddler/local-2");
     assert.ok(
       events.some((event) => event[1] === "rev-parse" && event[2] === "main"),
@@ -1452,7 +1577,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
     );
     assert.deepEqual(
       (await runner.candidates()).map((issue) => issue.number),
-      [3],
+      [],
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -1461,7 +1586,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
 test("local issues with openPr open a PR that does not close a GitHub issue", async () => {
   const { runner, events, state } = fixture({ issues: "files" });
   await runner.work(issue(7), "codex", "main");
-  assert.equal(state.jobs[7].status, "pr");
+  assert.equal(state.jobs[7].status, "approved");
   const create = events.find((event) => event[0] === "open")!;
   assert.equal(create[1], "toddler/local-7");
   assert.equal(create[2], "reviewed");
@@ -1515,7 +1640,7 @@ test("quota interruption transfers unfinished implementation and uses remaining 
       ["stage", "claude", "review"],
     ],
   );
-  assert.equal(state.jobs[1].status, "pr");
+  assert.equal(state.jobs[1].status, "approved");
   assert.equal(state.jobs[1].branch, "toddler/issue-1");
 });
 test("review selection uses the review model while implementation remains available", async () => {
@@ -1542,7 +1667,7 @@ test("malformed review and changed reviewed SHA cannot push or open a PR", async
       verification: "",
     });
     await runner.work(issue(1), "codex", "main");
-    assert.ok(state.jobs[1].lastError);
+    assert.ok(state.jobs[1].attention);
     assert.ok(
       !events.some((event) => event[0] === "open" || event[0] === "open"),
     );
@@ -1568,7 +1693,8 @@ test("run waits for a parallel stage before reporting a fallback ranking failure
     baseBranch: "main",
     baseSha: "base",
     status: "implementation",
-    rounds: 0,
+    reviewRounds: 0,
+    mergeFixRounds: 0,
     implementer: fake<Provider>("unavailable"),
   };
   let release!: () => void;
@@ -1600,7 +1726,7 @@ test("run waits for a parallel stage before reporting a fallback ranking failure
     release();
   }
   await assert.rejects(result, (error: Error) => error.message.includes(path));
-  assert.equal(state.jobs[2].lastError, undefined);
+  assert.equal(state.jobs[2].attention, undefined);
 });
 test("no available issue or quota terminates without starting agents", async () => {
   const { runner, events, quotas } = fixture();
@@ -2068,7 +2194,7 @@ test("runner uses tracker and forge seams and skips finished or attempted issues
     enableAutoMerge: async () => {},
   };
   runner.attempted.add(1);
-  state.jobs[2] = { status: "done" } as Job;
+  state.jobs[2] = { status: "landed" } as Job;
   assert.deepEqual(
     (await runner.candidates()).map((item) => item.number),
     [5],
