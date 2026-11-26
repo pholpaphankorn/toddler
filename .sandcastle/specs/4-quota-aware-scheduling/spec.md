@@ -1,7 +1,7 @@
 ---
 title: Quota-aware scheduling
 labels: [wayfinder:map, on-hold]
-status: open
+status: closed
 ---
 <!-- Wayfinder map. Tickets are files in issues/ with `parent: 4`. All carry `on-hold` so `toddler` never tries to implement them. -->
 
@@ -34,11 +34,7 @@ A spec for how toddler chooses providers by quota: config lists the enabled prov
 
 ## Not yet specified
 
-- How `toddler plan` and `doctor` explain why a provider was ranked first or stopped.
-- Whether toddler exports helpers (quota ranking, `weeklyLeft`) for custom rankers and stop conditions to compose with, once a project needs it.
-- Whether a role can be limited to certain providers, and how that combines with ranking (shared with [Roles in config](../2-roles-in-config/spec.md)).
-
-- Whether `Reading` should carry Codex's `ordinaryUsageAllowed` (a backend yes/no its source trusts over percentages) as a built-in stop condition; reopens [The shape of a quota reading](issues/19-quota-reading-shape.md).
+- Nothing left: **replaced by [spec 9 Scheduling and quota](../9-scheduling-and-quota/spec.md)** (phol, 2026-11-26), after [spec 7 Harness boundary](../7-harness-boundary/spec.md) reshaped ranking. Former fog: `plan`/`doctor` explanations and `ordinaryUsageAllowed` moved to spec 9; exported helpers and role-limited providers ruled out of scope there.
 
 ## Out of scope
 
