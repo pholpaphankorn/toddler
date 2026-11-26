@@ -219,13 +219,6 @@ async function deliverRequest(
   }
   return { state: "waiting", url };
 }
-// shortcut: GitLab reads only whether a request exists and merged; #89 maps mergeability, CI and auto-merge.
-async function pollRequest(
-  request: Promise<{ url: string; open: boolean } | undefined>,
-): Promise<Polled> {
-  const found = await request;
-  return { state: !found ? "none" : found.open ? "waiting" : "landed" };
-}
 interface GitHubRequest {
   url: string;
   state: "OPEN" | "MERGED" | "CLOSED";
@@ -596,6 +589,16 @@ export class GitHubForge implements Forge {
     );
   }
 }
+interface GitLabRequest {
+  iid: number;
+  web_url: string;
+  state: "opened" | "merged" | "closed" | "locked";
+  sha?: string;
+  detailed_merge_status?: string;
+  has_conflicts?: boolean;
+  merge_when_pipeline_succeeds?: boolean;
+  head_pipeline?: { id: number; status: string; web_url?: string } | null;
+}
 export class GitLabForge implements Forge {
   tracker: Tracker;
   private project: string;
@@ -749,8 +752,89 @@ export class GitLabForge implements Forge {
       input,
     );
   }
-  poll(job: { branch: string }) {
-    return pollRequest(this.findRequest(job.branch));
+  // The list finds the request; the open one is read again for its head pipeline, which the list leaves out.
+  async poll(job: {
+    branch: string;
+    sha: string;
+    base: string;
+  }): Promise<Polled> {
+    const requests: GitLabRequest[] = await this.list(
+      `${this.project}/merge_requests?source_branch=${encodeURIComponent(job.branch)}&per_page=100`,
+    );
+    if (requests.some((item) => item.state === "merged"))
+      return { state: "landed" };
+    const listed = requests.find((item) => item.state === "opened");
+    if (!listed) return { state: requests.length ? "closed" : "none" };
+    const mr: GitLabRequest = await this.api(
+      `${this.project}/merge_requests/${listed.iid}`,
+    );
+    return { ...(await this.openState(mr)), head: mr.sha };
+  }
+  private async openState(mr: GitLabRequest): Promise<Polled> {
+    const status = mr.detailed_merge_status ?? "checking";
+    if (["not_approved", "requested_changes"].includes(status))
+      return { state: "review-required" };
+    // Still being computed: ask again next poll.
+    if (
+      ["checking", "unchecked", "preparing", "approvals_syncing"].includes(
+        status,
+      )
+    )
+      return { state: "waiting" };
+    if (status === "conflict" || mr.has_conflicts) return { state: "conflict" };
+    if (status === "need_rebase") return { state: "behind" };
+    // A pipeline is only `failed` once it has finished.
+    const pipeline = mr.head_pipeline;
+    if (pipeline?.status === "failed")
+      return {
+        state: "ci-failed",
+        checks: await this.failedChecks(pipeline, mr.sha!),
+      };
+    return {
+      state: mr.merge_when_pipeline_succeeds ? "waiting" : "auto-merge-off",
+    };
+  }
+  // Failing jobs minus allow_failure ones, each with its trace's tail; external CI gives name + link.
+  private async failedChecks(
+    pipeline: NonNullable<GitLabRequest["head_pipeline"]>,
+    sha: string,
+  ) {
+    const jobs = (
+      await this.list(
+        `${this.project}/pipelines/${pipeline.id}/jobs?scope[]=failed&per_page=100`,
+      )
+    ).filter((job) => !job.allow_failure);
+    if (jobs.length)
+      return logTails(
+        await Promise.all(
+          jobs.map(async (job) => ({
+            name: job.name as string,
+            link: (job.web_url as string) ?? "",
+            // shortcut: a trace over the 8 MB command buffer gives no tail; stream it if that bites.
+            log: await this.glabCommand(
+              "glab",
+              ["api", `${this.project}/jobs/${job.id}/trace`],
+              { cwd: this.root },
+            ).catch(() => undefined),
+          })),
+        ),
+      ).checks.map(({ name, link, tail }) => ({
+        name,
+        link: link ?? "",
+        ...(tail !== undefined && { tail }),
+      }));
+    const statuses = (
+      await this.list(
+        `${this.project}/repository/commits/${sha}/statuses?pipeline_id=${pipeline.id}&per_page=100`,
+      )
+    ).filter((item) => item.status === "failed" && !item.allow_failure);
+    // Nothing named (e.g. an invalid .gitlab-ci.yml): the pipeline itself is the failing check.
+    return statuses.length
+      ? statuses.map((item) => ({
+          name: item.name as string,
+          link: (item.target_url as string) ?? "",
+        }))
+      : [{ name: "pipeline", link: pipeline.web_url ?? "" }];
   }
   async findRequest(branch: string) {
     const requests = await this.list(
@@ -815,7 +899,8 @@ export class GitLabForge implements Forge {
         : []),
     ];
   }
-  async enableAutoMerge(url: string) {
+  // Any source push aborts auto-merge, so deliver re-enables it each time, tied to the pushed SHA (409 if the head moved).
+  async enableAutoMerge(url: string, sha: string) {
     const iid = /\/merge_requests\/(\d+)/.exec(url)?.[1];
     if (!iid) throw new Error("Invalid GitLab merge request URL");
     await this.api(`${this.project}/merge_requests/${iid}/merge`, [
@@ -823,6 +908,8 @@ export class GitLabForge implements Forge {
       "PUT",
       "--field",
       "auto_merge=true",
+      "--raw-field",
+      `sha=${sha}`,
     ]);
   }
 }

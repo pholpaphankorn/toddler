@@ -21,9 +21,10 @@ import { assignments, loadRanker } from "./policy.ts";
 import { bundledSkillsPath } from "./skills.ts";
 import { skillDoctorChecks } from "./skill-doctor.ts";
 import { connect, validatePushRemote } from "./forge.ts";
+import { smokeForge } from "./smoke-forge.ts";
 
 const usage =
-  "Usage: toddler [init|setup|doctor|plan|run|smoke [codex|claude]]";
+  "Usage: toddler [init|setup|doctor|plan|run|smoke [codex|claude]|smoke forge <github|gitlab> <scratch-repository>]";
 // This runner uses subscriptions exclusively; avoid accidental metered API use.
 for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY"])
   delete process.env[key];
@@ -193,6 +194,8 @@ async function doctor(config: Config, root: string) {
 
 async function main() {
   const mode = process.argv[2] ?? "run";
+  if (mode === "smoke" && process.argv[3] === "forge")
+    return smokeForge(process.argv.slice(4));
   if (mode === "smoke") return script("smoke-agents.ts", process.argv.slice(3));
   if (!["init", "setup", "doctor", "plan", "run"].includes(mode))
     throw new Error(usage);
