@@ -16,6 +16,7 @@ import {
   type Ranker,
   RankingError,
 } from "./policy.ts";
+import { logTail } from "./logtail.ts";
 import { command, type Command } from "./process.ts";
 import {
   claudeToken,
@@ -344,7 +345,7 @@ export class Runner {
           const verification = await sandbox.exec(this.config.verify);
           if (verification.exitCode)
             throw new Error(
-              `Host-required verification failed: ${this.config.verify}`,
+              `Host-required verification failed: ${this.config.verify}\n${logTail(verification.stdout + verification.stderr)}`,
             );
           return {
             stdout: result.stdout,
