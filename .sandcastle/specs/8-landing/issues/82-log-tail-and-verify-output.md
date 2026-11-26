@@ -3,7 +3,7 @@ title: logTail and full verify output
 labels: [parallel-safe]
 blocked_by: []
 parent: 8
-status: open
+status: closed
 ---
 When `verify` fails, the output says why, cut and cleaned so it is safe to hand to an agent or store in `state.json`.
 
