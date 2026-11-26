@@ -25,7 +25,7 @@ _Avoid_: container, jail
 **Stop threshold**: the least quota left, per provider and per window (five-hour or weekly), at which toddler stops using that provider, or that provider for one model, until a fresh reading is above it again.
 _Avoid_: reserve, limit
 
-**Stop condition**: a check toddler runs on each fresh quota reading that can stop a provider, or that provider for one model, for as long as the check keeps returning that stop. The stop thresholds are the built-in one; a project can add its own.
+**Stop condition**: a check toddler runs on each fresh quota reading that can stop a provider, or that provider for one model, for as long as the check keeps returning that stop. The stop thresholds and the provider's own yes/no on whether ordinary usage may continue are built in; a project can add its own.
 _Avoid_: guard, rule
 
 **Provider limit**: the usage limit the provider itself enforces. Hitting it stops that provider, or that provider for one model, until its reset, like a stop threshold.

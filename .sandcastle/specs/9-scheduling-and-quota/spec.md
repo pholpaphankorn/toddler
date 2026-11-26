@@ -29,6 +29,7 @@ A spec, ready to break into toddler issues, for how toddler schedules agents by 
 - [How plan and doctor explain a ranking or a stop](issues/95-plan-doctor-explain.md): `plan` prints text (Providers with stops and how they lift, Slots, Next stages with the picked provider or why not, would-sleep line), `--json` kept; fills slots like a dry run; no ranker reasons; doctor's ranking row only checks the ranker loads.
 - [How scheduling is tested](issues/96-scheduling-tests.md): `scheduler.test.ts` at the `admit`/`pick`/`release`/`wakeAt` seam with scripted readings and one injected clock `{ now(), wait(ms) }`; rankers as plain functions with `Math.random` stubbed; hand-written limit fixtures; exact-text `plan` tests; no real-provider smoke; polling tests left to its own ticket.
 - [How quota polling works with several sessions per provider](issues/97-quota-polling.md): one scheduler-owned poller while `running` > 0, due `pollIntervalMs` after the last refresh; a poll's stop cancels same-key live sessions; a throwing stop-condition module is a failed read; `pick` returns a `signal`, `Quotas.run`/`active` go; the loop waits on `nextPollAt()`.
+- [Whether Codex's ordinaryUsageAllowed becomes a built-in stop condition](issues/98-ordinary-usage-allowed.md): yes, always on and provider-wide; `Reading` gains `allowed: boolean | null` (Claude always `null`); `null` lifts it; a poll that finds `false` cancels live Codex sessions; `wakeAt` uses the 30 min recheck; reason `provider reports ordinary usage not allowed`.
 
 ## Not yet specified
 
