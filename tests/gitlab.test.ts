@@ -180,31 +180,44 @@ test("publishing GitLab merge requests uses the tracker reference in the generat
       forge,
       tracker: issues === "forge" ? forge.tracker : new FilesTracker("."),
     });
-    await runner.publish(
-      { number: 3, title: "Example", labels: [], body: "" },
-      job,
+    assert.equal(
+      await runner.landing.land({
+        number: 3,
+        title: "Example",
+        labels: [],
+        body: "",
+      }),
+      "approved",
     );
+    assert.equal(job.pr, "created");
     assert.match(description, /review → merge request/);
     if (issues === "forge") assert.match(description, /Closes #3/);
     else assert.doesNotMatch(description, /Closes #\d+/);
   }
 });
 
-test("GitLab publishing enables auto-merge and keeps the request open on refusal", async () => {
+test("GitLab delivery enables auto-merge, lands once merged, and is refused when auto-merge is", async () => {
   for (const refused of [false, true]) {
     const calls: string[][] = [];
     const url = "https://gitlab.example/group/sub/project/-/merge_requests/42";
     const git = async (_: string, args: string[] = []) =>
       args[0] === "rev-parse" ? "reviewed" : "";
-    const forge = new GitLabForge(".", config, git, async (_, args = []) => {
-      calls.push(args);
-      if (args.includes("POST")) return JSON.stringify({ web_url: url });
-      if (args.includes("PUT")) {
-        if (refused) throw new Error("merge refused");
-        return "{}";
-      }
-      return "[]";
-    });
+    let requests = "[]";
+    const forge = new GitLabForge(
+      ".",
+      { ...config, autoMerge: true },
+      git,
+      async (_, args = []) => {
+        calls.push(args);
+        if (args.includes("POST")) return JSON.stringify({ web_url: url });
+        if (args.includes("PUT")) {
+          if (refused) throw new Error("merge refused");
+          requests = JSON.stringify([{ state: "merged", web_url: url }]);
+          return "{}";
+        }
+        return requests;
+      },
+    );
     const job = {
       number: 3,
       branch: "feature",
@@ -223,26 +236,30 @@ test("GitLab publishing enables auto-merge and keeps the request open on refusal
       git,
       forge,
       tracker: forge.tracker,
+      wait: async () => {},
     });
-    const errors: string[] = [];
     const original = console.error;
-    console.error = (...args) => errors.push(args.join(" "));
+    console.error = () => {};
     try {
-      const publishing = runner.publish(
-        { number: 3, title: "Example", labels: [], body: "" },
-        job,
+      assert.equal(
+        await runner.landing.land({
+          number: 3,
+          title: "Example",
+          labels: [],
+          body: "",
+        }),
+        refused ? "attention" : "landed",
       );
-      if (refused)
-        await assert.rejects(
-          publishing,
-          /Could not enable auto-merge.*merge refused/,
-        );
-      else await publishing;
     } finally {
       console.error = original;
     }
-    assert.equal(job.status, "landing");
-    assert.equal(job.pr, url);
+    if (refused) {
+      assert.equal(job.attention?.reason, "refused");
+      assert.match(
+        job.attention!.detail,
+        /Could not enable auto-merge on .*merge_requests\/42: merge refused/,
+      );
+    } else assert.equal(job.status, "landed");
     assert.ok(
       calls.some(
         (args) =>
@@ -250,7 +267,6 @@ test("GitLab publishing enables auto-merge and keeps the request open on refusal
           "api projects/group%2Fsub%2Fproject/merge_requests/42/merge --method PUT --field auto_merge=true",
       ),
     );
-    assert.deepEqual(errors, []);
   }
 });
 

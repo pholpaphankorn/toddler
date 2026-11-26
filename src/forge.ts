@@ -45,23 +45,41 @@ export interface Tracker {
   spec(id: number): Promise<Spec>;
   requestReference(issue: Issue): { ref: string; closes: string };
 }
+export interface Delivery {
+  branch: string;
+  sha: string;
+  base: string;
+  title: string;
+  body: string;
+}
+export type Delivered =
+  | { state: "landed" | "moved" }
+  | { state: "waiting"; url: string }
+  | { state: "refused"; reason: string };
+export type Polled =
+  | {
+      state:
+        | "none"
+        | "landed"
+        | "closed"
+        | "review-required"
+        | "conflict"
+        | "behind"
+        | "auto-merge-off"
+        | "waiting";
+    }
+  | {
+      state: "ci-failed";
+      checks: { name: string; link: string; tail?: string }[];
+    };
 export interface Forge {
   tracker?: Tracker;
-  enabled: boolean;
-  remote: boolean;
   base(branch?: string): Promise<{ branch: string; ref: string }>;
-  findRequest(
-    branch: string,
-  ): Promise<{ url: string; open: boolean } | undefined>;
-  openRequest(input: {
-    branch: string;
-    sha: string;
-    base: string;
-    title: string;
-    body: string;
-  }): Promise<string>;
+  // Hands over one finished SHA; only NoneForge returns landed or moved.
+  deliver(job: Delivery): Promise<Delivered>;
+  // `base` is the base branch name; only NoneForge needs it.
+  poll(job: { branch: string; sha: string; base: string }): Promise<Polled>;
   doctorChecks(config: Config): [string, () => Promise<string>][];
-  enableAutoMerge(url: string): Promise<void>;
 }
 export class FilesTracker implements Tracker {
   private open = new Map<number, ReturnType<typeof localIssue>>();
@@ -155,9 +173,45 @@ export class FilesTracker implements Tracker {
     return { ref: `local issue ${issue.number}`, closes: "" };
   }
 }
+// Shared by GitHub and GitLab: push the exact SHA, reuse or open the request, (re)enable auto-merge.
+async function deliverRequest(
+  forge: {
+    findRequest(
+      branch: string,
+    ): Promise<{ url: string; open: boolean } | undefined>;
+    openRequest(input: Delivery): Promise<string>;
+    enableAutoMerge(url: string): Promise<void>;
+  },
+  push: () => Promise<unknown>,
+  autoMerge: boolean,
+  input: Delivery,
+): Promise<Delivered> {
+  const existing = await forge.findRequest(input.branch);
+  let url: string;
+  if (existing?.open) {
+    await push();
+    url = existing.url;
+  } else url = await forge.openRequest(input);
+  if (autoMerge) {
+    try {
+      await forge.enableAutoMerge(url);
+    } catch (error) {
+      return {
+        state: "refused",
+        reason: `Could not enable auto-merge on ${url}: ${(error as Error).message}`,
+      };
+    }
+  }
+  return { state: "waiting", url };
+}
+// shortcut: reads only whether a request exists and merged; #88/#89 map mergeability, CI and auto-merge.
+async function pollRequest(
+  request: Promise<{ url: string; open: boolean } | undefined>,
+): Promise<Polled> {
+  const found = await request;
+  return { state: !found ? "none" : found.open ? "waiting" : "landed" };
+}
 export class GitHubForge implements Forge {
-  enabled: boolean;
-  remote = true;
   tracker: Tracker;
   private gh(args: string[]) {
     return this.ghCommand("gh", args, { cwd: this.root });
@@ -179,7 +233,6 @@ export class GitHubForge implements Forge {
     this.config = config;
     this.gitCommand = gitCommand;
     this.ghCommand = ghCommand;
-    this.enabled = true;
     const gh = (args: string[]) => this.gh(args);
     this.tracker = {
       issues: async () => {
@@ -280,6 +333,22 @@ export class GitHubForge implements Forge {
     ).defaultBranchRef.name;
     await this.git(["fetch", this.config.remote, branch!]);
     return { branch: branch!, ref: `${this.config.remote}/${branch}` };
+  }
+  deliver(input: Delivery) {
+    return deliverRequest(
+      this,
+      () =>
+        this.git([
+          "push",
+          this.config.remote,
+          `${input.sha}:refs/heads/${input.branch}`,
+        ]),
+      this.config.autoMerge,
+      input,
+    );
+  }
+  poll(job: { branch: string }) {
+    return pollRequest(this.findRequest(job.branch));
   }
   async findRequest(branch: string) {
     const requests: { url: string; state: string }[] = JSON.parse(
@@ -414,8 +483,6 @@ export class GitHubForge implements Forge {
   }
 }
 export class GitLabForge implements Forge {
-  enabled = true;
-  remote = true;
   tracker: Tracker;
   private project: string;
   private root: string;
@@ -551,6 +618,26 @@ export class GitLabForge implements Forge {
     });
     return { branch: branch!, ref: `${this.config.remote}/${branch}` };
   }
+  deliver(input: Delivery) {
+    return deliverRequest(
+      this,
+      () =>
+        this.gitCommand(
+          "git",
+          [
+            "push",
+            this.config.remote,
+            `${input.sha}:refs/heads/${input.branch}`,
+          ],
+          { cwd: this.root },
+        ),
+      this.config.autoMerge,
+      input,
+    );
+  }
+  poll(job: { branch: string }) {
+    return pollRequest(this.findRequest(job.branch));
+  }
   async findRequest(branch: string) {
     const requests = await this.list(
       `${this.project}/merge_requests?source_branch=${encodeURIComponent(branch)}&per_page=100`,
@@ -630,28 +717,66 @@ export class GitLabForge implements Forge {
     ]);
   }
 }
+// Local landing: the base branch only moves by a fast-forward to the exact SHA, never under a dirty checkout.
 export class NoneForge implements Forge {
-  enabled = false;
-  remote = false;
   private root: string;
   private gitCommand: Command;
   constructor(root: string, gitCommand: Command = command) {
     this.root = root;
     this.gitCommand = gitCommand;
   }
+  private git(args: string[]) {
+    return this.gitCommand("git", args, { cwd: this.root });
+  }
+  private async ancestor(older: string, newer: string) {
+    try {
+      await this.git(["merge-base", "--is-ancestor", older, newer]);
+      return true;
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 1) return false;
+      throw error;
+    }
+  }
   async base(branch?: string) {
-    branch ??= await this.gitCommand("git", ["branch", "--show-current"], {
-      cwd: this.root,
-    });
+    branch ??= await this.git(["branch", "--show-current"]);
     if (!branch)
       throw new Error("Check out a branch for local issues to start from");
     return { branch, ref: branch };
   }
-  async findRequest(_branch: string) {
-    return undefined;
+  async deliver(input: Delivery): Promise<Delivered> {
+    const ref = `refs/heads/${input.base}`;
+    let current = "";
+    try {
+      current = await this.git(["rev-parse", ref]);
+      if (!(await this.ancestor(current, input.sha))) return { state: "moved" };
+      if ((await this.git(["branch", "--show-current"])) === input.base) {
+        if (await this.git(["status", "--porcelain"]))
+          return {
+            state: "refused",
+            reason: `${input.base} is checked out with uncommitted changes`,
+          };
+        await this.git(["merge", "--ff-only", input.sha]);
+      } else await this.git(["update-ref", ref, input.sha, current]);
+      return { state: "landed" };
+    } catch (error) {
+      // Compare-and-swap lost: the base moved since it was read.
+      try {
+        if ((await this.git(["rev-parse", ref])) !== current)
+          return { state: "moved" };
+      } catch {}
+      return { state: "refused", reason: (error as Error).message };
+    }
   }
-  async openRequest(): Promise<string> {
-    throw new Error("No forge configured");
+  async poll(job: {
+    branch: string;
+    sha: string;
+    base: string;
+  }): Promise<Polled> {
+    return {
+      state: (await this.ancestor(job.sha, `refs/heads/${job.base}`))
+        ? "landed"
+        : "none",
+    };
   }
   doctorChecks(config: Config): [string, () => Promise<string>][] {
     return [
@@ -662,7 +787,6 @@ export class NoneForge implements Forge {
       ],
     ];
   }
-  async enableAutoMerge(_url: string) {}
 }
 export function connect(
   root: string,

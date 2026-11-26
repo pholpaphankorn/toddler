@@ -29,6 +29,7 @@ import {
 import { privateHomeAgent, stopAgent } from "./agents.ts";
 import { skillLinks, skillLoadLine } from "./skills.ts";
 import { connect, type Tracker, type Forge } from "./forge.ts";
+import { AttentionError, Landing } from "./landing.ts";
 
 export interface Job {
   number: number;
@@ -149,19 +150,6 @@ class StageFailure extends Error {
     this.log = log;
   }
 }
-class AttentionError extends Error {
-  reason: NonNullable<Job["attention"]>["reason"];
-  log?: string;
-  constructor(
-    reason: NonNullable<Job["attention"]>["reason"],
-    message: string,
-    log?: string,
-  ) {
-    super(message);
-    this.reason = reason;
-    this.log = log;
-  }
-}
 
 export class Runner {
   root: string;
@@ -177,9 +165,9 @@ export class Runner {
   ranker?: Ranker;
   tracker: Tracker;
   forge: Forge;
-  // Agent work holds a slot; landing (publishing for now) is host work and takes none.
+  // Agent work holds a slot; landing is host work and takes none.
   working = new Map<number, { issue: Issue; provider: Provider }>();
-  landing = new Set<number>();
+  landing = new Landing(this);
   started = new Date().toISOString();
   // Scheduler seams; spec 9 fills them in.
   maxParallelIssues = 2;
@@ -188,7 +176,6 @@ export class Runner {
   stageLogs = new Map<number, string>();
   interrupted = false;
   slots = new Map<string, Promise<void>>();
-  private fastForwardQueue: Promise<void> = Promise.resolve();
   constructor({
     root,
     config,
@@ -248,15 +235,13 @@ export class Runner {
   branch(number: number): string {
     return `toddler/${this.local() ? "local" : "issue"}-${number}`;
   }
+  // Landed, or approved and waiting on phol: a PR without auto-merge, or a local run without autoMerge.
   finished(number: number): boolean {
+    const job = this.state.jobs[number];
     return (
-      this.state.jobs[number]?.status === "landed" ||
-      this.state.jobs[number]?.status === "landing" ||
-      (this.state.jobs[number]?.status === "approved" &&
-        !!this.state.jobs[number]?.pr) ||
-      (this.state.jobs[number]?.status === "approved" &&
-        !this.forge.enabled &&
-        !this.config.autoMerge)
+      job?.status === "landed" ||
+      (job?.status === "approved" &&
+        (!!job.pr || (this.config.forge === "none" && !this.config.autoMerge)))
     );
   }
   async candidates(): Promise<Issue[]> {
@@ -266,15 +251,25 @@ export class Runner {
       const attention = this.state.jobs[issue.number]?.attention;
       if (
         this.working.has(issue.number) ||
-        this.landing.has(issue.number) ||
+        this.landing.jobs.has(issue.number) ||
         // Needs attention since this run started: skipped until the next run.
         (attention && attention.at >= this.started) ||
         this.finished(issue.number)
       )
         continue;
-      const head =
-        this.state.jobs[issue.number]?.branch ?? this.branch(issue.number);
-      if (await this.forge.findRequest(head)) continue;
+      // No job yet: skip an issue that already has a request (sha unused off NoneForge).
+      if (
+        !this.state.jobs[issue.number] &&
+        this.config.forge !== "none" &&
+        (
+          await this.forge.poll({
+            branch: this.branch(issue.number),
+            sha: "",
+            base: "",
+          })
+        ).state !== "none"
+      )
+        continue;
       if (
         !(await this.tracker.blocked(
           issue,
@@ -544,7 +539,7 @@ export class Runner {
       this.state.jobs[issue.number] = job;
       this.save();
     }
-    // Ends at approved; the run loop then hands the job to deliver, outside the slot.
+    // Ends at approved; the run loop then hands the job to landing, outside the slot.
     await this.attend(issue, job, async () => {
       const context = await this.context(issue, job);
       while (
@@ -654,13 +649,6 @@ export class Runner {
       }
     });
   }
-  // Publishing is host work and takes no slot; #85 moves it into landing.
-  async deliver(issue: Issue): Promise<void> {
-    const job = this.state.jobs[issue.number];
-    await this.attend(issue, job, async () => {
-      if (!(await this.conflicted(job))) await this.publish(issue, job);
-    });
-  }
   // Retrying clears an earlier attention; a failure sets it and the run goes on.
   async attend(
     issue: Issue,
@@ -711,63 +699,10 @@ export class Runner {
       );
     }
   }
-  async publish(issue: Issue, job: Job): Promise<void> {
-    if (this.interrupted) return;
-    const current = await this.git(["rev-parse", job.branch]);
-    if (current !== job.reviewedSha)
-      throw new AttentionError(
-        "refused",
-        "Branch changed after review; refusing to publish",
-      );
-    if (!this.forge.enabled) {
-      if (this.config.autoMerge) await this.fastForward(job);
-      if (this.config.autoMerge) {
-        this.persist(job, { status: "landed" });
-        this.landedThisRun.add(job.number);
-      }
-      console.log(
-        `[issue #${issue.number}] approved on local branch ${job.branch}`,
-      );
-      return;
-    }
-    const existing = await this.forge.findRequest(job.branch);
-    if (existing?.open) {
-      this.persist(job, {
-        status: this.config.autoMerge ? "landing" : "approved",
-        pr: existing.url,
-      });
-    } else {
-      const { ref, closes } = this.tracker.requestReference(issue);
-      const url = await this.forge.openRequest({
-        branch: job.branch,
-        sha: job.reviewedSha!,
-        base: job.baseBranch,
-        title: `Fix ${ref}: ${issue.title}`.slice(0, 200),
-        body: `## Summary\n\nIssue ${ref} → implementation → review → ${this.config.forge === "gitlab" ? "merge" : "pull"} request\n\n${job.report!.summary}\n\n${closes}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\n${this.config.verify.trim() ? `Coordinator verification (\`${this.config.verify}\`): passed.` : "Coordinator verification: none configured."}\n\nReviewed by ${this.config.roles.review.models[job.reviewer!]} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`,
-      });
-      this.persist(job, {
-        status: this.config.autoMerge ? "landing" : "approved",
-        pr: url,
-      });
-      console.log(`[issue #${issue.number}] ${url}`);
-    }
-    if (this.config.autoMerge) {
-      try {
-        await this.forge.enableAutoMerge(job.pr!);
-        console.log(`[issue #${issue.number}] auto-merge enabled: ${job.pr}`);
-      } catch (error) {
-        throw new AttentionError(
-          "refused",
-          `Could not enable auto-merge: ${(error as Error).message}`,
-        );
-      }
-    }
-  }
-
-  // shortcut: TEMPORARY PATCH. Conflicts with the fresh base go back to the implementer before review and before
-  // publishing, so a PR never opens unmergeable; a conflict after the PR opens still needs a human. Remove with spec 5.
+  // shortcut: TEMPORARY PATCH. Conflicts with the fresh base go back to the implementer before review; once approved,
+  // landing's host merge treats a conflict as needs attention. Removed with the merge fix loop (#87).
   async conflicted(job: Job): Promise<boolean> {
-    if (!this.forge.remote) return false;
+    if (this.config.forge === "none") return false;
     const { ref } = await this.forge.base(job.baseBranch);
     const base = await this.git(["rev-parse", ref]);
     try {
@@ -791,60 +726,6 @@ export class Runner {
       );
     return true;
   }
-  async fastForward(job: Job): Promise<void> {
-    const previous = this.fastForwardQueue;
-    let release!: () => void;
-    this.fastForwardQueue = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await previous;
-    try {
-      await this.fastForwardBase(job);
-    } finally {
-      release();
-    }
-  }
-  private async fastForwardBase(job: Job): Promise<void> {
-    while (true) {
-      const base = await this.git([
-        "rev-parse",
-        `refs/heads/${job.baseBranch}`,
-      ]);
-      try {
-        await this.git(["merge-base", "--is-ancestor", base, job.reviewedSha!]);
-      } catch (error) {
-        if ((error as { code?: unknown }).code !== 1) throw error;
-        // shortcut: pauses for a human; the merge fix loop (spec 7, Unattended runs from a queue) replaces this.
-        throw new AttentionError(
-          "refused",
-          `cannot fast-forward ${job.baseBranch}; approved work left on ${job.branch}`,
-        );
-      }
-      const current = await this.git(["branch", "--show-current"]);
-      try {
-        if (
-          current === job.baseBranch &&
-          !(await this.git(["status", "--porcelain"]))
-        ) {
-          await this.git(["merge", "--ff-only", job.reviewedSha!]);
-        } else {
-          await this.git([
-            "update-ref",
-            `refs/heads/${job.baseBranch}`,
-            job.reviewedSha!,
-            base,
-          ]);
-        }
-        return;
-      } catch (error) {
-        if (
-          (await this.git(["rev-parse", `refs/heads/${job.baseBranch}`])) ===
-          base
-        )
-          throw error;
-      }
-    }
-  }
   // Scheduler seam: the provider for a stage starting now, or none.
   pick(role: Role, issue: Issue, job?: Job): Provider | undefined {
     const usable = (name: Provider) =>
@@ -862,7 +743,7 @@ export class Runner {
   wakeAt(): number | undefined {
     return undefined;
   }
-  // Start what can start: approved jobs go to delivery, others take free slots.
+  // Start what can start: approved and resumed landing jobs go to landing, others take free slots.
   async fill(
     baseBranch: string,
     track: (promise: Promise<void>) => void,
@@ -871,18 +752,14 @@ export class Runner {
     await this.quotas.refresh();
     const parallel = (issue: Issue) =>
       labels(issue).includes(this.config.parallelLabel);
-    const land = (issue: Issue) => {
-      this.landing.add(issue.number);
-      track(
-        this.deliver(issue).finally(() => this.landing.delete(issue.number)),
-      );
-    };
+    const land = (issue: Issue) =>
+      track(this.landing.land(issue).then(() => {}));
     // #87: merge fixes will take free slots here ahead of fresh issues.
     for (const issue of await this.candidates()) {
       const job = this.state.jobs[issue.number];
       // On-hold or blocked labels hold approved work too.
       if (!ready(issue, this.config)) continue;
-      if (job?.status === "approved") {
+      if (job?.status === "approved" || job?.status === "landing") {
         land(issue);
         continue;
       }
@@ -906,10 +783,11 @@ export class Runner {
       track(
         this.work(issue, provider, base.branch, base.ref)
           .then(() => {
-            // After an interrupt or fault, nothing new starts, delivery included.
+            // After an interrupt or fault, nothing new starts, landing included.
             if (
               !this.interrupted &&
-              this.state.jobs[issue.number]?.status === "approved"
+              this.state.jobs[issue.number]?.status === "approved" &&
+              !this.finished(issue.number)
             )
               land(issue);
           })
@@ -931,11 +809,11 @@ export class Runner {
       inflight.add(tracked);
     };
     try {
-      // One event loop: fill free slots, then wait for a slot or delivery to finish, or a wake timer.
+      // One event loop: fill free slots, then wait for a slot or landing to finish a job, or a wake timer.
       while (true) {
         if (!this.interrupted && !failure) await this.fill(baseBranch, track);
         if (failure) throw failure.error;
-        if (!this.working.size && !this.landing.size) {
+        if (!this.working.size && !this.landing.jobs.size) {
           if (this.interrupted) return;
           const wake = this.wakeAt();
           if (wake === undefined) {
@@ -972,7 +850,7 @@ export class Runner {
         (job) =>
           job.status === "approved" &&
           !job.attention &&
-          (job.pr || !this.forge.enabled),
+          (job.pr || this.config.forge === "none"),
       );
       console.log(
         `Waiting on you: ${waiting.map((job) => `#${job.number} ${job.pr ?? job.branch}`).join(", ") || "none"}`,
