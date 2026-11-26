@@ -51,5 +51,8 @@ _Avoid_: auth, token
 **Local login**: the user's own sign-in to a provider's CLI on this machine, which toddler reads instead of holding a provider login of its own.
 _Avoid_: host login
 
+**Run**: one `toddler run` that phol starts and leaves alone. It works ready issues and lands approved ones, and ends only when nothing is ready, no agent is working and nothing is waiting to land.
+_Avoid_: session, batch
+
 **Needs attention**: an issue toddler has given up on until phol looks at it, with the reason why (a failed stage, too many review or merge fix rounds, a required human review). A later run phol starts tries it again. Never caused by a provider running out of quota.
 _Avoid_: paused, stuck, failed

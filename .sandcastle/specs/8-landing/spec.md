@@ -34,6 +34,7 @@ A spec, ready to break into toddler issues, for how approved work lands: the run
 ## Decisions so far
 
 - [What GitHub and GitLab expose for mergeability, CI logs and auto-merge](issues/74-forge-landing-apis.md): all four additions are readable with the host's `gh`/`glab` login, one read per poll; raw CI logs only for GitHub Actions and GitLab jobs (other CI gives a summary or link); a GitLab source push aborts auto-merge, so the host re-enables it; a human review is read separately from mergeability on GitHub; three behaviours still need a real-repo check.
+- [The run loop's shape and its idle states](issues/75-run-loop-shape.md): one event loop; per-issue work ends at approved and frees its slot; landing is its own module emitting landed / merge fix / needs attention; merge fixes take a slot ahead of fresh issues; a run ends only when landing is empty; failures stay with their issue; spec 9 fills `pick` and `wakeAt`; on resume the forge or git, not `state.json`, says what landed.
 
 ## Not yet specified
 
