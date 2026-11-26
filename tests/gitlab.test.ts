@@ -357,9 +357,6 @@ test("GitLab fetches, finds and opens merge requests", async () => {
         call.some((arg) => arg.includes("source_branch=feature%2Fa")),
     ),
   );
-  assert.ok(
-    calls.some(
-      (call) => call.join(" ") === "git push origin abc:refs/heads/feature/a",
-    ),
-  );
+  // deliver pushes first; opening a request never pushes.
+  assert.ok(!calls.some((call) => call.includes("push")));
 });

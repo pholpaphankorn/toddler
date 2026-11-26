@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { type Issue } from "./policy.ts";
 import { command, type Command } from "./process.ts";
 import { type Config } from "./config.ts";
+import { logTails } from "./logtail.ts";
 
 export async function validatePushRemote(
   run: Command,
@@ -63,7 +64,8 @@ export type Delivered =
   | { state: "landed" | "moved" }
   | { state: "waiting"; url: string }
   | { state: "refused"; reason: string };
-export type Polled =
+// `head`: the open request's head commit where the forge reports it; landing decides whether it is toddler's.
+export type Polled = (
   | {
       state:
         | "none"
@@ -78,7 +80,8 @@ export type Polled =
   | {
       state: "ci-failed";
       checks: { name: string; link: string; tail?: string }[];
-    };
+    }
+) & { head?: string };
 export interface Forge {
   tracker?: Tracker;
   base(branch?: string): Promise<{ branch: string; ref: string }>;
@@ -187,21 +190,26 @@ async function deliverRequest(
       branch: string,
     ): Promise<{ url: string; open: boolean } | undefined>;
     openRequest(input: Delivery): Promise<string>;
-    enableAutoMerge(url: string): Promise<void>;
+    enableAutoMerge(url: string, sha: string): Promise<void>;
   },
   push: () => Promise<unknown>,
   autoMerge: boolean,
   input: Delivery,
 ): Promise<Delivered> {
-  const existing = await forge.findRequest(input.branch);
-  let url: string;
-  if (existing?.open) {
+  // Plain push, no lease or force: a rejection (someone else pushed, protected branch) is never worked around.
+  try {
     await push();
-    url = existing.url;
-  } else url = await forge.openRequest(input);
+  } catch (error) {
+    return {
+      state: "refused",
+      reason: `Push of ${input.sha} to ${input.branch} was rejected: ${(error as Error).message}`,
+    };
+  }
+  const existing = await forge.findRequest(input.branch);
+  const url = existing?.open ? existing.url : await forge.openRequest(input);
   if (autoMerge) {
     try {
-      await forge.enableAutoMerge(url);
+      await forge.enableAutoMerge(url, input.sha);
     } catch (error) {
       return {
         state: "refused",
@@ -211,12 +219,31 @@ async function deliverRequest(
   }
   return { state: "waiting", url };
 }
-// shortcut: reads only whether a request exists and merged; #88/#89 map mergeability, CI and auto-merge.
+// shortcut: GitLab reads only whether a request exists and merged; #89 maps mergeability, CI and auto-merge.
 async function pollRequest(
   request: Promise<{ url: string; open: boolean } | undefined>,
 ): Promise<Polled> {
   const found = await request;
   return { state: !found ? "none" : found.open ? "waiting" : "landed" };
+}
+interface GitHubRequest {
+  url: string;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  headRefOid?: string;
+  mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN" | null;
+  mergeStateStatus?: string | null;
+  reviewDecision?: string | null;
+  autoMergeRequest?: object | null;
+  statusCheckRollup?: {
+    __typename?: string;
+    name?: string;
+    context?: string;
+    status?: string;
+    conclusion?: string | null;
+    state?: string;
+    detailsUrl?: string;
+    targetUrl?: string;
+  }[];
 }
 export class GitHubForge implements Forge {
   tracker: Tracker;
@@ -354,8 +381,91 @@ export class GitHubForge implements Forge {
       input,
     );
   }
-  poll(job: { branch: string }) {
-    return pollRequest(this.findRequest(job.branch));
+  // One read, mapped in the seam's precedence; failing Actions jobs then get their log tails.
+  async poll(job: {
+    branch: string;
+    sha: string;
+    base: string;
+  }): Promise<Polled> {
+    const requests: GitHubRequest[] = JSON.parse(
+      await this.gh([
+        "pr",
+        "list",
+        "--repo",
+        this.config.repository,
+        "--head",
+        job.branch,
+        "--state",
+        "all",
+        "--json",
+        "url,state,headRefOid,mergeable,mergeStateStatus,reviewDecision,autoMergeRequest,statusCheckRollup",
+      ]),
+    );
+    const find = (state: GitHubRequest["state"]) =>
+      requests.find((item) => item.state === state);
+    if (find("MERGED")) return { state: "landed" };
+    const pr = find("OPEN");
+    if (!pr) return { state: find("CLOSED") ? "closed" : "none" };
+    return { ...(await this.openState(pr)), head: pr.headRefOid };
+  }
+  private async openState(pr: GitHubRequest): Promise<Polled> {
+    if (["REVIEW_REQUIRED", "CHANGES_REQUESTED"].includes(pr.reviewDecision!))
+      return { state: "review-required" };
+    // Still being computed: ask again next poll.
+    if (!pr.mergeable || pr.mergeable === "UNKNOWN")
+      return { state: "waiting" };
+    if (pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY")
+      return { state: "conflict" };
+    if (pr.mergeStateStatus === "BEHIND") return { state: "behind" };
+    const checks = pr.statusCheckRollup ?? [];
+    const context = (check: (typeof checks)[number]) =>
+      check.__typename === "StatusContext" || check.context !== undefined;
+    // Only finished CI counts: one check still running means wait for the rest.
+    const pending = checks.some((check) =>
+      context(check)
+        ? ["PENDING", "EXPECTED"].includes(check.state!)
+        : check.status !== "COMPLETED",
+    );
+    const failed = checks.filter((check) =>
+      context(check)
+        ? ["FAILURE", "ERROR"].includes(check.state!)
+        : check.status === "COMPLETED" &&
+          !["SUCCESS", "NEUTRAL", "SKIPPED"].includes(check.conclusion!),
+    );
+    if (failed.length && !pending)
+      return {
+        state: "ci-failed",
+        checks: logTails(
+          await Promise.all(
+            failed.map(async (check) => {
+              const link =
+                (context(check) ? check.targetUrl : check.detailsUrl) ?? "";
+              // Raw logs exist only for GitHub Actions jobs; other checks stay name + link.
+              const job = /\/actions\/runs\/\d+\/job\/(\d+)/.exec(link)?.[1];
+              return {
+                name: (context(check) ? check.context : check.name) ?? "",
+                link,
+                log: job
+                  ? await this.gh([
+                      "run",
+                      "view",
+                      "--repo",
+                      this.config.repository,
+                      "--job",
+                      job,
+                      "--log-failed",
+                    ]).catch(() => undefined)
+                  : undefined,
+              };
+            }),
+          ),
+        ).checks.map(({ name, link, tail }) => ({
+          name,
+          link: link ?? "",
+          ...(tail !== undefined && { tail }),
+        })),
+      };
+    return { state: pr.autoMergeRequest ? "waiting" : "auto-merge-off" };
   }
   async findRequest(branch: string) {
     const requests: { url: string; state: string }[] = JSON.parse(
@@ -382,11 +492,6 @@ export class GitHubForge implements Forge {
     title: string;
     body: string;
   }) {
-    await this.git([
-      "push",
-      this.config.remote,
-      `${input.sha}:refs/heads/${input.branch}`,
-    ]);
     const directory = await mkdtemp(join(tmpdir(), "sandcastle-pr-"));
     try {
       const file = join(directory, "body.md");
@@ -452,7 +557,8 @@ export class GitHubForge implements Forge {
         : []),
     ];
   }
-  async enableAutoMerge(url: string) {
+  // Tied to the pushed SHA: a foreign push in between is never merged or armed.
+  async enableAutoMerge(url: string, sha: string) {
     const repo = JSON.parse(
       await this.gh(["api", `repos/${this.config.repository}`]),
     );
@@ -480,11 +586,12 @@ export class GitHubForge implements Forge {
             ? "--rebase"
             : undefined);
     if (!method) throw new Error("Repository has no enabled merge method");
-    await this.gh(["pr", "merge", url, "--auto", method]).catch(
+    const head = ["--match-head-commit", sha];
+    await this.gh(["pr", "merge", url, "--auto", method, ...head]).catch(
       (error: Error) => {
         // GitHub refuses auto-merge when nothing is pending: merge now.
         if (!/clean status/i.test(error.message)) throw error;
-        return this.gh(["pr", "merge", url, method]);
+        return this.gh(["pr", "merge", url, method, ...head]);
       },
     );
   }
@@ -663,11 +770,6 @@ export class GitLabForge implements Forge {
     title: string;
     body: string;
   }) {
-    await this.gitCommand(
-      "git",
-      ["push", this.config.remote, `${input.sha}:refs/heads/${input.branch}`],
-      { cwd: this.root },
-    );
     const result = await this.api(`${this.project}/merge_requests`, [
       "--method",
       "POST",

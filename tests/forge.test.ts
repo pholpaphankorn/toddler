@@ -148,7 +148,7 @@ test("GitHub tracker normalizes issues and checks all native blockers and commen
   assert.ok(calls[1][3].includes("issues/2/dependencies/blocked_by"));
 });
 
-test("GitHub forge fetches the base, finds open or merged requests, pushes and creates a request", async () => {
+test("GitHub forge fetches the base, finds open or merged requests and creates a request", async () => {
   const calls: string[][] = [];
   let states = [
     { url: "closed", state: "CLOSED" },
@@ -197,11 +197,8 @@ test("GitHub forge fetches the base, finds open or merged requests, pushes and c
     }),
     "url",
   );
-  assert.ok(
-    calls.some(
-      (call) => call.join(" ") === "git push origin abc:refs/heads/branch",
-    ),
-  );
+  // deliver pushes first; opening a request never pushes.
+  assert.ok(!calls.some((call) => call.includes("push")));
   assert.ok(calls.some((call) => call.join(" ") === "git fetch origin main"));
   assert.match(
     await forge.doctorChecks(config)[0][1](),
@@ -231,12 +228,12 @@ test("GitHub uses an allowed merge method for noninteractive auto-merge and clea
       return "";
     },
   );
-  await forge.enableAutoMerge("url");
+  await forge.enableAutoMerge("url", "abc");
   assert.deepEqual(calls, [
     ["api", "repos/owner/repo"],
     ["repo", "view", "owner/repo", "--json", "viewerDefaultMergeMethod"],
-    ["pr", "merge", "url", "--auto", "--squash"],
-    ["pr", "merge", "url", "--squash"],
+    ["pr", "merge", "url", "--auto", "--squash", "--match-head-commit", "abc"],
+    ["pr", "merge", "url", "--squash", "--match-head-commit", "abc"],
   ]);
 });
 
@@ -256,12 +253,27 @@ test("GitHub forge merges immediately when auto-merge has no pending checks", as
       return "";
     },
   );
-  await forge.enableAutoMerge("https://example.com/pr/1");
+  await forge.enableAutoMerge("https://example.com/pr/1", "abc");
   assert.deepEqual(calls, [
     ["api", "repos/owner/repo"],
     ["repo", "view", "owner/repo", "--json", "viewerDefaultMergeMethod"],
-    ["pr", "merge", "https://example.com/pr/1", "--auto", "--merge"],
-    ["pr", "merge", "https://example.com/pr/1", "--merge"],
+    [
+      "pr",
+      "merge",
+      "https://example.com/pr/1",
+      "--auto",
+      "--merge",
+      "--match-head-commit",
+      "abc",
+    ],
+    [
+      "pr",
+      "merge",
+      "https://example.com/pr/1",
+      "--merge",
+      "--match-head-commit",
+      "abc",
+    ],
   ]);
 });
 
@@ -282,14 +294,14 @@ test("GitHub enables auto-merge and propagates refusals", async () => {
       return "";
     },
   );
-  await forge.enableAutoMerge("url");
+  await forge.enableAutoMerge("url", "abc");
   assert.deepEqual(calls, [
     ["api", "repos/owner/repo"],
     ["repo", "view", "owner/repo", "--json", "viewerDefaultMergeMethod"],
-    ["pr", "merge", "url", "--auto", "--merge"],
+    ["pr", "merge", "url", "--auto", "--merge", "--match-head-commit", "abc"],
   ]);
   refuse = true;
-  await assert.rejects(forge.enableAutoMerge("url"), /not allowed/);
+  await assert.rejects(forge.enableAutoMerge("url", "abc"), /not allowed/);
   assert.equal(calls.length, 6);
 });
 
@@ -397,31 +409,289 @@ test("files tracker parses issue frontmatter and validates issue files", async (
   }
 });
 
-test("GitHub deliver pushes the exact SHA to an open request and poll reads only request state until #88", async () => {
-  const calls: string[] = [];
-  let states = [{ url: "open", state: "OPEN" }];
+// One raw `gh pr list --json` row per poll state, plus the precedence overlaps.
+const open = {
+  url: "pr",
+  state: "OPEN",
+  headRefOid: "abc",
+  mergeable: "MERGEABLE",
+  mergeStateStatus: "BLOCKED",
+  reviewDecision: "APPROVED",
+  autoMergeRequest: { mergeMethod: "MERGE" },
+  statusCheckRollup: [],
+};
+const actionsFailed = {
+  __typename: "CheckRun",
+  name: "test",
+  status: "COMPLETED",
+  conclusion: "FAILURE",
+  detailsUrl: "https://github.com/owner/repo/actions/runs/7/job/42",
+};
+const otherFailed = {
+  __typename: "StatusContext",
+  context: "ci/external",
+  state: "ERROR",
+  targetUrl: "https://ci.example/build/9",
+};
+const running = { __typename: "CheckRun", name: "lint", status: "IN_PROGRESS" };
+const passed = {
+  __typename: "CheckRun",
+  name: "lint",
+  status: "COMPLETED",
+  conclusion: "SUCCESS",
+};
+const failing = { statusCheckRollup: [passed, actionsFailed, otherFailed] };
+// `gh run view --log-failed` output: job, step and timestamp prefix plus colour, both cut by logTail.
+const rawLog =
+  "test\tRun tests\t2026-11-26T10:00:00.0000000Z \x1b[31mnot ok 1 - adds\x1b[0m\n";
+const ciFailed = {
+  state: "ci-failed",
+  checks: [
+    {
+      name: "test",
+      link: actionsFailed.detailsUrl,
+      tail: "not ok 1 - adds",
+    },
+    { name: "ci/external", link: otherFailed.targetUrl },
+  ],
+};
+const pollRows: [string, object[], object][] = [
+  ["no request", [], { state: "none" }],
+  ["merged", [{ url: "pr", state: "MERGED" }], { state: "landed" }],
+  [
+    "merged beside a closed one",
+    [
+      { url: "old", state: "CLOSED" },
+      { url: "pr", state: "MERGED" },
+    ],
+    { state: "landed" },
+  ],
+  ["closed", [{ ...open, state: "CLOSED" }], { state: "closed" }],
+  [
+    "closed + conflict",
+    [{ ...open, state: "CLOSED", mergeable: "CONFLICTING" }],
+    { state: "closed" },
+  ],
+  [
+    "review required",
+    [{ ...open, reviewDecision: "REVIEW_REQUIRED" }],
+    { state: "review-required" },
+  ],
+  [
+    "changes requested",
+    [{ ...open, reviewDecision: "CHANGES_REQUESTED" }],
+    { state: "review-required" },
+  ],
+  [
+    "review required + ci-failed",
+    [{ ...open, reviewDecision: "REVIEW_REQUIRED", ...failing }],
+    { state: "review-required" },
+  ],
+  [
+    "conflict",
+    [{ ...open, mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" }],
+    { state: "conflict" },
+  ],
+  [
+    "conflict + ci-failed",
+    [{ ...open, mergeable: "CONFLICTING", ...failing }],
+    { state: "conflict" },
+  ],
+  ["behind", [{ ...open, mergeStateStatus: "BEHIND" }], { state: "behind" }],
+  [
+    "behind + ci-failed",
+    [{ ...open, mergeStateStatus: "BEHIND", ...failing }],
+    { state: "behind" },
+  ],
+  ["ci-failed", [{ ...open, ...failing }], ciFailed],
+  [
+    "ci-failed with auto-merge off",
+    [{ ...open, ...failing, autoMergeRequest: null }],
+    ciFailed,
+  ],
+  [
+    "a failed check while another still runs",
+    [{ ...open, statusCheckRollup: [actionsFailed, running] }],
+    { state: "waiting" },
+  ],
+  [
+    "auto-merge off",
+    [{ ...open, mergeStateStatus: "CLEAN", autoMergeRequest: null }],
+    { state: "auto-merge-off" },
+  ],
+  [
+    "CI pending",
+    [{ ...open, statusCheckRollup: [running] }],
+    { state: "waiting" },
+  ],
+  [
+    "mergeable null",
+    [{ ...open, mergeable: null, autoMergeRequest: null, ...failing }],
+    { state: "waiting" },
+  ],
+  [
+    "another head is reported, not judged",
+    [{ ...open, headRefOid: "foreign", ...failing }],
+    ciFailed,
+  ],
+  [
+    "mergeable unknown",
+    [{ ...open, mergeable: "UNKNOWN" }],
+    { state: "waiting" },
+  ],
+];
+for (const [name, requests, expected] of pollRows)
+  test(`GitHub poll: ${name}`, async () => {
+    const calls: string[] = [];
+    const forge = new GitHubForge(
+      "/repo",
+      config,
+      async () => "",
+      async (_, args = []) => {
+        calls.push(args.join(" "));
+        if (args[0] === "run") return rawLog;
+        return JSON.stringify(requests);
+      },
+    );
+    const { head, ...polled } = await forge.poll({
+      branch: "branch",
+      sha: "abc",
+      base: "main",
+    });
+    assert.deepEqual(polled, expected);
+    // An open request reports its head; landing decides whether it is toddler's.
+    const reported = requests as { state: string; headRefOid?: string }[];
+    assert.equal(
+      head,
+      reported.some((item) => item.state === "MERGED")
+        ? undefined
+        : reported.find((item) => item.state === "OPEN")?.headRefOid,
+    );
+    assert.equal(
+      calls[0],
+      "pr list --repo owner/repo --head branch --state all --json url,state,headRefOid,mergeable,mergeStateStatus,reviewDecision,autoMergeRequest,statusCheckRollup",
+    );
+    // Logs are read only for failing GitHub Actions jobs, only on ci-failed.
+    assert.deepEqual(
+      calls.slice(1),
+      expected === ciFailed
+        ? ["run view --repo owner/repo --job 42 --log-failed"]
+        : [],
+    );
+  });
+test("GitHub poll: an expired Actions log keeps name and link", async () => {
   const forge = new GitHubForge(
     "/repo",
     config,
+    async () => "",
     async (_, args = []) => {
-      calls.push(["git", ...args].join(" "));
-      return "";
-    },
-    async (_, args = []) => {
-      calls.push(["gh", ...args].join(" "));
-      return JSON.stringify(states);
+      if (args[0] === "run") throw new Error("log not found");
+      return JSON.stringify([{ ...open, ...failing }]);
     },
   );
-  const job = { branch: "branch", sha: "abc", base: "main" };
-  assert.deepEqual(await forge.deliver({ ...job, title: "t", body: "b" }), {
-    state: "waiting",
-    url: "open",
+  assert.deepEqual(await forge.poll({ branch: "b", sha: "", base: "" }), {
+    state: "ci-failed",
+    checks: ciFailed.checks.map(({ name, link }) => ({ name, link })),
+    head: "abc",
   });
-  assert.ok(calls.includes("git push origin abc:refs/heads/branch"));
-  assert.ok(!calls.some((call) => / pr (create|merge)/.test(call)));
-  assert.deepEqual(await forge.poll(job), { state: "waiting" });
-  states = [{ url: "merged", state: "MERGED" }];
-  assert.deepEqual(await forge.poll(job), { state: "landed" });
-  states = [];
-  assert.deepEqual(await forge.poll(job), { state: "none" });
 });
+
+const deliverRows: {
+  name: string;
+  autoMerge: boolean;
+  requests: object[];
+  push?: Error;
+  auto?: Error;
+  expected: object;
+  calls: string[];
+}[] = [
+  {
+    name: "a rejected push is refused and nothing else happens",
+    autoMerge: true,
+    requests: [{ url: "pr", state: "OPEN" }],
+    push: new Error("! [rejected] abc -> branch (non-fast-forward)"),
+    expected: {
+      state: "refused",
+      reason:
+        "Push of abc to branch was rejected: ! [rejected] abc -> branch (non-fast-forward)",
+    },
+    calls: ["git push origin abc:refs/heads/branch"],
+  },
+  {
+    name: "an open request is reused and auto-merge enabled again",
+    autoMerge: true,
+    requests: [{ url: "pr", state: "OPEN" }],
+    expected: { state: "waiting", url: "pr" },
+    calls: [
+      "git push origin abc:refs/heads/branch",
+      "gh pr list --repo owner/repo --head branch --state all --json url,state",
+      "gh api repos/owner/repo",
+      "gh repo view owner/repo --json viewerDefaultMergeMethod",
+      "gh pr merge pr --auto --merge --match-head-commit abc",
+    ],
+  },
+  {
+    name: "autoMerge off opens the request and waits without enabling",
+    autoMerge: false,
+    requests: [{ url: "old", state: "CLOSED" }],
+    expected: { state: "waiting", url: "created" },
+    calls: [
+      "git push origin abc:refs/heads/branch",
+      "gh pr list --repo owner/repo --head branch --state all --json url,state",
+      "gh pr create",
+    ],
+  },
+  {
+    name: "a clean PR GitHub refuses auto-merge on is merged at once, still waiting",
+    autoMerge: true,
+    requests: [{ url: "pr", state: "OPEN" }],
+    auto: new Error("Pull request is in clean status"),
+    expected: { state: "waiting", url: "pr" },
+    calls: [
+      "git push origin abc:refs/heads/branch",
+      "gh pr list --repo owner/repo --head branch --state all --json url,state",
+      "gh api repos/owner/repo",
+      "gh repo view owner/repo --json viewerDefaultMergeMethod",
+      "gh pr merge pr --auto --merge --match-head-commit abc",
+      "gh pr merge pr --merge --match-head-commit abc",
+    ],
+  },
+];
+for (const row of deliverRows)
+  test(`GitHub deliver: ${row.name}`, async () => {
+    const calls: string[] = [];
+    const forge = new GitHubForge(
+      "/repo",
+      { ...config, autoMerge: row.autoMerge },
+      async (_, args = []) => {
+        calls.push(["git", ...args].join(" "));
+        if (row.push) throw row.push;
+        return "";
+      },
+      async (_, args = []) => {
+        // pr create's temp body file differs each run.
+        calls.push(
+          ["gh", ...(args[1] === "create" ? args.slice(0, 2) : args)].join(" "),
+        );
+        if (args[1] === "list") return JSON.stringify(row.requests);
+        if (args[1] === "create") return "created";
+        if (args[0] === "api")
+          return JSON.stringify({ allow_merge_commit: true });
+        if (args[0] === "repo")
+          return JSON.stringify({ viewerDefaultMergeMethod: "MERGE" });
+        if (args.includes("--auto") && row.auto) throw row.auto;
+        return "";
+      },
+    );
+    assert.deepEqual(
+      await forge.deliver({
+        branch: "branch",
+        sha: "abc",
+        base: "main",
+        title: "t",
+        body: "b",
+      }),
+      row.expected,
+    );
+    assert.deepEqual(calls, row.calls);
+  });

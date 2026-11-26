@@ -42,6 +42,8 @@ export interface Job {
   mergeFix?: {
     trigger: "conflict" | "ci-failed" | "verify";
     base?: string;
+    // The proven host chain last pushed on a forge; the round fast-forwards to it first.
+    from?: string;
     checks?: { name: string; link: string; tail?: string }[];
     output?: string;
   };
@@ -63,6 +65,8 @@ export interface Job {
   verification?: string;
   feedback?: string[];
   reviewedSha?: string;
+  // Last SHA handed to a forge's deliver (reviewedSha or proven host commits on it).
+  deliveredSha?: string;
   reviewer?: Provider;
   report?: ReviewReport;
   pr?: string;
@@ -99,7 +103,7 @@ export interface RunnerOptions {
   ranker?: Ranker;
   tracker?: Tracker;
   forge?: Forge;
-  wait?: (ms: number) => Promise<void>;
+  wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 // Workflow files ship next to this module; runtime files live under root.
@@ -171,10 +175,18 @@ export class Runner {
   started = new Date().toISOString();
   // Scheduler seams; spec 9 fills them in.
   maxParallelIssues = 2;
-  wait: (ms: number) => Promise<void>;
+  wait: (ms: number, signal?: AbortSignal) => Promise<void>;
   landedThisRun = new Set<number>();
   stageLogs = new Map<number, string>();
-  interrupted = false;
+  // Aborted on interrupt, so waits end at once.
+  stopping = new AbortController();
+  get interrupted(): boolean {
+    return this.stopping.signal.aborted;
+  }
+  set interrupted(value: boolean) {
+    if (value) this.stopping.abort();
+    else if (this.interrupted) this.stopping = new AbortController();
+  }
   slots = new Map<string, Promise<void>>();
   constructor({
     root,
@@ -190,7 +202,7 @@ export class Runner {
     ranker,
     tracker,
     forge,
-    wait = (ms) => sleep(ms),
+    wait = (ms, signal) => sleep(ms, undefined, { signal }).catch(() => {}),
   }: RunnerOptions) {
     this.root = root;
     this.config = config;
@@ -256,7 +268,7 @@ export class Runner {
         this.finished(issue.number)
       )
         continue;
-      // No job yet: skip an issue that already has a request (sha unused off NoneForge).
+      // No job yet: skip an issue that already has a request, a closed one included (sha unused off NoneForge).
       if (
         !this.state.jobs[issue.number] &&
         this.config.forge !== "none" &&
@@ -371,8 +383,8 @@ export class Runner {
             )) !== job.branch
           )
             throw new Error("Unexpected worktree branch");
-          // A merge fix round starts from the host's merge of the pinned base; a merge still in progress is kept.
-          if (role === "implementation" && job.mergeFix?.base) {
+          // A merge fix round starts from the pushed head and the host's merge of the pinned base; a merge still in progress is kept.
+          if (role === "implementation" && job.mergeFix) {
             const cwd = sandbox.worktreePath;
             const merging = await this.gitCommand(
               "git",
@@ -382,7 +394,14 @@ export class Runner {
               () => true,
               () => false,
             );
-            if (!merging)
+            // Proven host commits only; a no-op once HEAD contains them.
+            if (!merging && job.mergeFix.from)
+              await this.gitCommand(
+                "git",
+                ["merge", "--ff-only", "-q", job.mergeFix.from],
+                { cwd },
+              );
+            if (!merging && job.mergeFix.base)
               await this.gitCommand(
                 "git",
                 ["merge", "--no-ff", "--no-commit", job.mergeFix.base],
@@ -460,6 +479,10 @@ export class Runner {
             if (job.mergeFix.base && !(await contains(job.mergeFix.base)))
               throw new Error(
                 `Merge fix round did not commit the merge of ${job.mergeFix.base}`,
+              );
+            if (job.mergeFix.from && !(await contains(job.mergeFix.from)))
+              throw new Error(
+                `Merge fix round dropped the pushed head ${job.mergeFix.from}`,
               );
             // --remerge-diff skips octopus merges.
             if (
@@ -655,7 +678,7 @@ export class Runner {
                 // A legacy conflictBase job may not have been approved yet: it gets the full review.
                 // Every commit not in the approved head or the pinned base shows, so nothing rides in on a merge.
                 (job.mergeFix && job.reviewedSha
-                  ? `\nMerge fix round ${job.mergeFixRounds} (trigger: ${job.mergeFix.trigger}): the complete diff was approved at ${job.reviewedSha}; review only this delta to ${job.branch}, merges shown as remerge diffs:\n${fence(await this.git(["log", "-p", "--remerge-diff", `${job.reviewedSha}..${job.branch}`, ...(job.mergeFix.base ? [`^${job.mergeFix.base}`] : [])]))}\n`
+                  ? `\nMerge fix round ${job.mergeFixRounds} (trigger: ${job.mergeFix.trigger}): the complete diff was approved at ${job.reviewedSha}; review only this delta to ${job.branch}, merges shown as remerge diffs:\n${fence(await this.git(["log", "-p", "--remerge-diff", `${job.reviewedSha}..${job.branch}`, ...[job.mergeFix.base, job.mergeFix.from].filter(Boolean).map((sha) => `^${sha}`)]))}\n`
                   : ""),
             );
           } catch (error) {
@@ -765,6 +788,9 @@ export class Runner {
     ];
     return (
       `\nMerge fix round ${job.mergeFixRounds} (trigger: ${fix.trigger}).` +
+      (fix.from
+        ? ` The host fast-forwarded this branch to ${fix.from}, the head already pushed with its own base merges.`
+        : "") +
       (fix.base
         ? ` The host started \`git merge --no-commit ${fix.base}\` (${job.baseBranch}) in this worktree${fix.trigger === "conflict" ? "; resolve every conflict keeping the intent of both sides" : ""}. Do not abort, redo or rebase it: finish the merge, rerun the checks, and commit.`
         : "") +
@@ -865,6 +891,7 @@ export class Runner {
       inflight.add(tracked);
     };
     try {
+      await this.landing.recheck();
       // One event loop: fill free slots, then wait for a slot or landing to finish a job, or a wake timer.
       while (true) {
         if (!this.interrupted && !failure) await this.fill(baseBranch, track);
@@ -882,7 +909,7 @@ export class Runner {
               : "Stopped: no provider has verified quota above its stop thresholds.";
             return;
           }
-          await this.wait(Math.max(0, wake - Date.now()));
+          await this.wait(Math.max(0, wake - Date.now()), this.stopping.signal);
           continue;
         }
         await Promise.race(inflight);

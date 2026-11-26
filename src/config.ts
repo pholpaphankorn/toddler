@@ -25,6 +25,7 @@ export const defaults = {
   quotaTimeoutMs: 12_000,
   maxReviewRounds: 10,
   maxMergeFixRounds: 10,
+  landingPollSeconds: 60,
   roles: {
     implementation: {
       skills: ["tdd", "diagnosing-bugs", "codebase-design", "ponytail"],
@@ -151,6 +152,16 @@ export function loadConfig(
     throw new Error(`${path}: invalid issues`);
   if (typeof config.autoMerge !== "boolean")
     throw new Error(`${path}: invalid autoMerge`);
+  if (
+    config.forge !== "none" &&
+    !(
+      typeof config.landingPollSeconds === "number" &&
+      config.landingPollSeconds >= 10
+    )
+  )
+    throw new Error(
+      `${path}: landingPollSeconds must be a number, at least 10`,
+    );
   if (config.forge === "none" && config.issues === "forge")
     throw new Error(`${path}: issues: forge requires a forge other than none`);
   if (

@@ -3,7 +3,7 @@ title: GitHub deliver and poll
 labels: []
 blocked_by: [86, 87]
 parent: 8
-status: open
+status: closed
 ---
 On GitHub, toddler watches its auto-merge PRs until they land: it merges a moved base itself, sends failing CI back as a merge fix with log tails, and stops to ask phol when only a human can unblock the PR.
 
