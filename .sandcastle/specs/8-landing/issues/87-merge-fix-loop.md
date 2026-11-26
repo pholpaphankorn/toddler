@@ -3,7 +3,7 @@ title: Merge fix loop
 labels: []
 blocked_by: [85]
 parent: 8
-status: open
+status: closed
 ---
 A conflict with the base or a failing post-merge `verify` goes back to the agents as a merge fix round instead of stopping, and the reviewer only reviews what changed.
 
