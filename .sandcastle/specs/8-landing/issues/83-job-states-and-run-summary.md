@@ -1,6 +1,6 @@
 ---
 title: Job states, needs attention and the run summary
-labels: []
+labels: [parallel-safe]
 blocked_by: []
 parent: 8
 status: open

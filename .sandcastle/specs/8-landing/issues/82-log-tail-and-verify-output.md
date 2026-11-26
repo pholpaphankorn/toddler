@@ -1,6 +1,6 @@
 ---
 title: logTail and full verify output
-labels: []
+labels: [parallel-safe]
 blocked_by: []
 parent: 8
 status: open
