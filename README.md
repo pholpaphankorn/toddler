@@ -48,6 +48,7 @@ toddler doctor    # check sandbox, logins, quota and models
 toddler plan      # show the next assignments without starting agents
 toddler           # run (same as `toddler run`)
 toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
+toddler smoke forge github owner/scratch   # by hand, against a scratch repo only (see Verification)
 ```
 
 `.sandcastle/config.json` (committed in the project):
@@ -133,7 +134,7 @@ With `"forge": "none"`, toddler runs offline and nothing is pushed. With a GitHu
 
 For GitLab, set `"forge": "gitlab"` and `"repository": "group/subgroup/project"` (nested groups are supported), and sign in with `glab`. GitLab issues can declare same-project blockers on lines such as `Blocked by: #12, #15`; lines can repeat. Native GitLab blocking links also count. File issues open merge requests without a closing reference.
 
-Set `"autoMerge": true` to ask GitHub or GitLab to merge approved requests after required checks and approvals pass. GitHub uses the repository default merge method and must allow auto-merge on the repository; `toddler doctor` checks this setting. If the forge refuses, the request remains open and the issue needs attention. With auto-merge on, the run waits until the request merges; only then do issues that depend on it start. On GitHub, while it waits toddler polls the pull request every `landingPollSeconds`: when the base moved (`BEHIND`) or conflicts, it merges the base in itself and pushes again; finished, failing CI goes back to the agents as a merge fix round with the failing check names and, for GitHub Actions, the tail of each failing log; a required human review, a closed pull request, auto-merge turned off, or a rejected push (toddler never forces) needs attention. Without auto-merge, an approved pull request is polled once per run so one you merged by hand counts as landed. The default is `false`, so toddler leaves merging to you. With `forge: "none"`, approved work lands one issue at a time: when the base branch moved, toddler merges it into the issue branch in a throwaway worktree and runs `verify` in a sandbox with no agent, then moves the base branch to that exact commit (fast-forwarding it when it is checked out and clean). A conflict or a failing `verify` goes back to the agents as a merge fix round (see `maxMergeFixRounds`); a checked-out base with uncommitted changes needs attention instead.
+Set `"autoMerge": true` to ask GitHub or GitLab to merge approved requests after required checks and approvals pass. GitHub uses the repository default merge method and must allow auto-merge on the repository; `toddler doctor` checks this setting. If the forge refuses, the request remains open and the issue needs attention. With auto-merge on, the run waits until the request merges; only then do issues that depend on it start. While it waits toddler polls the pull or merge request every `landingPollSeconds`: when the base moved (GitHub `BEHIND`, GitLab `need_rebase`) or conflicts, it merges the base in itself and pushes again; finished, failing CI goes back to the agents as a merge fix round with the failing check names and, for GitHub Actions and GitLab jobs, the tail of each failing log (GitLab jobs allowed to fail are left out; other CI gives a name and link); a required human review, a closed request, auto-merge turned off, or a rejected push (toddler never forces) needs attention. GitLab cancels auto-merge on every push to the source branch, so toddler turns it on again after each of its own pushes, tied to the commit it just pushed; a project that refuses the merge (for example a fast-forward-only project that will not take toddler's merge commit) needs attention. Without auto-merge, an approved pull request is polled once per run so one you merged by hand counts as landed. The default is `false`, so toddler leaves merging to you. With `forge: "none"`, approved work lands one issue at a time: when the base branch moved, toddler merges it into the issue branch in a throwaway worktree and runs `verify` in a sandbox with no agent, then moves the base branch to that exact commit (fast-forwarding it when it is checked out and clean). A conflict or a failing `verify` goes back to the agents as a merge fix round (see `maxMergeFixRounds`); a checked-out base with uncommitted changes needs attention instead.
 
 `.sandcastle/project.md` (optional) is appended to the implementation and review
 prompts as "Project notes": stack, how to check changes, what not to do.
@@ -319,6 +320,50 @@ requires model calls and the project's own verification.
 in a disposable Seatbelt sandbox to check actual authentication and model access.
 Pass `claude` or `codex` to test only one provider. Claude's own temporary
 files are directed to Seatbelt's private temp directory with `CLAUDE_CODE_TMPDIR`.
+
+`toddler smoke forge <github|gitlab> <scratch-repository>` checks forge
+behaviours toddler relies on but nobody has tried yet. Run it by hand, never in
+CI, and only against a scratch repository you own. It refuses to run without
+one named, and refuses the repository of the project it is run from (its
+`.sandcastle/config.json` `repository` or its `origin` push remote); any other
+repository you name is taken to be scratch. It clones the scratch repository
+into a temporary directory and opens a request, without auto-merge, from a new
+`toddler-smoke-<time>` branch that starts one commit behind the default branch
+(which needs at least two commits). Auto-merge is turned on only when the
+request cannot merge at once (GitHub `mergeStateStatus` `BLOCKED` or `BEHIND`;
+GitLab `detailed_merge_status` other than `mergeable`); otherwise it stops
+without merging anything. It then merges the base into the branch, pushes that
+merge plainly, delivers again, and polls once. Whatever happens, it then closes
+the request and deletes the branch. A check or pipeline that later passes would
+let auto-merge merge the smoke commit into the scratch default branch, so the
+scratch repository needs a required check that never reports (on GitLab,
+"Pipelines must succeed" with a pipeline that never finishes) and, on GitHub,
+"require branches to be up to date" and "require linear history" on the
+default branch; on GitLab, the fast-forward or semi-linear merge method. Each
+line it prints:
+
+- `opened: <url> (…)`: the request and its raw fields before the host push
+  (GitHub `mergeStateStatus` and auto-merge on/off; GitLab
+  `detailed_merge_status` and `merge_when_pipeline_succeeds`).
+- `host merge pushed: <sha> (…)`: the same fields after the plain push of the
+  host merge commit.
+- `GitHub keeps auto-merge after a host push: yes|no|untested`: whether
+  auto-merge survived toddler's own push. `no` means every host merge on GitHub
+  ends in "auto-merge was turned off".
+- `GitLab source push aborts auto-merge: yes|no`: GitLab documents `yes`;
+  toddler re-enables it either way.
+- `deliver again: waiting|refused: <reason> (…)`: toddler's real `deliver` on
+  the merge commit, which turns auto-merge on again, and the fields after it.
+- `GitLab merge commit clears need_rebase: yes|no|untested`: `yes` means a
+  host merge is enough on fast-forward and semi-linear projects; `no` means
+  such projects end in needs attention; `untested` means the request was not
+  `need_rebase` before the push (not a fast-forward or semi-linear project).
+- `GitHub linear history on <base>: required|not required|unknown; auto-merge on the host merge commit: accepted|refused`:
+  whether a branch requiring linear history accepts auto-merge on a request
+  that contains toddler's merge commit.
+- `poll: <state>`: what toddler's `poll` makes of the request now.
+- `closed: <url>` / `deleted branch: <branch>` (or `could not …`): cleanup; on
+  `could not`, close or delete it by hand.
 
 References: [Sandcastle sandbox providers](https://github.com/mattpocock/sandcastle/blob/main/docs/guide/sandbox-providers.md),
 [Codex app-server quota API](https://learn.chatgpt.com/docs/app-server),

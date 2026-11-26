@@ -3,7 +3,7 @@ title: GitLab deliver and poll, and toddler smoke forge
 labels: []
 blocked_by: [88]
 parent: 8
-status: open
+status: closed
 ---
 GitLab merge requests land exactly like GitHub PRs, and phol can check the forge behaviours nobody has tried yet against a scratch repo.
 
