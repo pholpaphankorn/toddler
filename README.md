@@ -119,10 +119,14 @@ status: open
 What is wrong and what done looks like.
 ```
 
-The title falls back to the file name. Set `status: closed` (or delete the file) once
-the work is merged; until then it still blocks any issue that lists it in `blocked_by`.
-Local issues work on `toddler/local-<number>` branches, and their PRs do not
-say `Closes #N`.
+The title falls back to the file name. An open issue blocks any issue that lists it in `blocked_by`.
+After review approves a local issue, toddler adds one commit, `Close local issue N`, that sets its
+`status: closed`, so the file closes when the work lands or its PR merges. Local issues work on
+`toddler/local-<number>` branches, and their PRs do not say `Closes #N`.
+
+Before anything is delivered, toddler proves that every commit on top of the reviewed one is its own:
+at most that close commit, then clean merges of the base, checked by rebuilding each tree. Anything
+else needs attention instead of being published.
 
 With `"forge": "none"`, toddler runs offline and nothing is pushed. With a GitHub forge, file issues still open pull requests.
 
