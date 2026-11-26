@@ -880,13 +880,14 @@ export class Runner {
     // #87: merge fixes will take free slots here ahead of fresh issues.
     for (const issue of await this.candidates()) {
       const job = this.state.jobs[issue.number];
+      // On-hold or blocked labels hold approved work too.
+      if (!ready(issue, this.config)) continue;
       if (job?.status === "approved") {
         land(issue);
         continue;
       }
       if (
         this.working.size >= this.maxParallelIssues ||
-        !ready(issue, this.config) ||
         // An issue without the parallel label always runs alone.
         (this.working.size &&
           !(
@@ -905,7 +906,11 @@ export class Runner {
       track(
         this.work(issue, provider, base.branch, base.ref)
           .then(() => {
-            if (this.state.jobs[issue.number]?.status === "approved")
+            // After an interrupt or fault, nothing new starts, delivery included.
+            if (
+              !this.interrupted &&
+              this.state.jobs[issue.number]?.status === "approved"
+            )
               land(issue);
           })
           .finally(() => this.working.delete(issue.number)),
@@ -954,7 +959,8 @@ export class Runner {
       this.interrupted = true;
       if (error instanceof RankingError || error instanceof StopConditionError)
         this.quotas.stop();
-      await Promise.all(inflight);
+      // A promise settling here can still add another; wait until none is left.
+      while (inflight.size) await Promise.all(inflight);
       throw error;
     } finally {
       console.log(stop);

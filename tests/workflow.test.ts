@@ -223,6 +223,67 @@ test("with nothing able to start, the run sleeps until wakeAt through the inject
   assert.ok(lines.includes("Stopped: no available issues."));
 });
 
+test("after a host fault, a slot that approves later is not delivered", async () => {
+  const { runner, events, state } = fixture();
+  runner.tracker.issues = async () =>
+    [1, 2].map((number) => issue(number, ["parallel-safe"]));
+  const git = runner.gitCommand;
+  runner.gitCommand = async (file, args = [], options) => {
+    if (args[0] === "merge-tree" && args.includes("toddler/issue-2"))
+      throw Object.assign(new Error("fatal: broken repo"), { code: 128 });
+    return git(file, args, options);
+  };
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  runner.stage = async (job, _provider, role) => {
+    if (job.number === 1 && role === "implementation") await gate;
+    return {
+      sha: "reviewed",
+      stdout: role === "review" ? report() : "done",
+      verification: "",
+    };
+  };
+  const run = summary(() => runner.run("main"));
+  void run.catch(() => {});
+  await until(() => runner.interrupted);
+  release();
+  await assert.rejects(run, /broken repo/);
+  await turn();
+  assert.equal(state.jobs[1].status, "approved");
+  // Only the check before review: delivery's own conflict check never ran.
+  assert.equal(
+    events.filter(
+      (event) => event[1] === "merge-tree" && event.includes("toddler/issue-1"),
+    ).length,
+    1,
+  );
+  assert.ok(!events.some((event) => event[0] === "open"));
+});
+
+test("an approved job labelled on-hold is not delivered", async () => {
+  const { runner, events, state } = fixture();
+  runner.tracker.issues = async () => [issue(1, ["on-hold"])];
+  state.jobs[1] = {
+    number: 1,
+    branch: "toddler/issue-1",
+    baseBranch: "main",
+    baseSha: "base",
+    status: "approved",
+    reviewRounds: 0,
+    mergeFixRounds: 0,
+    implementer: "codex",
+    reviewer: "claude",
+    reviewedSha: "reviewed",
+    report: reviewReport(report()),
+  };
+  const { lines } = await summary(() => runner.run("main"));
+  assert.equal(state.jobs[1].status, "approved");
+  assert.equal(state.jobs[1].attention, undefined);
+  assert.equal(state.jobs[1].pr, undefined);
+  assert.ok(!events.some((event) => event[0] === "open"));
+  assert.ok(lines.includes("Stopped: no available issues."));
+});
+
 test("an interrupted run starts nothing new and lets the in-flight issue finish its stages", async () => {
   const { runner, events, state } = fixture();
   runner.tracker.issues = async () => [issue(1), issue(2)];
