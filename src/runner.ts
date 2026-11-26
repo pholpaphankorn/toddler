@@ -2,13 +2,15 @@ import { modelsForProvider } from "./config.ts";
 import { readFile } from "node:fs/promises";
 import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import type * as SandcastleModule from "@ai-hero/sandcastle";
 import type { AgentProvider, CreateSandboxOptions } from "@ai-hero/sandcastle";
 import { type Config, type Provider, type Role } from "./config.ts";
 import {
-  assignments,
+  labels,
   ranked,
+  ready,
   reviewer,
   reviewReport,
   type Issue,
@@ -96,6 +98,7 @@ export interface RunnerOptions {
   ranker?: Ranker;
   tracker?: Tracker;
   forge?: Forge;
+  wait?: (ms: number) => Promise<void>;
 }
 
 // Workflow files ship next to this module; runtime files live under root.
@@ -174,7 +177,13 @@ export class Runner {
   ranker?: Ranker;
   tracker: Tracker;
   forge: Forge;
-  attempted = new Set<number>();
+  // Agent work holds a slot; landing (publishing for now) is host work and takes none.
+  working = new Map<number, { issue: Issue; provider: Provider }>();
+  landing = new Set<number>();
+  started = new Date().toISOString();
+  // Scheduler seams; spec 9 fills them in.
+  maxParallelIssues = 2;
+  wait: (ms: number) => Promise<void>;
   landedThisRun = new Set<number>();
   stageLogs = new Map<number, string>();
   interrupted = false;
@@ -194,6 +203,7 @@ export class Runner {
     ranker,
     tracker,
     forge,
+    wait = (ms) => sleep(ms),
   }: RunnerOptions) {
     this.root = root;
     this.config = config;
@@ -206,6 +216,7 @@ export class Runner {
     this.ghCommand = gh;
     this.authentication = authentication;
     this.ranker = ranker;
+    this.wait = wait;
     const connected = connect(
       root,
       config,
@@ -252,7 +263,14 @@ export class Runner {
     const issues = await this.tracker.issues();
     const result: Issue[] = [];
     for (const issue of issues) {
-      if (this.attempted.has(issue.number) || this.finished(issue.number))
+      const attention = this.state.jobs[issue.number]?.attention;
+      if (
+        this.working.has(issue.number) ||
+        this.landing.has(issue.number) ||
+        // Needs attention since this run started: skipped until the next run.
+        (attention && attention.at >= this.started) ||
+        this.finished(issue.number)
+      )
         continue;
       const head =
         this.state.jobs[issue.number]?.branch ?? this.branch(issue.number);
@@ -526,37 +544,16 @@ export class Runner {
       this.state.jobs[issue.number] = job;
       this.save();
     }
-    try {
-      if (job.attention) {
-        const changes: Partial<Job> = { attention: undefined };
-        if (job.attention.reason === "review-cap") changes.reviewRounds = 0;
-        if (job.attention.reason === "merge-fix-cap")
-          changes.mergeFixRounds = 0;
-        this.persist(job, changes);
-      }
+    // Ends at approved; the run loop then hands the job to deliver, outside the slot.
+    await this.attend(issue, job, async () => {
       const context = await this.context(issue, job);
-      while (!this.interrupted) {
+      while (
+        !this.interrupted &&
+        (job.status === "implementation" || job.status === "review")
+      ) {
         await this.quotas.refresh();
-        if (job.status === "approved") {
-          if (await this.conflicted(job)) continue;
-          await this.publish(issue, job);
-          return;
-        }
         if (job.status === "implementation") {
-          const provider =
-            this.config.providers.includes(job.implementer) &&
-            this.quotas.available(
-              job.implementer,
-              this.config.roles.implementation.models[job.implementer],
-            )
-              ? job.implementer
-              : ranked(
-                  issue,
-                  "implementation",
-                  this.config,
-                  this.quotas,
-                  this.ranker,
-                )[0];
+          const provider = this.pick("implementation", issue, job);
           if (!provider) return;
           const prompt = await this.prompt("implementation");
           try {
@@ -600,15 +597,7 @@ export class Runner {
         }
         if (job.status === "review") {
           if (await this.conflicted(job)) continue;
-          const provider = reviewer(
-            job.implementer,
-            (name) =>
-              this.config.providers.includes(name) &&
-              this.quotas.available(
-                name,
-                this.config.roles.review.models[name],
-              ),
-          );
+          const provider = this.pick("review", issue, job);
           if (!provider) return;
           const prompt = await this.prompt("review");
           let result;
@@ -663,6 +652,30 @@ export class Runner {
           }
         }
       }
+    });
+  }
+  // Publishing is host work and takes no slot; #85 moves it into landing.
+  async deliver(issue: Issue): Promise<void> {
+    const job = this.state.jobs[issue.number];
+    await this.attend(issue, job, async () => {
+      if (!(await this.conflicted(job))) await this.publish(issue, job);
+    });
+  }
+  // Retrying clears an earlier attention; a failure sets it and the run goes on.
+  async attend(
+    issue: Issue,
+    job: Job,
+    action: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      if (job.attention) {
+        const changes: Partial<Job> = { attention: undefined };
+        if (job.attention.reason === "review-cap") changes.reviewRounds = 0;
+        if (job.attention.reason === "merge-fix-cap")
+          changes.mergeFixRounds = 0;
+        this.persist(job, changes);
+      }
+      await action();
     } catch (error) {
       if (
         error instanceof RankingError ||
@@ -832,51 +845,116 @@ export class Runner {
       }
     }
   }
+  // Scheduler seam: the provider for a stage starting now, or none.
+  pick(role: Role, issue: Issue, job?: Job): Provider | undefined {
+    const usable = (name: Provider) =>
+      this.config.providers.includes(name) &&
+      this.quotas.available(name, this.config.roles[role].models[name]);
+    if (job && role === "review") return reviewer(job.implementer, usable);
+    if (job && usable(job.implementer)) return job.implementer;
+    const order = ranked(issue, role, this.config, this.quotas, this.ranker);
+    if (job) return order[0];
+    // A new issue prefers a provider no slot is on, as the old two-issue batch did.
+    const busy = [...this.working.values()].map((slot) => slot.provider);
+    return order.find((name) => !busy.includes(name)) ?? order[0];
+  }
+  // Scheduler seam: when to try again once nothing can start (ms epoch), or none to stop.
+  wakeAt(): number | undefined {
+    return undefined;
+  }
+  // Start what can start: approved jobs go to delivery, others take free slots.
+  async fill(
+    baseBranch: string,
+    track: (promise: Promise<void>) => void,
+  ): Promise<void> {
+    const base = await this.forge.base(baseBranch);
+    await this.quotas.refresh();
+    const parallel = (issue: Issue) =>
+      labels(issue).includes(this.config.parallelLabel);
+    const land = (issue: Issue) => {
+      this.landing.add(issue.number);
+      track(
+        this.deliver(issue).finally(() => this.landing.delete(issue.number)),
+      );
+    };
+    // #87: merge fixes will take free slots here ahead of fresh issues.
+    for (const issue of await this.candidates()) {
+      const job = this.state.jobs[issue.number];
+      if (job?.status === "approved") {
+        land(issue);
+        continue;
+      }
+      if (
+        this.working.size >= this.maxParallelIssues ||
+        !ready(issue, this.config) ||
+        // An issue without the parallel label always runs alone.
+        (this.working.size &&
+          !(
+            parallel(issue) &&
+            [...this.working.values()].every((slot) => parallel(slot.issue))
+          ))
+      )
+        continue;
+      const provider = this.pick(
+        job?.status === "review" ? "review" : "implementation",
+        issue,
+        job,
+      );
+      if (!provider) continue;
+      this.working.set(issue.number, { issue, provider });
+      track(
+        this.work(issue, provider, base.branch, base.ref)
+          .then(() => {
+            if (this.state.jobs[issue.number]?.status === "approved")
+              land(issue);
+          })
+          .finally(() => this.working.delete(issue.number)),
+      );
+    }
+  }
   async run(baseBranch: string): Promise<void> {
     let stop = "Stopped: run interrupted.";
+    this.started = new Date().toISOString();
+    let failure: { error: unknown } | undefined;
+    const inflight = new Set<Promise<void>>();
+    const track = (promise: Promise<void>) => {
+      const tracked = promise
+        .catch((error) => {
+          failure ??= { error };
+        })
+        .finally(() => inflight.delete(tracked));
+      inflight.add(tracked);
+    };
     try {
-      while (!this.interrupted) {
-        const base = await this.forge.base(baseBranch);
-        await this.quotas.refresh();
-        if (
-          !this.config.providers.some((name) =>
-            modelsForProvider(this.config, name).some((model) =>
-              this.quotas.available(name, model),
-            ),
-          )
-        ) {
-          stop =
-            "Stopped: no provider has verified quota above its stop thresholds.";
-          return;
+      // One event loop: fill free slots, then wait for a slot or delivery to finish, or a wake timer.
+      while (true) {
+        if (!this.interrupted && !failure) await this.fill(baseBranch, track);
+        if (failure) throw failure.error;
+        if (!this.working.size && !this.landing.size) {
+          if (this.interrupted) return;
+          const wake = this.wakeAt();
+          if (wake === undefined) {
+            stop = this.config.providers.some((name) =>
+              modelsForProvider(this.config, name).some((model) =>
+                this.quotas.available(name, model),
+              ),
+            )
+              ? "Stopped: no available issues."
+              : "Stopped: no provider has verified quota above its stop thresholds.";
+            return;
+          }
+          await this.wait(Math.max(0, wake - Date.now()));
+          continue;
         }
-        const issues = await this.candidates();
-        const batch = assignments(
-          issues,
-          (name) =>
-            this.quotas.available(
-              name,
-              this.config.roles.implementation.models[name],
-            ),
-          this.config,
-          this.quotas,
-          this.ranker,
-        );
-        if (!batch.length) {
-          stop = "Stopped: no available issues.";
-          return;
-        }
-        for (const { issue } of batch) this.attempted.add(issue.number);
-        // One pipeline per provider: no two implementation agents race on an issue.
-        const results = await Promise.allSettled(
-          batch.map(({ issue, provider }) =>
-            this.work(issue, provider, base.branch, base.ref),
-          ),
-        );
-        const failure = results.find((result) => result.status === "rejected");
-        if (failure?.status === "rejected") throw failure.reason;
+        await Promise.race(inflight);
       }
     } catch (error) {
       stop = `Stopped: ${(error as Error).message}`;
+      // Only host faults (and ranking or stop module failures) end the run; let in-flight stages end first.
+      this.interrupted = true;
+      if (error instanceof RankingError || error instanceof StopConditionError)
+        this.quotas.stop();
+      await Promise.all(inflight);
       throw error;
     } finally {
       console.log(stop);

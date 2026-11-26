@@ -184,7 +184,8 @@ and worktrees are ignored by Git.
 | Claude Code | `claude-sonnet-5-5` | `claude-opus-5-5` |
 
 These are four logical roles, invoked as native CLI sessions. The coordinator runs
-at most two issue pipelines concurrently, with one session per provider/role. Each
+at most two issue pipelines concurrently, with one session per provider/role; when
+one reaches approval, the next ready issue starts at once. Each
 role can delegate within Seatbelt; subagents share that provider's quota. Model pins
 are explicit, with no automatic model substitution. Claude account access to those
 pins is verified when its CLI starts a task.
