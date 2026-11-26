@@ -24,6 +24,7 @@ export const defaults = {
   pollIntervalMs: 60_000,
   quotaTimeoutMs: 12_000,
   maxReviewRounds: 10,
+  maxMergeFixRounds: 10,
   roles: {
     implementation: {
       skills: ["tdd", "diagnosing-bugs", "codebase-design", "ponytail"],

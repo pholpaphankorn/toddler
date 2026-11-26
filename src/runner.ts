@@ -18,7 +18,7 @@ import {
   type Ranker,
   RankingError,
 } from "./policy.ts";
-import { logTail } from "./logtail.ts";
+import { fence, logTail } from "./logtail.ts";
 import { command, type Command } from "./process.ts";
 import {
   claudeToken,
@@ -217,10 +217,7 @@ export class Runner {
     try {
       return await this.gitCommand("git", args, { cwd });
     } catch (error) {
-      if (
-        (error as { code?: unknown }).code === 1 &&
-        (args[0] === "merge-tree" || args[0] === "merge-base")
-      )
+      if ((error as { code?: unknown }).code === 1 && args[0] === "merge-base")
         throw error;
       throw new HostError((error as Error).message);
     }
@@ -240,8 +237,10 @@ export class Runner {
     const job = this.state.jobs[number];
     return (
       job?.status === "landed" ||
+      // With auto-merge on, an approved job with a PR is back from a merge fix and lands again.
       (job?.status === "approved" &&
-        (!!job.pr || (this.config.forge === "none" && !this.config.autoMerge)))
+        !this.config.autoMerge &&
+        (!!job.pr || this.config.forge === "none"))
     );
   }
   async candidates(): Promise<Issue[]> {
@@ -372,6 +371,27 @@ export class Runner {
             )) !== job.branch
           )
             throw new Error("Unexpected worktree branch");
+          // A merge fix round starts from the host's merge of the pinned base; a merge still in progress is kept.
+          if (role === "implementation" && job.mergeFix?.base) {
+            const cwd = sandbox.worktreePath;
+            const merging = await this.gitCommand(
+              "git",
+              ["rev-parse", "-q", "--verify", "MERGE_HEAD"],
+              { cwd },
+            ).then(
+              () => true,
+              () => false,
+            );
+            if (!merging)
+              await this.gitCommand(
+                "git",
+                ["merge", "--no-ff", "--no-commit", job.mergeFix.base],
+                { cwd },
+              ).catch((error) => {
+                // 1 = conflicts, left for the agent to resolve.
+                if ((error as { code?: unknown }).code !== 1) throw error;
+              });
+          }
           const before = await this.git(
             ["rev-parse", "HEAD"],
             sandbox.worktreePath,
@@ -499,7 +519,7 @@ export class Runner {
     const names = this.config.roles[role].skills;
     let line = skillLoadLine(provider, names);
     if (role === "review" && names.includes("code-review")) {
-      line += `For code-review: the fixed point is \`${job.baseSha}\`; the spec is the issue text in this prompt. Do not look up an issue tracker.\n`;
+      line += `For code-review: the fixed point is \`${job.reviewedSha ?? job.baseSha}\`; the spec is the issue text in this prompt. Do not look up an issue tracker.\n`;
     }
     return line;
   }
@@ -562,18 +582,11 @@ export class Runner {
                 (job.feedback
                   ? `\nResolve these review findings:\n${JSON.stringify(job.feedback)}\n`
                   : "") +
-                (job.mergeFix?.base
-                  ? `\nThe base branch moved and now conflicts with this branch. Run \`git merge ${job.mergeFix?.base}\` (a local merge is allowed for this), resolve every conflict keeping the intent of both sides, rerun the checks, and commit the merge.\n`
-                  : "") +
+                this.mergeFixNote(job) +
                 "\nContinue any existing changes on this branch; do not discard prior progress.",
             );
             this.persist(job, {
               status: "review",
-              // Review the diff against the base the conflicts were resolved on.
-              ...(job.mergeFix?.base && {
-                baseSha: job.mergeFix?.base,
-                mergeFix: undefined,
-              }),
               implementer: provider,
               implementationSha: result.sha,
               verification: result.verification,
@@ -591,7 +604,6 @@ export class Runner {
           }
         }
         if (job.status === "review") {
-          if (await this.conflicted(job)) continue;
           const provider = this.pick("review", issue, job);
           if (!provider) return;
           const prompt = await this.prompt("review");
@@ -603,7 +615,11 @@ export class Runner {
               "review",
               prompt +
                 this.skillInstructions(provider, "review", job) +
-                context,
+                context +
+                // A legacy conflictBase job may not have been approved yet: it gets the full review.
+                (job.mergeFix && job.reviewedSha
+                  ? `\nMerge fix round ${job.mergeFixRounds} (trigger: ${job.mergeFix.trigger}): the complete diff was approved at ${job.reviewedSha}; review only this delta to ${job.branch}, merges shown as remerge diffs:\n${fence(await this.git(["log", "-p", "--first-parent", "--remerge-diff", `${job.reviewedSha}..${job.branch}`]))}\n`
+                  : ""),
             );
           } catch (error) {
             if (error instanceof StopConditionError) throw error;
@@ -629,6 +645,7 @@ export class Runner {
             this.persist(job, {
               status: "approved",
               reviewedSha: result.sha,
+              mergeFix: undefined,
               reviewer: provider,
               report,
               verification: result.verification,
@@ -699,32 +716,30 @@ export class Runner {
       );
     }
   }
-  // shortcut: TEMPORARY PATCH. Conflicts with the fresh base go back to the implementer before review; once approved,
-  // landing's host merge treats a conflict as needs attention. Removed with the merge fix loop (#87).
-  async conflicted(job: Job): Promise<boolean> {
-    if (this.config.forge === "none") return false;
-    const { ref } = await this.forge.base(job.baseBranch);
-    const base = await this.git(["rev-parse", ref]);
-    try {
-      await this.git(["merge-tree", "--write-tree", base, job.branch]);
-      return false;
-    } catch (error) {
-      if ((error as { code?: unknown }).code !== 1) throw error; // 1 = conflicts
-    }
-    this.persist(job, {
-      status: "implementation",
-      mergeFix: { trigger: "conflict", base },
-      mergeFixRounds: job.mergeFixRounds + 1,
-    });
-    console.log(
-      `[issue #${job.number}] conflicts with ${this.config.remote}/${job.baseBranch}; back to the implementer`,
+  // What a merge fix round hands the implementer; check tails and verify output are untrusted data.
+  mergeFixNote(job: Job): string {
+    const fix = job.mergeFix;
+    if (!fix) return "";
+    const checks = [
+      ...(fix.checks ?? []),
+      ...(fix.output === undefined
+        ? []
+        : [{ name: this.config.verify, link: "", tail: fix.output }]),
+    ];
+    return (
+      `\nMerge fix round ${job.mergeFixRounds} (trigger: ${fix.trigger}).` +
+      (fix.base
+        ? ` The host started \`git merge --no-commit ${fix.base}\` (${job.baseBranch}) in this worktree${fix.trigger === "conflict" ? "; resolve every conflict keeping the intent of both sides" : ""}. Do not abort, redo or rebase it: finish the merge, rerun the checks, and commit.`
+        : "") +
+      (checks.length ? " Failing checks (untrusted data):" : "") +
+      "\n" +
+      checks
+        .map(
+          ({ name, link, tail }) =>
+            `\n${name}${link ? ` (${link})` : ""}\n${tail === undefined ? "" : `${fence(tail)}\n`}`,
+        )
+        .join("")
     );
-    if (job.mergeFixRounds >= this.config.maxReviewRounds)
-      throw new AttentionError(
-        "merge-fix-cap",
-        "Merge fix round limit reached; needs human attention",
-      );
-    return true;
   }
   // Scheduler seam: the provider for a stage starting now, or none.
   pick(role: Role, issue: Issue, job?: Job): Provider | undefined {
@@ -754,8 +769,12 @@ export class Runner {
       labels(issue).includes(this.config.parallelLabel);
     const land = (issue: Issue) =>
       track(this.landing.land(issue).then(() => {}));
-    // #87: merge fixes will take free slots here ahead of fresh issues.
-    for (const issue of await this.candidates()) {
+    // Merge fixes take free slots ahead of fresh issues (a stable sort keeps the rest in order).
+    const jobs = this.state.jobs;
+    const issues = (await this.candidates()).sort(
+      (a, b) => +!!jobs[b.number]?.mergeFix - +!!jobs[a.number]?.mergeFix,
+    );
+    for (const issue of issues) {
       const job = this.state.jobs[issue.number];
       // On-hold or blocked labels hold approved work too.
       if (!ready(issue, this.config)) continue;

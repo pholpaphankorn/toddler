@@ -20,9 +20,18 @@ export class AttentionError extends Error {
   }
 }
 
+// Something an agent can fix blocks the merge: the job goes back for a merge fix round.
+class MergeFixNeeded extends Error {
+  fix: NonNullable<Job["mergeFix"]>;
+  constructor(fix: NonNullable<Job["mergeFix"]>) {
+    super(`merge fix: ${fix.trigger}`);
+    this.fix = fix;
+  }
+}
+
 // What a job left landing as; undefined when the run was interrupted (state is left to resume).
-// #87 adds "merge-fix".
-export type LandingEvent = "landed" | "approved" | "attention" | undefined;
+export type LandingEvent =
+  "landed" | "approved" | "attention" | "merge-fix" | undefined;
 
 // Gets approved jobs into the base: host merge + verify + deliver one job at a time, then polls until landed.
 export class Landing {
@@ -62,7 +71,13 @@ export class Landing {
           return "landed";
         case "none":
         case "behind": {
-          const result = await this.serial(() => this.deliver(issue, job, sha));
+          let result;
+          try {
+            result = await this.serial(() => this.deliver(issue, job, sha));
+          } catch (error) {
+            if (!(error instanceof MergeFixNeeded)) throw error;
+            return this.mergeFix(job, error.fix);
+          }
           if (!result) return;
           sha = result.sha;
           const { delivered } = result;
@@ -100,12 +115,31 @@ export class Landing {
             `auto-merge was turned off on ${job.pr ?? job.branch}`,
           );
         default:
-          // #87: conflict and ci-failed become merge fixes.
+          // #88: a forge conflict goes through the host merge; ci-failed becomes a merge fix.
           throw new Error(`${job.pr ?? job.branch}: ${polled.state}`);
       }
       await this.runner.wait(this.pollInterval);
       polled = await poll();
     }
+  }
+  // One trigger = one round; the job leaves landing and takes a slot ahead of fresh issues.
+  private mergeFix(job: Job, fix: NonNullable<Job["mergeFix"]>): LandingEvent {
+    if (job.mergeFixRounds >= this.runner.config.maxMergeFixRounds)
+      throw new AttentionError(
+        "merge-fix-cap",
+        `Merge fix round limit reached (${fix.trigger}); needs human attention`,
+      );
+    this.runner.persist(job, {
+      status: "implementation",
+      mergeFix: fix,
+      mergeFixRounds: job.mergeFixRounds + 1,
+      reviewRounds: 0,
+      feedback: undefined,
+    });
+    console.log(
+      `[issue #${job.number}] ${fix.trigger}: merge fix round ${job.mergeFixRounds}`,
+    );
+    return "merge-fix";
   }
   private async serial<T>(action: () => Promise<T>): Promise<T> {
     const previous = this.turn;
@@ -135,7 +169,7 @@ export class Landing {
       const base = await runner.git(["rev-parse", ref]);
       if (!(await this.ancestor(base, sha))) {
         sha = await this.merge(job, sha, base);
-        await this.verify(job, sha);
+        await this.verify(job, sha, base);
         if (runner.interrupted) return;
       }
       const delivered = await runner.forge.deliver({
@@ -179,7 +213,8 @@ export class Landing {
           { cwd: directory },
         );
       } catch (error) {
-        // #87: a conflict becomes a merge fix.
+        if ((error as { code?: unknown }).code === 1)
+          throw new MergeFixNeeded({ trigger: "conflict", base });
         throw new Error(
           `Host merge of ${job.baseBranch} (${base}) into ${job.branch} failed: ${(error as Error).message}`,
         );
@@ -191,7 +226,7 @@ export class Landing {
     }
   }
   // The command is trusted, but what it runs is agent-written repo code: a sandbox with no agent, never the host.
-  private async verify(job: Job, sha: string): Promise<void> {
+  private async verify(job: Job, sha: string, base: string): Promise<void> {
     const { config, sandcastle, sandboxProvider } = this.runner;
     if (!config.verify.trim()) return;
     const branch = `toddler/verify-${job.number}-${sha.slice(0, 12)}`;
@@ -208,11 +243,17 @@ export class Landing {
       )
         throw new Error(`Sandbox install failed: ${config.install}`);
       const { exitCode, stdout, stderr } = await sandbox.exec(config.verify);
+      // The failure is in the merged result, so the round starts from the same merge.
       if (exitCode)
-        // #87: a failing verify becomes a merge fix.
-        throw new Error(
-          `Host merge failed verification: ${config.verify}\n${logTail(stdout && !stdout.endsWith("\n") ? `${stdout}\n${stderr}` : stdout + stderr)}`,
-        );
+        throw new MergeFixNeeded({
+          trigger: "verify",
+          base,
+          output: logTail(
+            stdout && !stdout.endsWith("\n")
+              ? `${stdout}\n${stderr}`
+              : stdout + stderr,
+          ),
+        });
     } finally {
       await sandbox.close();
       // Best effort: a preserved worktree keeps its branch.
