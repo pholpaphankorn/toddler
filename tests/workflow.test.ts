@@ -1,4 +1,4 @@
-import { FilesTracker } from "../src/forge.ts";
+import { FilesTracker, NoneForge, type Polled } from "../src/forge.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
@@ -302,11 +302,11 @@ test("an interrupted run starts nothing new and lets the in-flight issue finish 
 test("forge and tracker failures pause only their issue and the run continues", async () => {
   const { runner, state } = fixture();
   runner.tracker.issues = async () => [issue(1), issue(2), issue(3)];
-  runner.forge.openRequest = async (input) => {
+  runner.forge.deliver = async (input) => {
     if (input.branch.endsWith("-1"))
       throw new Error("! [remote rejected] push declined");
     if (input.branch.endsWith("-2")) throw new Error("fetch failed");
-    return "https://github.com/example/repo/pull/3";
+    return { state: "waiting", url: "https://github.com/example/repo/pull/3" };
   };
   const { lines, exitCode } = await summary(() => runner.run("main"));
   assert.equal(state.jobs[1].attention?.reason, "refused");
@@ -1185,6 +1185,7 @@ function fixture(
   root = fileURLToPath(new URL("../../", import.meta.url)),
 ) {
   const events: string[][] = [],
+    delivered = new Set<string>(),
     state = { repository: config.repository, jobs: {} as Record<number, Job> };
   const quotas = {
     available: (_name: Provider) => true,
@@ -1216,9 +1217,8 @@ function fixture(
           ? { ref: `local issue ${item.number}`, closes: "" }
           : { ref: `#${item.number}`, closes: `Closes #${item.number}\n\n` },
     },
+    wait: async () => {},
     forge: {
-      enabled: overrides.forge !== "none",
-      remote: !(overrides.forge === "none"),
       base: async (branch = "main") => {
         events.push(["base", branch]);
         return {
@@ -1226,11 +1226,18 @@ function fixture(
           ref: overrides.forge === "none" ? branch : `origin/${branch}`,
         };
       },
-      findRequest: async (branch) => {
-        events.push(["find", branch]);
-        return undefined;
+      // NoneForge lands at once; a forge request waits, then auto-merge lands it.
+      poll: async ({ branch }) => {
+        events.push(["poll", branch]);
+        return {
+          state: !delivered.has(branch)
+            ? "none"
+            : overrides.autoMerge
+              ? "landed"
+              : "waiting",
+        };
       },
-      openRequest: async (input) => {
+      deliver: async (input) => {
         events.push([
           "open",
           input.branch,
@@ -1239,12 +1246,12 @@ function fixture(
           input.title,
           input.body,
         ]);
-        return "https://github.com/example/repo/pull/1";
+        delivered.add(input.branch);
+        return overrides.forge === "none"
+          ? { state: "landed" }
+          : { state: "waiting", url: "https://github.com/example/repo/pull/1" };
       },
       doctorChecks: () => [],
-      enableAutoMerge: async (url) => {
-        events.push(["merge", url]);
-      },
     },
   });
   runner.stage = async (_job, provider, role) => {
@@ -1421,7 +1428,7 @@ test("stage prompts explicitly load each role's skills for the selected provider
 test("implementation -> opposite-provider review -> push exact SHA -> PR without auto-merge by default", async () => {
   const { runner, events, state } = fixture();
   await runner.work(issue(1), "codex", "main");
-  await runner.deliver(issue(1));
+  await runner.landing.land(issue(1));
   assert.deepEqual(
     events.filter((event) => event[0] === "stage"),
     [
@@ -1452,7 +1459,7 @@ test("pull request reports verification passed without including its output", as
     verification: "verbose test output",
   });
   await runner.work(issue(1), "codex", "main");
-  await runner.deliver(issue(1));
+  await runner.landing.land(issue(1));
   const body = events.find((event) => event[0] === "open")![5];
   assert.match(body, /Coordinator verification \(`make check`\): passed\./);
   assert.doesNotMatch(body, /verbose test output/);
@@ -1553,157 +1560,368 @@ test("a long verify failure keeps its last lines in attention.detail", async () 
   assert.match(error, /some test name here\nnot ok 61/);
   assert.ok(error.endsWith("AssertionError: expected 1 to equal 2"));
 });
-test("a refused auto-merge leaves the PR open and the job at pr", async () => {
+test("a refused delivery is needs attention and the job stays approved", async () => {
   const { runner, state } = fixture({ autoMerge: true });
-  runner.forge.enableAutoMerge = async () => {
-    throw new Error("auto-merge is not allowed");
-  };
+  runner.forge.deliver = async () => ({
+    state: "refused",
+    reason: "Could not enable auto-merge on url: auto-merge is not allowed",
+  });
   await runner.work(issue(1), "codex", "main");
-  await runner.deliver(issue(1));
-  assert.equal(state.jobs[1].status, "landing");
+  assert.equal(await runner.landing.land(issue(1)), "attention");
+  assert.equal(state.jobs[1].status, "approved");
   assert.equal(state.jobs[1].attention?.reason, "refused");
+  assert.match(state.jobs[1].attention!.detail, /auto-merge is not allowed/);
 });
-test("auto-merge is enabled for GitHub PRs with either issue tracker", async () => {
-  for (const issues of ["forge", "files"] as const) {
-    const { runner, events, state } = fixture({ autoMerge: true, issues });
-    await runner.work(issue(1), "codex", "main");
-    await runner.deliver(issue(1));
-    assert.equal(state.jobs[1].status, "landing");
-    assert.deepEqual(
-      events.filter((event) => event[0] === "merge"),
-      [["merge", "https://github.com/example/repo/pull/1"]],
-    );
-  }
-});
-test("offline auto-merge fast-forwards only when safe", async () => {
-  for (const scenario of [
-    "clean",
-    "unchecked",
-    "diverged",
-    "dirty",
-    "disabled",
-  ]) {
-    const root = mkdtempSync(join(tmpdir(), "toddler-ff-"));
-    const run = (...args: string[]) => {
-      const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
-      assert.equal(result.status, 0, result.stderr);
-      return result.stdout.trim();
-    };
-    try {
-      run("init", "-q", "-b", "main");
-      run("config", "user.email", "t@example.com");
-      run("config", "user.name", "t");
-      writeFileSync(join(root, "base"), "base");
-      run("add", ".");
-      run("commit", "-qm", "base");
-      run("checkout", "-qb", "toddler/local-1");
-      writeFileSync(join(root, "work"), "work");
-      run("add", ".");
-      run("commit", "-qm", "work");
-      const reviewed = run("rev-parse", "HEAD");
-      run("checkout", "-q", "main");
-      if (scenario === "diverged") {
-        writeFileSync(join(root, "other"), "other");
-        run("add", ".");
-        run("commit", "-qm", "other");
-      }
-      const before = run("rev-parse", "main");
-      if (scenario === "unchecked") run("checkout", "-qb", "another");
-      if (scenario === "dirty") writeFileSync(join(root, "base"), "dirty");
-      const { runner, state } = fixture(
-        { forge: "none", autoMerge: scenario !== "disabled" },
-        root,
-      );
-      runner.gitCommand = command;
-      const job = {
-        number: 1,
-        branch: "toddler/local-1",
-        baseBranch: "main",
-        reviewedSha: reviewed,
-        status: "approved",
-      } as Job;
-      state.jobs[1] = job;
-      if (scenario === "diverged") {
-        await assert.rejects(
-          runner.publish(issue(1), job),
-          /cannot fast-forward/,
-        );
-        assert.equal(job.status, "approved");
-      } else {
-        await runner.publish(issue(1), job);
-        assert.equal(
-          job.status,
-          scenario === "disabled" ? "approved" : "landed",
-        );
-      }
-      assert.equal(
-        run("rev-parse", "main"),
-        ["clean", "unchecked", "dirty"].includes(scenario) ? reviewed : before,
-        scenario,
-      );
-      assert.equal(run("rev-parse", "toddler/local-1"), reviewed);
-      if (scenario === "clean")
-        assert.equal(run("rev-parse", "HEAD"), reviewed);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  }
-});
-test("concurrent offline approvals finish on a clean checked-out base", async () => {
-  const root = mkdtempSync(join(tmpdir(), "toddler-ff-race-"));
-  const run = (...args: string[]) => {
+// A real temp repo whose main is pushed to a bare remote; toddler/local-1 holds the reviewed work.
+function landingRepo() {
+  const top = mkdtempSync(join(tmpdir(), "toddler-land-"));
+  const root = join(top, "work");
+  mkdirSync(root);
+  const git = (...args: string[]) => {
     const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     return result.stdout.trim();
   };
+  const commit = (branch: string, file: string, text = file) => {
+    git("checkout", "-q", branch);
+    writeFileSync(join(root, file), text);
+    git("add", ".");
+    git("commit", "-qm", file);
+    return git("rev-parse", "HEAD");
+  };
+  spawnSync("git", ["init", "-q", "--bare", "-b", "main", join(top, "remote")]);
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "t");
+  git("remote", "add", "origin", join(top, "remote"));
+  writeFileSync(join(root, "base"), "base");
+  git("add", ".");
+  git("commit", "-qm", "base");
+  git("push", "-q", "origin", "main");
+  git("branch", "toddler/local-1");
+  const reviewed = commit("toddler/local-1", "work");
+  git("checkout", "-q", "main");
+  return { top, root, git, commit, reviewed };
+}
+// Landing on real git: the real NoneForge unless a test scripts the forge; verify runs through a fake sandbox.
+function landing(
+  repo: ReturnType<typeof landingRepo>,
+  verify: (command: string) => { exitCode: number; stdout: string },
+  overrides: Partial<Config> = {},
+) {
+  const { runner, state, events } = fixture(
+    { forge: "none", autoMerge: true, issues: "files", ...overrides },
+    repo.root,
+  );
+  runner.gitCommand = command;
+  runner.forge = new NoneForge(repo.root);
+  const sandboxes: string[] = [];
+  runner.sandcastle = fake({
+    createSandbox: async (options: { baseBranch: string }) => {
+      sandboxes.push(options.baseBranch);
+      return {
+        worktreePath: "/fixture",
+        exec: async (cmd: string) => ({ stderr: "", ...verify(cmd) }),
+        close: async () => ({}),
+      };
+    },
+  });
+  runner.stage = async () => {
+    throw new Error("landing never runs an agent");
+  };
+  state.jobs[1] = {
+    number: 1,
+    branch: "toddler/local-1",
+    baseBranch: "main",
+    baseSha: "",
+    status: "approved",
+    reviewRounds: 0,
+    mergeFixRounds: 0,
+    implementer: "codex",
+    reviewer: "claude",
+    reviewedSha: repo.reviewed,
+    report: reviewReport(report()),
+  };
+  return { runner, state, events, sandboxes };
+}
+const pass = () => ({ exitCode: 0, stdout: "" });
+const quiet = async <T>(action: () => Promise<T>) => {
+  const original = console.error;
+  console.error = () => {};
   try {
-    run("init", "-q", "-b", "main");
-    run("config", "user.email", "t@example.com");
-    run("config", "user.name", "t");
-    writeFileSync(join(root, "base"), "base");
-    run("add", ".");
-    run("commit", "-qm", "base");
-    const jobs: Job[] = [];
-    for (const number of [1, 2]) {
-      run("checkout", "-qb", `toddler/local-${number}`, "main");
-      writeFileSync(join(root, `work-${number}`), "work");
-      run("add", ".");
-      run("commit", "-qm", `work ${number}`);
-      jobs.push({
-        number,
-        branch: `toddler/local-${number}`,
-        baseBranch: "main",
-        reviewedSha: run("rev-parse", "HEAD"),
-        status: "approved",
-      } as Job);
-    }
-    run("checkout", "-q", "main");
-    const { runner, state } = fixture({ forge: "none", autoMerge: true }, root);
-    for (const job of jobs) state.jobs[job.number] = job;
-    let first = true;
-    runner.gitCommand = async (file, args = [], options) => {
-      if (args[0] === "merge" && first) {
-        first = false;
-        const lock = join(root, ".git", "index.lock");
-        writeFileSync(lock, "");
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        rmSync(lock);
-      }
-      return command(file, args, options);
-    };
-    const results = await Promise.allSettled(
-      jobs.map((job) => runner.publish(issue(job.number), job)),
-    );
-    // Both start from the same base: the second cannot land and must not be reported done.
-    assert.deepEqual(jobs.map((job) => job.status).sort(), [
-      "approved",
-      "landed",
-    ]);
-    assert.equal(results.filter((r) => r.status === "rejected").length, 1);
-    const landed = jobs.find((job) => job.status === "landed")!;
-    assert.equal(run("rev-parse", "main"), landed.reviewedSha);
+    return await action();
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    console.error = original;
+  }
+};
+
+test("NoneForge: a clean compare-and-swap lands and fast-forwards a clean checked-out base; poll follows the base", async () => {
+  for (const checkedOut of [true, false]) {
+    const repo = landingRepo();
+    try {
+      if (!checkedOut) repo.git("checkout", "-qb", "another");
+      const { runner, state, sandboxes } = landing(repo, pass);
+      const forge = new NoneForge(repo.root);
+      const poll = () =>
+        forge.poll({
+          branch: "toddler/local-1",
+          sha: repo.reviewed,
+          base: "main",
+        });
+      assert.deepEqual(await poll(), { state: "none" });
+      assert.equal(await runner.landing.land(issue(1)), "landed");
+      assert.equal(state.jobs[1].status, "landed");
+      assert.deepEqual([...runner.landedThisRun], [1]);
+      assert.equal(repo.git("rev-parse", "main"), repo.reviewed);
+      assert.deepEqual(sandboxes, [], "nothing to merge, nothing to verify");
+      assert.deepEqual(await poll(), { state: "landed" });
+      if (checkedOut) {
+        assert.equal(repo.git("rev-parse", "HEAD"), repo.reviewed);
+        assert.equal(repo.git("status", "--porcelain"), "");
+      } else assert.equal(repo.git("branch", "--show-current"), "another");
+    } finally {
+      rmSync(repo.top, { recursive: true, force: true });
+    }
+  }
+});
+test("NoneForge: a base moved during verify is moved, then landing merges again and lands", async () => {
+  const repo = landingRepo();
+  try {
+    const first = repo.commit("main", "first");
+    let second = "";
+    const { runner, state, sandboxes } = landing(repo, (cmd) => {
+      assert.equal(cmd, "make check");
+      // The race: other work lands between the host merge and deliver.
+      if (!second) second = repo.commit("main", "second");
+      return pass();
+    });
+    assert.equal(await runner.landing.land(issue(1)), "landed");
+    assert.equal(state.jobs[1].status, "landed");
+    const head = repo.git("rev-parse", "main");
+    assert.deepEqual(sandboxes, [repo.git("rev-parse", "main^1"), head]);
+    assert.equal(
+      repo.git("rev-parse", "main^1^1", "main^1^2", "main^2"),
+      [repo.reviewed, first, second].join("\n"),
+    );
+    assert.equal(
+      repo.git("log", "-1", "--format=%s", "main"),
+      "Merge main into toddler/local-1",
+    );
+    assert.equal(repo.git("rev-parse", "HEAD"), head);
+    assert.equal(repo.git("status", "--porcelain"), "");
+    assert.equal(repo.git("worktree", "list").split("\n").length, 1);
+  } finally {
+    rmSync(repo.top, { recursive: true, force: true });
+  }
+});
+test("NoneForge: a dirty checked-out base is refused and the checkout is untouched", async () => {
+  const repo = landingRepo();
+  try {
+    writeFileSync(join(repo.root, "base"), "dirty");
+    const before = repo.git("rev-parse", "main");
+    const { runner, state } = landing(repo, pass);
+    assert.equal(await quiet(() => runner.landing.land(issue(1))), "attention");
+    assert.equal(state.jobs[1].status, "approved");
+    assert.equal(state.jobs[1].attention?.reason, "refused");
+    assert.match(state.jobs[1].attention!.detail, /uncommitted changes/);
+    assert.equal(repo.git("rev-parse", "main"), before);
+    assert.equal(readFileSync(join(repo.root, "base"), "utf8"), "dirty");
+  } finally {
+    rmSync(repo.top, { recursive: true, force: true });
+  }
+});
+test("regression: a failed local fast-forward never ends in landed and keeps dependents blocked", async () => {
+  const repo = landingRepo();
+  try {
+    const before = repo.git("rev-parse", "main");
+    const { runner, state } = landing(repo, pass);
+    runner.tracker.issues = async () => [issue(1), issue(2)];
+    runner.tracker.blocked = async (item, landed) =>
+      item.number === 2 && !landed!(1);
+    // Any git error while moving the base: here another git process holds the index.
+    writeFileSync(join(repo.root, ".git", "index.lock"), "");
+    const { lines, exitCode } = await quiet(() =>
+      summary(() => runner.run("main")),
+    );
+    assert.equal(state.jobs[1].status, "approved");
+    assert.equal(state.jobs[1].attention?.reason, "refused");
+    assert.match(state.jobs[1].attention!.detail, /index\.lock/);
+    assert.equal(state.jobs[2], undefined);
+    assert.equal(repo.git("rev-parse", "main"), before);
+    assert.ok(lines.includes("Landed this run: none"));
+    assert.equal(exitCode, 1);
+  } finally {
+    rmSync(repo.top, { recursive: true, force: true });
+  }
+});
+test("a local run without autoMerge stops at approved and does not unblock dependents", async () => {
+  const { runner, state, events } = fixture({ forge: "none" });
+  runner.tracker.issues = async () => [issue(1), issue(2)];
+  runner.tracker.blocked = async (item, landed) =>
+    item.number === 2 && !landed!(1);
+  const { lines } = await summary(() => runner.run("main"));
+  assert.equal(state.jobs[1].status, "approved");
+  assert.equal(state.jobs[2], undefined);
+  assert.ok(
+    !events.some((event) => event[0] === "poll" || event[0] === "open"),
+  );
+  assert.ok(lines.includes("Waiting on you: #1 toddler/issue-1"));
+});
+
+// A fake forge: only deliver and poll are scripted, per job, in order.
+function scripted(
+  runner: Runner,
+  polls: Record<string, Polled["state"][]>,
+  delivered: string[],
+) {
+  runner.forge.poll = async ({ branch, sha }) => {
+    // The candidate check (no job yet, no sha) is not part of the script.
+    if (!sha) return { state: "none" };
+    const state = polls[branch]?.shift();
+    if (!state) throw new Error(`poll script for ${branch} ran out`);
+    return { state } as Polled;
+  };
+  runner.forge.deliver = async (input) => {
+    delivered.push(input.sha);
+    return { state: "waiting", url: "https://github.com/example/repo/pull/1" };
+  };
+}
+test("fake forge: deliver, waiting until auto-merge lands it, and only then do dependents start", async () => {
+  const { runner, state, events } = fixture({ autoMerge: true });
+  runner.tracker.issues = async () => [issue(1), issue(2)];
+  runner.tracker.blocked = async (item, landed) =>
+    item.number === 2 && !landed!(1);
+  const delivered: string[] = [];
+  scripted(
+    runner,
+    {
+      "toddler/issue-1": ["none", "waiting", "waiting", "waiting", "landed"],
+      "toddler/issue-2": ["none", "landed"],
+    },
+    delivered,
+  );
+  const poll = runner.forge.poll;
+  runner.forge.poll = async (job) => {
+    const result = await poll(job);
+    events.push(["polled", job.branch, result.state]);
+    return result;
+  };
+  const waits: number[] = [];
+  runner.wait = async (ms) => {
+    waits.push(ms);
+  };
+  const { lines } = await summary(() => runner.run("main"));
+  assert.deepEqual(delivered, ["reviewed", "reviewed"]);
+  assert.deepEqual(waits, Array(5).fill(60_000));
+  assert.equal(state.jobs[1].status, "landed");
+  assert.equal(state.jobs[1].pr, "https://github.com/example/repo/pull/1");
+  const landedAt = events.findIndex(
+    (event) => event[0] === "polled" && event[2] === "landed",
+  );
+  assert.ok(landedAt > 0);
+  // Issue 2's stages all come after issue 1 landed.
+  assert.equal(
+    events.slice(0, landedAt).filter((event) => event[0] === "stage").length,
+    2,
+  );
+  assert.equal(
+    events.slice(landedAt).filter((event) => event[0] === "stage").length,
+    2,
+  );
+  assert.equal(state.jobs[2].status, "landed");
+  assert.ok(lines.includes("Landed this run: #1, #2"));
+});
+test("fake forge: behind means a host merge and verify with no agent, then the merged SHA is delivered", async () => {
+  for (const outcome of ["pass", "verify fails", "conflict"] as const) {
+    const repo = landingRepo();
+    try {
+      const { runner, state, sandboxes } = landing(
+        repo,
+        (cmd) =>
+          outcome === "verify fails" && cmd === "make check"
+            ? { exitCode: 1, stdout: "not ok 1 - merged result broke" }
+            : pass(),
+        { forge: "github", issues: "forge" },
+      );
+      runner.forge.base = async (branch = "main") => {
+        repo.git("fetch", "-q", "origin", branch);
+        return { branch, ref: `origin/${branch}` };
+      };
+      const delivered: string[] = [];
+      scripted(
+        runner,
+        { "toddler/local-1": ["none", "behind", "landed"] },
+        delivered,
+      );
+      // Other work reaches the remote base while the PR waits.
+      repo.git("checkout", "-qb", "other", "main");
+      const moved = repo.commit(
+        "other",
+        outcome === "conflict" ? "work" : "other",
+        "theirs",
+      );
+      repo.git("checkout", "-q", "main");
+      const poll = runner.forge.poll;
+      runner.forge.poll = async (job) => {
+        const result = await poll(job);
+        if (result.state === "behind")
+          repo.git("push", "-q", "origin", "other:main");
+        return result;
+      };
+      const event = await quiet(() => runner.landing.land(issue(1)));
+      const merged = delivered[1];
+      assert.equal(delivered[0], repo.reviewed);
+      assert.equal(repo.git("worktree", "list").split("\n").length, 1);
+      if (outcome === "pass") {
+        assert.equal(event, "landed");
+        assert.equal(state.jobs[1].status, "landed");
+        assert.equal(delivered.length, 2);
+        assert.equal(
+          repo.git("rev-parse", `${merged}^1`, `${merged}^2`),
+          `${repo.reviewed}\n${moved}`,
+        );
+        assert.deepEqual(sandboxes, [merged]);
+      } else {
+        // Until #87 both are needs attention, and nothing more is delivered.
+        assert.equal(event, "attention");
+        assert.equal(delivered.length, 1);
+        assert.equal(state.jobs[1].status, "landing");
+        assert.match(
+          state.jobs[1].attention!.detail,
+          outcome === "conflict"
+            ? /Host merge of main .* failed/
+            : /failed verification: make check\n[\s\S]*merged result broke/,
+        );
+      }
+    } finally {
+      rmSync(repo.top, { recursive: true, force: true });
+    }
+  }
+});
+test("fake forge: a resumed job re-polls first; none delivers again, landed is done", async () => {
+  for (const first of ["none", "landed"] as const) {
+    const { runner, state, events } = fixture({ autoMerge: true });
+    runner.tracker.issues = async () => [issue(1)];
+    state.jobs[1] = {
+      number: 1,
+      branch: "toddler/issue-1",
+      baseBranch: "main",
+      baseSha: "base",
+      status: "landing",
+      reviewRounds: 0,
+      mergeFixRounds: 0,
+      implementer: "codex",
+      reviewer: "claude",
+      reviewedSha: "reviewed",
+      report: reviewReport(report()),
+      pr: "https://github.com/example/repo/pull/1",
+    };
+    const delivered: string[] = [];
+    scripted(runner, { "toddler/issue-1": [first, "landed"] }, delivered);
+    await summary(() => runner.run("main"));
+    assert.deepEqual(delivered, first === "none" ? ["reviewed"] : []);
+    assert.equal(state.jobs[1].status, "landed");
+    assert.ok(!events.some((event) => event[0] === "stage"));
   }
 });
 test("local issues skip closed and blocked files, never call GitHub, and stop on a local branch when openPr is false", async () => {
@@ -1751,7 +1969,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
 test("local issues with openPr open a PR that does not close a GitHub issue", async () => {
   const { runner, events, state } = fixture({ issues: "files" });
   await runner.work(issue(7), "codex", "main");
-  await runner.deliver(issue(7));
+  await runner.landing.land(issue(7));
   assert.equal(state.jobs[7].status, "approved");
   const create = events.find((event) => event[0] === "open")!;
   assert.equal(create[1], "toddler/local-7");
@@ -1774,7 +1992,7 @@ test("changes requested runs a fix then another review before publishing", async
     };
   };
   await runner.work(issue(1), "codex", "main");
-  await runner.deliver(issue(1));
+  await runner.landing.land(issue(1));
   assert.equal(events.filter((event) => event[0] === "stage").length, 4);
   assert.equal(
     events.findIndex((event) => event[0] === "open") >
@@ -1834,7 +2052,7 @@ test("malformed review and changed reviewed SHA cannot push or open a PR", async
       verification: "",
     });
     await runner.work(issue(1), "codex", "main");
-    await runner.deliver(issue(1));
+    await runner.landing.land(issue(1));
     assert.ok(state.jobs[1].attention);
     assert.ok(
       !events.some((event) => event[0] === "open" || event[0] === "open"),
@@ -2355,14 +2573,12 @@ test("runner uses tracker and forge seams and skips finished, busy or flagged is
     }),
   };
   runner.forge = {
-    enabled: true,
-    remote: true,
     base: async () => ({ branch: "main", ref: "origin/main" }),
-    findRequest: async (branch) =>
-      branch.endsWith("3") ? { url: "url", open: false } : undefined,
-    openRequest: async () => "url",
+    poll: async ({ branch }) => ({
+      state: branch.endsWith("3") ? "landed" : "none",
+    }),
+    deliver: async () => ({ state: "waiting", url: "url" }),
     doctorChecks: () => [],
-    enableAutoMerge: async () => {},
   };
   state.jobs[1] = {
     status: "implementation",

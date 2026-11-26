@@ -207,7 +207,6 @@ test("GitHub forge fetches the base, finds open or merged requests, pushes and c
     await forge.doctorChecks(config)[0][1](),
     /owner\/repo, base main, WRITE/,
   );
-  assert.equal(await new NoneForge("/repo").findRequest("branch"), undefined);
 });
 
 test("GitHub uses an allowed merge method for noninteractive auto-merge and clean PRs", async () => {
@@ -396,4 +395,33 @@ test("files tracker parses issue frontmatter and validates issue files", async (
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("GitHub deliver pushes the exact SHA to an open request and poll reads only request state until #88", async () => {
+  const calls: string[] = [];
+  let states = [{ url: "open", state: "OPEN" }];
+  const forge = new GitHubForge(
+    "/repo",
+    config,
+    async (_, args = []) => {
+      calls.push(["git", ...args].join(" "));
+      return "";
+    },
+    async (_, args = []) => {
+      calls.push(["gh", ...args].join(" "));
+      return JSON.stringify(states);
+    },
+  );
+  const job = { branch: "branch", sha: "abc", base: "main" };
+  assert.deepEqual(await forge.deliver({ ...job, title: "t", body: "b" }), {
+    state: "waiting",
+    url: "open",
+  });
+  assert.ok(calls.includes("git push origin abc:refs/heads/branch"));
+  assert.ok(!calls.some((call) => / pr (create|merge)/.test(call)));
+  assert.deepEqual(await forge.poll(job), { state: "waiting" });
+  states = [{ url: "merged", state: "MERGED" }];
+  assert.deepEqual(await forge.poll(job), { state: "landed" });
+  states = [];
+  assert.deepEqual(await forge.poll(job), { state: "none" });
 });

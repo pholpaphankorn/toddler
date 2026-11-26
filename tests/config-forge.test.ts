@@ -7,7 +7,7 @@ import { loadConfig } from "../src/config.ts";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readFileSync, chmodSync } from "node:fs";
-import { connect } from "../src/forge.ts";
+import { connect, GitLabForge } from "../src/forge.ts";
 
 test("one-host configuration defaults and rejects incompatible settings", () => {
   const root = mkdtempSync(join(tmpdir(), "config-forge-"));
@@ -26,7 +26,7 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
       connect(
         root,
         load({ forge: "gitlab", repository: "group/subgroup/project" }),
-      ).forge.enabled,
+      ).forge instanceof GitLabForge,
     );
     for (const [value, pattern] of [
       [{ forge: "none", issues: "forge" }, /issues.*forge.*none/],
