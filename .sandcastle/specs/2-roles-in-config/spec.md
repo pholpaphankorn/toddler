@@ -1,7 +1,7 @@
 ---
 title: Roles in config
 labels: [wayfinder:map, on-hold]
-status: open
+status: closed
 ---
 
 ## Destination

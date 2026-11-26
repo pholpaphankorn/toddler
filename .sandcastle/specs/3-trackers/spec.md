@@ -1,7 +1,7 @@
 ---
 title: Trackers
 labels: [wayfinder:map, on-hold]
-status: open
+status: closed
 ---
 <!-- Wayfinder map. Tickets are files with `parent: 3`. All carry `on-hold` so `toddler` never tries to implement them. -->
 
