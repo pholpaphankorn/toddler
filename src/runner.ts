@@ -440,39 +440,42 @@ export class Runner {
             );
           if (role === "review" && before !== after)
             throw new Error("Reviewer modified commits; approval rejected");
-          if (
-            role === "implementation" &&
-            job.mergeFix?.base &&
-            !(await this.git(
-              ["merge-base", "--is-ancestor", job.mergeFix.base, after],
-              sandbox.worktreePath,
-            ).then(
-              () => true,
-              (error) => {
-                if ((error as { code?: unknown }).code !== 1) throw error;
-                return false;
-              },
-            ))
-          )
-            throw new Error(
-              `Merge fix round did not commit the merge of ${job.mergeFix.base}`,
-            );
-          // The delta review's --remerge-diff skips octopus merges, so a merge fix round may not make one.
-          if (
-            role === "implementation" &&
-            job.mergeFix &&
-            (await this.git(
-              [
-                "rev-list",
-                "--min-parents=3",
-                `${job.reviewedSha ?? job.baseSha}..${after}`,
-              ],
-              sandbox.worktreePath,
-            ))
-          )
-            throw new Error(
-              "Merge fix round made a merge with more than two parents; merge only the pinned base",
-            );
+          // The delta review only covers reviewedSha..head minus the pinned base, so the round must build on both.
+          if (role === "implementation" && job.mergeFix) {
+            const contains = (commit: string) =>
+              this.git(
+                ["merge-base", "--is-ancestor", commit, after],
+                sandbox.worktreePath,
+              ).then(
+                () => true,
+                (error) => {
+                  if ((error as { code?: unknown }).code !== 1) throw error;
+                  return false;
+                },
+              );
+            if (job.reviewedSha && !(await contains(job.reviewedSha)))
+              throw new Error(
+                `Merge fix round dropped approved work: ${job.reviewedSha} is not in the new head`,
+              );
+            if (job.mergeFix.base && !(await contains(job.mergeFix.base)))
+              throw new Error(
+                `Merge fix round did not commit the merge of ${job.mergeFix.base}`,
+              );
+            // --remerge-diff skips octopus merges.
+            if (
+              await this.git(
+                [
+                  "rev-list",
+                  "--min-parents=3",
+                  `${job.reviewedSha ?? job.baseSha}..${after}`,
+                ],
+                sandbox.worktreePath,
+              )
+            )
+              throw new Error(
+                "Merge fix round made a merge with more than two parents; merge only the pinned base",
+              );
+          }
           await this.git(
             ["merge-base", "--is-ancestor", job.baseSha, after],
             sandbox.worktreePath,

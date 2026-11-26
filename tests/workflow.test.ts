@@ -2263,6 +2263,32 @@ const approvedJob = (number: number, changes: Partial<Job> = {}): Job => ({
   report: reviewReport(report()),
   ...changes,
 });
+test("a merge fix implementation that drops approved work fails the stage", async () => {
+  const repo = landingRepo();
+  try {
+    // The approved head's last commit undoes something its parent added.
+    const fixed = repo.commit("toddler/local-1", "backdoor", "removed");
+    repo.git("checkout", "-q", "main");
+    const dir = join(repo.top, "issue-worktree");
+    const run = mergeFixRun(repo, (git) => {
+      // Drop the approved commit, then merge the pinned base cleanly on top of the rest.
+      git("merge", "--abort");
+      git("reset", "-q", "--hard", "HEAD~1");
+      spawnSync("git", ["merge", "-q", run.moved], { cwd: dir });
+      writeFileSync(join(dir, "work"), "both");
+      git("commit", "-qam", "resolve");
+    });
+    run.state.jobs[1].reviewedSha = fixed;
+    await quiet(() => summary(() => run.runner.run("main")));
+    const job = run.state.jobs[1];
+    assert.equal(job.attention?.reason, "stage-failed");
+    assert.match(job.attention!.detail, /dropped approved work/);
+    assert.ok(!run.seen.some((stage) => stage.role === "review"));
+    assert.equal(job.reviewedSha, fixed);
+  } finally {
+    rmSync(repo.top, { recursive: true, force: true });
+  }
+});
 test("a merge fix implementation that makes an octopus merge fails the stage", async () => {
   const repo = landingRepo();
   try {
