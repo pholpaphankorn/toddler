@@ -34,6 +34,12 @@ _Avoid_: hard limit, rate limit
 **Ranking**: the order in which toddler prefers the providers still available when a stage starts, for any role. Either one of toddler's own (balancing by quota left against sessions already running, or always the most quota left) or supplied by the project.
 _Avoid_: priority, prioritization
 
+**Slot**: room for one issue to be worked by agents at once in a run. A run has a fixed number; an issue waiting for quota or landing holds none.
+_Avoid_: worker, lane
+
+**Sticky implementer**: the provider that keeps implementing an issue across its rounds, including merge fix rounds and later runs, for as long as it is not stopped. When it is stopped, the issue moves to another provider for good.
+_Avoid_: owner, assigned provider
+
 **Spec**: the description of one piece of work and the set of issues that build it.
 _Avoid_: map, epic
 

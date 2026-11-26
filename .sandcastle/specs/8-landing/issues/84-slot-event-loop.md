@@ -18,4 +18,6 @@ Issues start as soon as a slot frees instead of waiting for a whole batch, and o
 - [ ] A failing issue does not stop the others; its dependents stay blocked; the run ends with exit 1
 - [ ] Tests pass a `wait` that resolves at once; no `mock.timers`
 
+> From spec 9 [pick and the new ranker contract](../../9-scheduling-and-quota/issues/94-pick-and-ranker-contract.md): the seam becomes `pick(role, job) → { provider, release() } | none` (release when the stage ends) plus `admit(issue, runningIssues)` for `maxParallelIssues` and `parallel-safe`, all in a `scheduler.ts` module. Build the seam in that shape here.
+
 Decision record: [75](75-run-loop-shape.md).
