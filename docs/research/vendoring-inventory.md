@@ -1,6 +1,6 @@
 # Vendoring inventory: mattpocock-skills 1.3.1 and ponytail 5.3.3
 
-Question: what would toddler vendor if it shipped these two repos' skills into sandboxed Claude Code and Codex agents (skills only, no hooks or commands, no host files read at runtime)? What does each skill depend on?
+Question: what would infant vendor if it shipped these two repos' skills into sandboxed Claude Code and Codex agents (skills only, no hooks or commands, no host files read at runtime)? What does each skill depend on?
 
 Sources (read-only plugin caches, read 2026-11-04):
 
@@ -16,10 +16,10 @@ Every claim below cites a file under `M/` or `P/`.
 | mattpocock-skills | MIT     | `Copyright (c) 2026 Matt Pocock`    | `M/LICENSE`, `"license": "MIT"` in `M/package.json` and `M/.claude-plugin/plugin.json`                          |
 | ponytail          | MIT     | `Copyright (c) 2026 DietrichGebert` | `P/LICENSE`, `"license": "MIT"` in `P/package.json`; `license: MIT` in `P/skills/ponytail/SKILL.md` frontmatter |
 
-MIT has one condition: "The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software" (`M/LICENSE`, `P/LICENSE`). For toddler this means:
+MIT has one condition: "The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software" (`M/LICENSE`, `P/LICENSE`). For infant this means:
 
 - Keep each repo's `LICENSE` file, unchanged, next to the vendored skills (for example `vendor/mattpocock-skills/LICENSE` and `vendor/ponytail/LICENSE`). Two different copyright holders means two license files, not one merged file.
-- Ship the license with the copies, so the license file must also reach the sandbox wherever the skill folders go (or be in the published toddler package next to them).
+- Ship the license with the copies, so the license file must also reach the sandbox wherever the skill folders go (or be in the published infant package next to them).
 - Nothing else is needed: no NOTICE file, no attribution in the UI, and modification is allowed.
 - Third-party content inside mattpocock: the `pr` skill copies the Summary section text "almost word for word" from Dex Horthy's `show-me` skill (Humanlayer) and records this in `M/skills/engineering/pr/CREDITS.md`. Keep `CREDITS.md` with `pr`. The license of the upstream `show-me` was not checked (see Not verified).
 
@@ -149,12 +149,12 @@ The "setup step" in detail: `setup-matt-pocock-skills` writes `docs/agents/issue
 | ponytail-help   | -                           | lists all five others                        | - (documents hooks, the band, `~/.config/ponytail/config.json`, `PONYTAIL_DEFAULT_MODE`, `/plugin` update steps: all wrong for a skills-only sandbox)                                                                          | -       | -                                       |
 | ponytail-review | -                           | -                                            | -                                                                                                                                                                                                                              | -       | -                                       |
 
-ponytail's runtime code (Node.js hooks in `P/hooks/*.js`, `P/hooks/claude-codex-hooks.json`, statusline scripts, the "band" ledger and webhook in `P/plugin.json` `userConfig`) is all outside `skills/`, so toddler's skills-only rule already excludes it.
+ponytail's runtime code (Node.js hooks in `P/hooks/*.js`, `P/hooks/claude-codex-hooks.json`, statusline scripts, the "band" ledger and webhook in `P/plugin.json` `userConfig`) is all outside `skills/`, so infant's skills-only rule already excludes it.
 
-### Notes for toddler
+### Notes for infant
 
 - No skill needs `${CLAUDE_PLUGIN_ROOT}`. Copy each skill folder whole and relative links keep working.
-- Runtime executables are few: two bash templates (`diagnosing-bugs`, `wizard`), one bash+jq hook script (`git-guardrails-claude-code`, which installs a hook, against toddler's no-hooks rule), one Node config file (`setup-ts-deep-modules`). No Python anywhere.
+- Runtime executables are few: two bash templates (`diagnosing-bugs`, `wizard`), one bash+jq hook script (`git-guardrails-claude-code`, which installs a hook, against infant's no-hooks rule), one Node config file (`setup-ts-deep-modules`). No Python anywhere.
 - Every mattpocock skill has an `agents/openai.yaml` (Codex display name and `allow_implicit_invocation`). Keep it for Codex; ponytail skills have none.
 - Poor fits for a sandboxed, non-interactive agent: everything marked "blocks", the tracker skills unless the tracker is local markdown (no network) and `docs/agents/issue-tracker.md` is pre-seeded, `retro` (host session logs), `claude-handoff` (`claude` CLI), `git-guardrails-claude-code` (hooks + host settings), `scaffold-exercises` (Matt's course repo only), and `ponytail-help` / the level feature of `ponytail`.
 

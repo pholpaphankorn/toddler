@@ -1,16 +1,16 @@
-# toddler
+# infant
 
 My personal agent workflow, built on [Sandcastle](https://github.com/mattpocock/sandcastle).
-toddler is a CLI: `cd` into a project and run it there. It works the project's labeled
+infant is a CLI: `cd` into a project and run it there. It works the project's labeled
 GitHub issues with Codex and Claude Code inside macOS Seatbelt sandboxes, has the
 other provider review, and opens PRs.
 
 Run from a normal macOS terminal. Seatbelt cannot nest inside the Codex app's own
 sandbox. The runner never falls back to unsandboxed execution.
 
-## Why "toddler"?
+## Why "infant"?
 
-Picture a toddler at the beach building a sandcastle:
+Picture a infant at the beach building a sandcastle:
 
 - **It stays in the sandbox.** Each agent works in its own fresh worktree inside a
   Seatbelt sandbox. It can make as much mess as it likes in there; the rest of your
@@ -21,17 +21,17 @@ Picture a toddler at the beach building a sandcastle:
   `verify` command has to pass before anything leaves the sandbox.
 - **It shows you the castle.** Finished work comes back as a PR (or a local branch)
   for a grown-up to accept.
-- **It naps when it's tired.** When quota runs low, toddler stops and picks up where
+- **It naps when it's tired.** When quota runs low, infant stops and picks up where
   it left off next time.
 
 ## Install
 
-toddler uses `@ai-hero/sandcastle` 0.14.0 from npm (pinned exactly). Node >= 22.18
+infant uses `@ai-hero/sandcastle` 0.14.0 from npm (pinned exactly). Node >= 22.18
 runs the TypeScript directly; there is no build step.
 
 ```sh
 npm install
-npm link        # puts `toddler` on your PATH, pointing at this checkout
+npm link        # puts `infant` on your PATH, pointing at this checkout
 ```
 
 Keep it linked rather than packed: Node does not strip types from files under
@@ -41,14 +41,14 @@ Keep it linked rather than packed: Node does not strip types from files under
 
 ```sh
 cd ~/some/project
-toddler init      # writes .sandcastle/config.json and .sandcastle/.gitignore
+infant init      # writes .sandcastle/config.json and .sandcastle/.gitignore
 # edit .sandcastle/config.json, optionally add .sandcastle/project.md, commit .sandcastle/
-toddler setup     # sign in to GitHub, Codex and Claude Code, then run doctor
-toddler doctor    # check sandbox, logins, quota and models
-toddler plan      # show the next assignments without starting agents
-toddler           # run (same as `toddler run`)
-toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
-toddler smoke forge github owner/scratch   # by hand, against a scratch repo only (see Verification)
+infant setup     # sign in to GitHub, Codex and Claude Code, then run doctor
+infant doctor    # check sandbox, logins, quota and models
+infant plan      # show the next assignments without starting agents
+infant           # run (same as `infant run`)
+infant smoke [codex|claude]   # 1 tiny model call per role (uses quota)
+infant smoke forge github owner/scratch   # by hand, against a scratch repo only (see Verification)
 ```
 
 `.sandcastle/config.json` (committed in the project):
@@ -93,7 +93,7 @@ export default function rank({ candidates }) {
 The synchronous function receives `{ role, issue, candidates }`; each available
 candidate has `provider`, `model`, and `reading`. It must return every candidate's
 provider exactly once, best first. It is called only when at least two candidates
-are available. Loading or ranking errors stop the run, and `toddler doctor`
+are available. Loading or ranking errors stop the run, and `infant doctor`
 checks the module.
 
 ### Local issues
@@ -122,19 +122,19 @@ What is wrong and what done looks like.
 ```
 
 The title falls back to the file name. An open issue blocks any issue that lists it in `blocked_by`.
-After review approves a local issue, toddler adds one commit, `Close local issue N`, that sets its
+After review approves a local issue, infant adds one commit, `Close local issue N`, that sets its
 `status: closed`, so the file closes when the work lands or its PR merges. Local issues work on
-`toddler/local-<number>` branches, and their PRs do not say `Closes #N`.
+`infant/local-<number>` branches, and their PRs do not say `Closes #N`.
 
-Before anything is delivered, toddler proves that every commit on top of the reviewed one is its own:
+Before anything is delivered, infant proves that every commit on top of the reviewed one is its own:
 at most that close commit, then clean merges of the base, checked by rebuilding each tree. Anything
 else needs attention instead of being published.
 
-With `"forge": "none"`, toddler runs offline and nothing is pushed. With a GitHub forge, file issues still open pull requests.
+With `"forge": "none"`, infant runs offline and nothing is pushed. With a GitHub forge, file issues still open pull requests.
 
 For GitLab, set `"forge": "gitlab"` and `"repository": "group/subgroup/project"` (nested groups are supported), and sign in with `glab`. GitLab issues can declare same-project blockers on lines such as `Blocked by: #12, #15`; lines can repeat. Native GitLab blocking links also count. File issues open merge requests without a closing reference.
 
-Set `"autoMerge": true` to ask GitHub or GitLab to merge approved requests after required checks and approvals pass. GitHub uses the repository default merge method and must allow auto-merge on the repository; `toddler doctor` checks this setting. If the forge refuses, the request remains open and the issue needs attention. With auto-merge on, the run waits until the request merges; only then do issues that depend on it start. While it waits toddler polls the pull or merge request every `landingPollSeconds`: when the base moved (GitHub `BEHIND`, GitLab `need_rebase`) or conflicts, it merges the base in itself and pushes again; finished, failing CI goes back to the agents as a merge fix round with the failing check names and, for GitHub Actions and GitLab jobs, the tail of each failing log (GitLab jobs allowed to fail are left out; other CI gives a name and link); a required human review, a closed request, auto-merge turned off, or a rejected push (toddler never forces) needs attention. GitLab cancels auto-merge on every push to the source branch, so toddler turns it on again after each of its own pushes, tied to the commit it just pushed; a project that refuses the merge (for example a fast-forward-only project that will not take toddler's merge commit) needs attention. Without auto-merge, an approved pull request is polled once per run so one you merged by hand counts as landed. The default is `false`, so toddler leaves merging to you. With `forge: "none"`, approved work lands one issue at a time: when the base branch moved, toddler merges it into the issue branch in a throwaway worktree and runs `verify` in a sandbox with no agent, then moves the base branch to that exact commit (fast-forwarding it when it is checked out and clean). A conflict or a failing `verify` goes back to the agents as a merge fix round (see `maxMergeFixRounds`); a checked-out base with uncommitted changes needs attention instead.
+Set `"autoMerge": true` to ask GitHub or GitLab to merge approved requests after required checks and approvals pass. GitHub uses the repository default merge method and must allow auto-merge on the repository; `infant doctor` checks this setting. If the forge refuses, the request remains open and the issue needs attention. With auto-merge on, the run waits until the request merges; only then do issues that depend on it start. While it waits infant polls the pull or merge request every `landingPollSeconds`: when the base moved (GitHub `BEHIND`, GitLab `need_rebase`) or conflicts, it merges the base in itself and pushes again; finished, failing CI goes back to the agents as a merge fix round with the failing check names and, for GitHub Actions and GitLab jobs, the tail of each failing log (GitLab jobs allowed to fail are left out; other CI gives a name and link); a required human review, a closed request, auto-merge turned off, or a rejected push (infant never forces) needs attention. GitLab cancels auto-merge on every push to the source branch, so infant turns it on again after each of its own pushes, tied to the commit it just pushed; a project that refuses the merge (for example a fast-forward-only project that will not take infant's merge commit) needs attention. Without auto-merge, an approved pull request is polled once per run so one you merged by hand counts as landed. The default is `false`, so infant leaves merging to you. With `forge: "none"`, approved work lands one issue at a time: when the base branch moved, infant merges it into the issue branch in a throwaway worktree and runs `verify` in a sandbox with no agent, then moves the base branch to that exact commit (fast-forwarding it when it is checked out and clean). A conflict or a failing `verify` goes back to the agents as a merge fix round (see `maxMergeFixRounds`); a checked-out base with uncommitted changes needs attention instead.
 
 `.sandcastle/project.md` (optional) is appended to the implementation and review
 prompts as "Project notes": stack, how to check changes, what not to do.
@@ -161,7 +161,7 @@ Existing GitHub and Codex logins are retained. No API keys are needed or used.
   separate live usage reader. The runner reads native credentials for model and
   usage calls; it does not invoke any zsh token function. It does not mount your
   Keychain or home directory into Seatbelt.
-- **Codex:** `codex login` uses the ChatGPT subscription; `toddler doctor` checks the
+- **Codex:** `codex login` uses the ChatGPT subscription; `infant doctor` checks the
   requested models are advertised. The runner copies
   only subscription credentials from `~/.codex/auth.json` into the sandbox's private
   home; it does not copy host settings, history, or API keys. A file-backed ChatGPT
@@ -182,8 +182,8 @@ and worktrees are ignored by Git.
    can be implemented independently. Without that declaration work stays sequential.
    Add GitHub blocking dependencies or **blocked** / **on-hold** to defer an issue.
    The coordinator checks open GitHub blockers, including issues outside the queue.
-3. Run `toddler plan` to inspect the next assignments without starting agents.
-4. Run `toddler` to implement, review, and open PRs automatically.
+3. Run `infant plan` to inspect the next assignments without starting agents.
+4. Run `infant` to implement, review, and open PRs automatically.
 
 | Provider    | Implementation      | Review            |
 | ----------- | ------------------- | ----------------- |
@@ -205,7 +205,7 @@ remaining provider's appropriate role. Implementation and review are separate se
 Each issue branches from the fetched default branch (`origin/main` here), with its
 base SHA recorded in local state. Agents commit locally; the host verifies a clean
 worktree and runs the project's `verify` command, if set. A structured approving review of the exact resulting SHA
-is required before that SHA is pushed to `toddler/issue-N` and a PR is opened.
+is required before that SHA is pushed to `infant/issue-N` and a PR is opened.
 PRs reference the issue for closure on merge. Human changes to a branch after approval cause publication to stop.
 
 After requested changes, implementation and review repeat up to ten rounds per
@@ -222,7 +222,7 @@ model work. By default, at **5% five-hour** or **10% all-models weekly** remaini
 all active sessions for that provider are cancelled. A per-model weekly bucket at
 or below **10%** stops only that provider and model, cancelling only sessions on
 that model. Unfinished work remains on disk, and other available models can continue.
-Stops last for the rest of the invocation, even if a window resets. `toddler plan`
+Stops last for the rest of the invocation, even if a window resets. `infant plan`
 lists per-model stops under `unavailableModels`.
 
 The runner exits when no provider has any usable model or no actionable issues remain.
@@ -256,7 +256,7 @@ export default ({ provider, reading, models }) =>
     : [];
 ```
 
-Each default export receives the provider, its valid quota reading, and the distinct models its roles use. Return an array of stops: omit `model` to stop the provider, or name a model from `models` to stop only that model. The built-in thresholds run first, followed by project conditions in config order on every refresh. The first reason for each stop is kept. Invalid results or errors are fatal and identify the module; `toddler doctor` checks that modules load.
+Each default export receives the provider, its valid quota reading, and the distinct models its roles use. Return an array of stops: omit `model` to stop the provider, or name a model from `models` to stop only that model. The built-in thresholds run first, followed by project conditions in config order on every refresh. The first reason for each stop is kept. Invalid results or errors are fatal and identify the module; `infant doctor` checks that modules load.
 
 Codex usage is read through the documented `account/rateLimits/read` app-server API,
 selecting five-hour and weekly windows in the `codex` bucket. Claude's usage
@@ -316,19 +316,19 @@ outside the worktree. Tests cover scheduling, review gates, quota cancellation,
 fallback, and PR delivery using fake agents. Actual issue implementation still
 requires model calls and the project's own verification.
 
-`toddler smoke` explicitly makes four small subscription model calls
+`infant smoke` explicitly makes four small subscription model calls
 in a disposable Seatbelt sandbox to check actual authentication and model access.
 Pass `claude` or `codex` to test only one provider. Claude's own temporary
 files are directed to Seatbelt's private temp directory with `CLAUDE_CODE_TMPDIR`.
 
-`toddler smoke forge <github|gitlab> <scratch-repository>` checks forge
-behaviours toddler relies on but nobody has tried yet. Run it by hand, never in
+`infant smoke forge <github|gitlab> <scratch-repository>` checks forge
+behaviours infant relies on but nobody has tried yet. Run it by hand, never in
 CI, and only against a scratch repository you own. It refuses to run without
 one named, and refuses the repository of the project it is run from (its
 `.sandcastle/config.json` `repository` or its `origin` push remote); any other
 repository you name is taken to be scratch. It clones the scratch repository
 into a temporary directory and opens a request, without auto-merge, from a new
-`toddler-smoke-<time>` branch that starts one commit behind the default branch
+`infant-smoke-<time>` branch that starts one commit behind the default branch
 (which needs at least two commits). Auto-merge is turned on only when the
 request cannot merge at once (GitHub `mergeStateStatus` `BLOCKED` or `BEHIND`;
 GitLab `detailed_merge_status` other than `mergeable`); otherwise it stops
@@ -348,11 +348,11 @@ line it prints:
 - `host merge pushed: <sha> (…)`: the same fields after the plain push of the
   host merge commit.
 - `GitHub keeps auto-merge after a host push: yes|no|untested`: whether
-  auto-merge survived toddler's own push. `no` means every host merge on GitHub
+  auto-merge survived infant's own push. `no` means every host merge on GitHub
   ends in "auto-merge was turned off".
 - `GitLab source push aborts auto-merge: yes|no`: GitLab documents `yes`;
-  toddler re-enables it either way.
-- `deliver again: waiting|refused: <reason> (…)`: toddler's real `deliver` on
+  infant re-enables it either way.
+- `deliver again: waiting|refused: <reason> (…)`: infant's real `deliver` on
   the merge commit, which turns auto-merge on again, and the fields after it.
 - `GitLab merge commit clears need_rebase: yes|no|untested`: `yes` means a
   host merge is enough on fast-forward and semi-linear projects; `no` means
@@ -360,8 +360,8 @@ line it prints:
   `need_rebase` before the push (not a fast-forward or semi-linear project).
 - `GitHub linear history on <base>: required|not required|unknown; auto-merge on the host merge commit: accepted|refused`:
   whether a branch requiring linear history accepts auto-merge on a request
-  that contains toddler's merge commit.
-- `poll: <state>`: what toddler's `poll` makes of the request now.
+  that contains infant's merge commit.
+- `poll: <state>`: what infant's `poll` makes of the request now.
 - `closed: <url>` / `deleted branch: <branch>` (or `could not …`): cleanup; on
   `could not`, close or delete it by hand.
 

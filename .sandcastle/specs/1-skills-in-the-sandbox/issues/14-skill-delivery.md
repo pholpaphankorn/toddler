@@ -6,7 +6,7 @@ status: closed
 ---
 Make a stage's skill set available inside its Seatbelt sandbox without reading anything from the host's own skill folders.
 
-- **Mount.** In `src/main.ts`, where `runner.sandboxProvider = seatbelt({...})` is built, add a read-only mount of toddler's own `vendor/skills` directory. Resolve it from toddler's install location. The mount appears at its host path.
+- **Mount.** In `src/main.ts`, where `runner.sandboxProvider = seatbelt({...})` is built, add a read-only mount of infant's own `vendor/skills` directory. Resolve it from infant's install location. The mount appears at its host path.
 - **Links.** In `runStage` (`src/runner.ts`), alongside the existing Codex `auth.json` setup exec, create one symlink per skill in the role's set:
   - `$HOME/.claude/skills/<name>` → the skill folder
   - `$HOME/.agents/skills/<name>` → the skill folder

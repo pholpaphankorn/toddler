@@ -21,7 +21,7 @@ export function privateHomeAgent(
       // stopAgent signals this shell's process group while the file exists.
       // The no-op trap keeps the shell alive until the agent has cleaned up,
       // and unlike an ignored signal it is not inherited by the agent.
-      const pid = '"$TMPDIR/toddler-agent.pid"';
+      const pid = '"$TMPDIR/infant-agent.pid"';
       return {
         ...print,
         command: `trap : TERM INT; echo $$ > ${pid}; ${clear}${temp}${print.command}; status=$?; rm -f ${pid}; exit $status`,
@@ -40,7 +40,7 @@ export async function stopAgent(
   graceMs = 10_000,
 ): Promise<void> {
   const read = await sandbox
-    .exec('cat "$TMPDIR/toddler-agent.pid" 2>/dev/null')
+    .exec('cat "$TMPDIR/infant-agent.pid" 2>/dev/null')
     .catch(() => undefined);
   const group = Number(read?.stdout.trim());
   if (!Number.isInteger(group) || group <= 1) return;

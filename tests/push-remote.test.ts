@@ -8,7 +8,7 @@ import { validatePushRemote } from "../src/forge.ts";
 import { command } from "../src/process.ts";
 
 test("push validation checks every destination and the complete project path", async () => {
-  const root = mkdtempSync(join(tmpdir(), "toddler-push-"));
+  const root = mkdtempSync(join(tmpdir(), "infant-push-"));
   const git = (...args: string[]) => {
     const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);

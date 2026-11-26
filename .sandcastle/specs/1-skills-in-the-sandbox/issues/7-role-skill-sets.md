@@ -17,7 +17,7 @@ Inputs: the inventory flags 19 skills that wait for a human, plus `git-guardrail
 - **Default skill sets.** These apply to both providers:
   - implementation: `tdd`, `diagnosing-bugs`, `codebase-design`, `ponytail`
   - review: `code-review`, `ponytail-review`, `codebase-design`
-- **Review output.** The reviewer still emits toddler's `<sandcastle-review>` verdict. `review.md` governs the output format, and the skills only inform the review.
+- **Review output.** The reviewer still emits infant's `<sandcastle-review>` verdict. `review.md` governs the output format, and the skills only inform the review.
 - **Project config.** In `.sandcastle/config.json`: `"skills": { "<role>": [names] }`.
   - A listed role replaces that role's default list.
   - A role the project leaves out keeps the default.

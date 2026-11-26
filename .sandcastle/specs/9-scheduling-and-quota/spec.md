@@ -3,11 +3,11 @@ title: Scheduling and quota
 labels: [wayfinder:map, on-hold]
 status: closed
 ---
-<!-- Wayfinder map. Tickets are files in issues/ with `parent: 9`. All carry `on-hold` so `toddler` never tries to implement them. -->
+<!-- Wayfinder map. Tickets are files in issues/ with `parent: 9`. All carry `on-hold` so `infant` never tries to implement them. -->
 
 ## Destination
 
-A spec, ready to break into toddler issues, for how toddler schedules agents by quota: it fills [spec 8](../8-landing/spec.md)'s `pick` and `wakeAt` slots; reshapes ranking into the `balanced` (default) and `most-quota` modules with `running`, picked at each stage start (sticky implementer, reviewer re-picked each round); runs up to `maxParallelIssues` slots with several sessions per provider; treats a provider-limit failure as a quota stop; lets stops lift and sleeps the run to the next reset; and makes `plan` and `doctor` explain a ranking or a stop.
+A spec, ready to break into infant issues, for how infant schedules agents by quota: it fills [spec 8](../8-landing/spec.md)'s `pick` and `wakeAt` slots; reshapes ranking into the `balanced` (default) and `most-quota` modules with `running`, picked at each stage start (sticky implementer, reviewer re-picked each round); runs up to `maxParallelIssues` slots with several sessions per provider; treats a provider-limit failure as a quota stop; lets stops lift and sleeps the run to the next reset; and makes `plan` and `doctor` explain a ranking or a stop.
 
 ## Notes
 

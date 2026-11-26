@@ -1,4 +1,4 @@
-# Codex skill discovery (for toddler's codex stages)
+# Codex skill discovery (for infant's codex stages)
 
 Question: where does Codex look for skills, does it load them under `codex exec`, does Claude Code's `SKILL.md` format work as-is, and which copy wins when a user-level and a repo-level skill share a name?
 
@@ -18,7 +18,7 @@ Status: everything below comes from reading the docs and the source. I did not r
 codex exec --json --dangerously-bypass-approvals-and-sandbox -m '<model>' [-c 'model_reasoning_effort="<e>"']   # prompt on stdin
 ```
 
-There are two variants. With `approvalsReviewer: "auto_review"`, the bypass flag becomes `-a on-request -s danger-full-access -c 'approvals_reviewer="auto_review"'`. When resuming or forking, the command is `codex exec resume|fork <id> ... -`. toddler calls `sandcastle.codex(model, { captureSessions: false })` with no effort or reviewer option (runner.ts L154), so it gets the first form. The command has no `-C/--cd`, `--ignore-user-config`, `--enable`, or `-c skills.*`. Codex therefore uses the process cwd (the worktree) and the default config locations.
+There are two variants. With `approvalsReviewer: "auto_review"`, the bypass flag becomes `-a on-request -s danger-full-access -c 'approvals_reviewer="auto_review"'`. When resuming or forking, the command is `codex exec resume|fork <id> ... -`. infant calls `sandcastle.codex(model, { captureSessions: false })` with no effort or reviewer option (runner.ts L154), so it gets the first form. The command has no `-C/--cd`, `--ignore-user-config`, `--enable`, or `-c skills.*`. Codex therefore uses the process cwd (the worktree) and the default config locations.
 
 ## 2. Discovery locations
 
@@ -38,7 +38,7 @@ Roots are deduplicated by path only (`dedupe_skill_roots_by_path`). Hidden direc
 
 **[docs]** The docs list `$CWD/.agents/skills`, parent folders, `$REPO_ROOT/.agents/skills`, `$HOME/.agents/skills`, `/etc/codex/skills`, and bundled system skills. They do not mention `.codex/skills` or `$CODEX_HOME/skills`. Both of those are still read in 0.163.0 (see the table above), but treat them as legacy.
 
-**For toddler:** `HOME` is private and empty apart from `.codex/auth.json`, and `CODEX_HOME` is unset, so it defaults to `$HOME/.codex`. That means the user-level roots (`$HOME/.codex/skills` and `$HOME/.agents/skills`) are empty unless toddler seeds them. Codex will still find repo skills under `<worktree>/.agents/skills` (and `<worktree>/.codex/skills`) because the worktree is the cwd and is a git checkout. To ship toddler-owned skills, either write them into `$HOME/.agents/skills/<name>/` during stage setup (the same way `auth.json` is written) or commit them under `.agents/skills/` in the target repo.
+**For infant:** `HOME` is private and empty apart from `.codex/auth.json`, and `CODEX_HOME` is unset, so it defaults to `$HOME/.codex`. That means the user-level roots (`$HOME/.codex/skills` and `$HOME/.agents/skills`) are empty unless infant seeds them. Codex will still find repo skills under `<worktree>/.agents/skills` (and `<worktree>/.codex/skills`) because the worktree is the cwd and is a git checkout. To ship infant-owned skills, either write them into `$HOME/.agents/skills/<name>/` during stage setup (the same way `auth.json` is written) or commit them under `.agents/skills/` in the target repo.
 
 ## 3. Non-interactive loading and feature flags
 
@@ -69,9 +69,9 @@ Conclusion: a Claude Code skill directory (a `SKILL.md` with `name` and `descrip
 - The model must use a skill when the user names it (`$SkillName` or plain text) or when the task clearly matches the description.
 - Before acting, it must read the whole `SKILL.md`. Relative paths such as `references/...` and `scripts/...` resolve against the skill's directory, and it should read only the referenced files it needs.
 
-Loading is progressive (**[docs]**, same behaviour). Only metadata sits in context, and the model reads the body with its own file tools. In toddler that means a shell `cat` inside Seatbelt, so the skill directory must be readable by the sandbox profile. The worktree and `$HOME` should already be readable. Codex's own sandbox is turned off by `--dangerously-bypass-approvals-and-sandbox`.
+Loading is progressive (**[docs]**, same behaviour). Only metadata sits in context, and the model reads the body with its own file tools. In infant that means a shell `cat` inside Seatbelt, so the skill directory must be readable by the sandbox profile. The worktree and `$HOME` should already be readable. Codex's own sandbox is turned off by `--dangerously-bypass-approvals-and-sandbox`.
 
-Explicit `$name` mentions in the prompt text are resolved by `skills/src/selection.rs::collect_explicit_skill_mentions`, which injects the matching skill. In `exec`, the prompt arrives on stdin and is treated as user text, so `$name` in a toddler prompt should work the same way. This is inferred from source and not run.
+Explicit `$name` mentions in the prompt text are resolved by `skills/src/selection.rs::collect_explicit_skill_mentions`, which injects the matching skill. In `exec`, the prompt arrives on stdin and is treated as user text, so `$name` in a infant prompt should work the same way. This is inferred from source and not run.
 
 ## 6. Name clash: user-level vs repo-level
 
@@ -82,7 +82,7 @@ Explicit `$name` mentions in the prompt text are resolved by `skills/src/selecti
 - An explicit plain `$name` mention is resolved only when the name is unique. `selection.rs` L181-193 skips the skill when `skill_name_counts[name] != 1`. A plain `$name` that matches two skills therefore injects **neither** of them. A path-qualified mention (structured `UserInput::Skill { path }`, or a link to the skill's path) still resolves.
 - For implicit use, the model sees two entries with the same name and different paths and descriptions, and picks one itself.
 
-Practical rule: give toddler-seeded skills names that cannot collide with skills in the target repo, for example a `toddler-` prefix. Do not rely on precedence.
+Practical rule: give infant-seeded skills names that cannot collide with skills in the target repo, for example a `infant-` prefix. Do not rely on precedence.
 
 ## Unverified
 

@@ -7,7 +7,7 @@ status: closed
 ---
 With `forge: "gitlab"`, a GitLab issue labelled `issueLabel` ends up as an open merge request, as GitHub issues do today. All GitLab calls go through the host `glab` login (`glab api`), taken as a `Command` so tests use a fake `glab`.
 
-1. **Config**: `forge: "gitlab"` is accepted; `repository` is `group/…/project` (two or more parts), URL-encoded by toddler for API paths. Host comes from `GITLAB_HOST` or the git remote via `glab`; no config field.
+1. **Config**: `forge: "gitlab"` is accepted; `repository` is `group/…/project` (two or more parts), URL-encoded by infant for API paths. Host comes from `GITLAB_HOST` or the git remote via `glab`; no config field.
 2. **Tracker side**:
    - `issues()`: open issues labelled `issueLabel`; `number` is the iid. Scoped labels (`workflow::blocked`) are plain names matched whole by the existing label rules.
    - `blocked(issue)`: blocked while any blocker is open, from either source:

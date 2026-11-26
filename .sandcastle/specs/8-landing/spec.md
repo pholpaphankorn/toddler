@@ -3,11 +3,11 @@ title: Landing
 labels: [wayfinder:map, on-hold]
 status: closed
 ---
-<!-- Wayfinder map. Tickets are files in issues/ with `parent: 8`. All carry `on-hold` so `toddler` never tries to implement them. -->
+<!-- Wayfinder map. Tickets are files in issues/ with `parent: 8`. All carry `on-hold` so `infant` never tries to implement them. -->
 
 ## Destination
 
-A spec, ready to break into toddler issues, for how approved work lands: the run loop's shape and idle states, the one landing path (host merges the base, `verify`, exact push) for local and forge, the merge fix loop, the forge additions for GitHub, GitLab and local mode, and the needs-attention state with the run summary.
+A spec, ready to break into infant issues, for how approved work lands: the run loop's shape and idle states, the one landing path (host merges the base, `verify`, exact push) for local and forge, the merge fix loop, the forge additions for GitHub, GitLab and local mode, and the needs-attention state with the run summary.
 
 ## Notes
 
@@ -23,12 +23,12 @@ A spec, ready to break into toddler issues, for how approved work lands: the run
 
 1. **Landing**: this map.
 2. **Scheduling and quota** (spec 9, its own map, after this one): ranker contract with `running`, `balanced`/`most-quota`, provider picked at each stage start, sticky implementer, reviewer re-picked each round, `maxParallelIssues` slots, provider-limit failure as a quota stop, stops lift and the runner sleeps to the next reset; plus `plan`'s preview and `doctor`'s ranking row. From [How work is split across providers by quota left](../7-harness-boundary/issues/69-provider-split.md), [One orchestrator session per batch or one session per issue](../7-harness-boundary/issues/62-orchestrator-session.md), [One provider builds, the other reviews](../7-harness-boundary/issues/66-cross-provider-review.md), [Quota stops](../7-harness-boundary/issues/67-quota-stops.md).
-3. **Repo kit and cleanup**: plain implementation issues, no map. `setup`'s planning kit (and `init` back to config only) and the toddler block in `AGENTS.md`/`CLAUDE.md`; `setup`'s `glab` step; the `doctor` row for spec children missing `issueLabel`; skill doctor cut into one repo test; role prompts trimmed and project notes cut. From [doctor, setup, init, plan and smoke](../7-harness-boundary/issues/72-cli-modes.md), [Bundled skills, vendoring and skill doctor](../7-harness-boundary/issues/70-skills.md), [Role prompts, workflow rules and prompt assembly](../7-harness-boundary/issues/73-prompts-rules.md).
+3. **Repo kit and cleanup**: plain implementation issues, no map. `setup`'s planning kit (and `init` back to config only) and the infant block in `AGENTS.md`/`CLAUDE.md`; `setup`'s `glab` step; the `doctor` row for spec children missing `issueLabel`; skill doctor cut into one repo test; role prompts trimmed and project notes cut. From [doctor, setup, init, plan and smoke](../7-harness-boundary/issues/72-cli-modes.md), [Bundled skills, vendoring and skill doctor](../7-harness-boundary/issues/70-skills.md), [Role prompts, workflow rules and prompt assembly](../7-harness-boundary/issues/73-prompts-rules.md).
 - Spec 7 leftovers with no area yet: Codex's `setsid()` shell commands may survive a process-group SIGTERM ([A Seatbelt sandbox per stage](../7-harness-boundary/issues/65-sandbox-per-stage.md)); how subagents inside one issue get branches (same ticket).
 
 ### Where the reshape touches paused specs
 
-- [Spec 5 PM role](../5-pm-role/spec.md) (postponed): Landing touches nothing. Repo kit gives planning outside toddler a kit from `setup`; Scheduling would pick a PM role's provider like any other role. The `conflicted()` comment "Remove with spec 5" is now this map's job.
+- [Spec 5 PM role](../5-pm-role/spec.md) (postponed): Landing touches nothing. Repo kit gives planning outside infant a kit from `setup`; Scheduling would pick a PM role's provider like any other role. The `conflicted()` comment "Remove with spec 5" is now this map's job.
 - [Spec 6 Provider logins](../6-provider-logins/spec.md) (paused): Landing touches nothing. Repo kit's `setup` keeps local logins alongside standalone ones (note already added to spec 6 by spec 7).
 
 ## Decisions so far
@@ -39,7 +39,7 @@ A spec, ready to break into toddler issues, for how approved work lands: the run
 - [The merge fix loop: triggers, rounds and what each agent sees](issues/77-merge-fix-loop.md): one trigger = one round on `maxMergeFixRounds`, review rejections inside it count from 0 against `maxReviewRounds`; the host starts the conflicting merge on the pinned base SHA; the reviewer sees only the delta since `reviewedSha` (remerge-diff); landing polls its auto-merge PRs every `landingPollSeconds` (default 60, min 10) and only failed CI triggers; fixed jobs rejoin landing at the back; `conflicted()` is deleted.
 - [The Forge seam's new methods and their local-mode equivalents](issues/78-forge-seam.md): `Forge` shrinks to `base`, `deliver`, `poll`, `doctorChecks`; `deliver` pushes the exact SHA and (re)enables auto-merge, never `landed` on a forge; `poll` returns one union (none, landed, closed, review-required, conflict, behind, ci-failed with log tails, auto-merge-off, waiting) in that precedence; a cancelled auto-merge is needs attention; `NoneForge` does the local compare-and-swap landing; no new doctor checks.
 - [Job states, state.json fields and the run summary](issues/79-job-states.md): `status` is the phase only (`implementation | review | approved | landing | landed`; `pr` and `done` go); needs attention is a separate `attention { reason, detail, log?, at }` field, cleared when the next run retries it; seven reasons; `mergeFixRounds` + `mergeFix { trigger, base?, checks?, output? }` replace `conflictBase`, `rounds` becomes `reviewRounds`; a retried capped job resets only that counter; the run summary groups landed / waiting on you / needs attention, exit 1 on any; old `state.json` files are translated on load.
-- [How landing is tested](issues/80-landing-tests.md): a fake `Forge` scripts only `deliver`/`poll`, while host merges, the chain proof and `NoneForge` run on real temp git repos and `verify` on a fake `Sandbox`; adapters get table-driven raw-JSON contract tests including precedence overlaps; landing takes an injected `wait`; old `state.json` fixtures and the run summary's text and exit code are asserted; a new by-hand `toddler smoke forge` checks the three untried forge behaviours and blocks nothing.
+- [How landing is tested](issues/80-landing-tests.md): a fake `Forge` scripts only `deliver`/`poll`, while host merges, the chain proof and `NoneForge` run on real temp git repos and `verify` on a fake `Sandbox`; adapters get table-driven raw-JSON contract tests including precedence overlaps; landing takes an injected `wait`; old `state.json` fixtures and the run summary's text and exit code are asserted; a new by-hand `infant smoke forge` checks the three untried forge behaviours and blocks nothing.
 - [CI log tails and verify output as agent input](issues/81-ci-log-tails.md): one `logTail` cleans every CI log and `verify` output before it reaches an agent or `state.json`: last 200 lines / 16 KB per check, 48 KB total then names + links only; strips ANSI, `\r` redraws and `gh` prefixes, redacts a fixed list of token patterns on top of the forge's masking; `verify` keeps stdout+stderr on failure (fixing today's dropped output); tails go in a dynamic-length fence.
 
 ## Not yet specified
@@ -49,4 +49,4 @@ A spec, ready to break into toddler issues, for how approved work lands: the run
 - Ranking, provider picks, `maxParallelIssues` and quota sleeps: spec 9 (Scheduling and quota); this map only leaves the slots.
 - Repo kit and prompt trimming: plain issues (area 3 above).
 - Reading human review comments on PRs ([Forge and tracker modules](../7-harness-boundary/issues/63-forge-tracker-modules.md)).
-- The forge's own merge queue or merge trains: landing is toddler's own queue ([Unattended runs from a queue](../7-harness-boundary/issues/64-unattended-queue.md)).
+- The forge's own merge queue or merge trains: landing is infant's own queue ([Unattended runs from a queue](../7-harness-boundary/issues/64-unattended-queue.md)).

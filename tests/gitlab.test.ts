@@ -522,7 +522,7 @@ for (const [name, requests, expected] of pollRows)
     const opened = !reported.some((item) => item.state === "merged")
       ? reported.find((item) => item.state === "opened")
       : undefined;
-    // An open request reports its head; landing decides whether it is toddler's.
+    // An open request reports its head; landing decides whether it is infant's.
     assert.equal(head, opened?.sha);
     // The open request is read again for its pipeline; jobs and traces only on ci-failed.
     assert.deepEqual(calls, [

@@ -8,7 +8,7 @@ status: closed
 ---
 ## Question
 
-With the Seatbelt provider in `@ai-hero/sandcastle` 0.14.0, what ways exist to make a directory of files visible under the sandbox's private `HOME` (or another path the agent can read)? Compare read-only `mounts` vs copying in via `sandbox.exec` (as toddler does for Codex `auth.json`) vs anything else: where each lands, read-only or not, cost per stage, and any limits (e.g. mounts inside `HOME`). Source: `../sandcastle/src/sandboxes/seatbelt.ts` and docs.
+With the Seatbelt provider in `@ai-hero/sandcastle` 0.14.0, what ways exist to make a directory of files visible under the sandbox's private `HOME` (or another path the agent can read)? Compare read-only `mounts` vs copying in via `sandbox.exec` (as infant does for Codex `auth.json`) vs anything else: where each lands, read-only or not, cost per stage, and any limits (e.g. mounts inside `HOME`). Source: `../sandcastle/src/sandboxes/seatbelt.ts` and docs.
 
 ## Answer
 

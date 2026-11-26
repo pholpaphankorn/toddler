@@ -17,7 +17,7 @@ Where does Codex (as invoked by sandcastle's `codex` provider) look for skills, 
 - User: `$HOME/.agents/skills` (plus deprecated `$CODEX_HOME/skills`).
 - Also `/etc/codex/skills` and plugins.
 
-Claude's SKILL.md format works unchanged. Codex requires `description`, and `name` defaults to the folder name. Claude-only fields such as `disable-model-invocation` are ignored; the Codex equivalent is `agents/openai.yaml`. **Codex does not resolve name clashes**: both copies load, the repo copy is listed first, and an explicit `$name` that matches both triggers neither. So "bundled wins" needs a unique name (e.g. a `toddler-` prefix) or some other step.
+Claude's SKILL.md format works unchanged. Codex requires `description`, and `name` defaults to the folder name. Claude-only fields such as `disable-model-invocation` are ignored; the Codex equivalent is `agents/openai.yaml`. **Codex does not resolve name clashes**: both copies load, the repo copy is listed first, and an explicit `$name` that matches both triggers neither. So "bundled wins" needs a unique name (e.g. a `infant-` prefix) or some other step.
 
 Not verified: an end-to-end `codex exec` run with seeded skills.
 

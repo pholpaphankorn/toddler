@@ -72,7 +72,7 @@ export function loadConfig(
   const path = configPath(root);
   if (!existsSync(path))
     throw new Error(
-      "No .sandcastle/config.json in this project; run toddler init",
+      "No .sandcastle/config.json in this project; run infant init",
     );
   const project = JSON.parse(readFileSync(path, "utf8"));
   if ("models" in project || "skills" in project)

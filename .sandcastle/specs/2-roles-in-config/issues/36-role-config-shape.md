@@ -12,7 +12,7 @@ What does `.sandcastle/config.json` look like when each built-in role (implement
 
 Sub-questions:
 
-- How a project's partial `roles` merges with toddler's defaults (today `models` and `skills` merge one level deep in `loadConfig`).
+- How a project's partial `roles` merges with infant's defaults (today `models` and `skills` merge one level deep in `loadConfig`).
 - What happens to the old `models` and `skills` keys: rejected with an "obsolete setting" error like `reservePercent`, or still accepted.
 - Must each role name a model for every provider in `providers`? Lean: yes, a missing one is an error; limiting which providers run a role is out of scope (see the map).
 - Does the shape still fit a third role (pm, [PM role](../../5-pm-role/spec.md)) without code beyond adding the role name?

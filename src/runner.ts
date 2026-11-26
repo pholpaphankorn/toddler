@@ -242,7 +242,7 @@ export class Runner {
     return this.config.issues === "files";
   }
   branch(number: number): string {
-    return `toddler/${this.local() ? "local" : "issue"}-${number}`;
+    return `infant/${this.local() ? "local" : "issue"}-${number}`;
   }
   // Landed, or approved and waiting on phol: a PR without auto-merge, or a local run without autoMerge.
   finished(number: number): boolean {

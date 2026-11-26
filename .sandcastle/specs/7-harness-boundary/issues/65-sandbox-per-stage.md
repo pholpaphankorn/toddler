@@ -12,7 +12,7 @@ Does every stage need its own Seatbelt sandbox and worktree with tokens scrubbed
 
 ## Answer
 
-Settled with phol 2026-11-25. **Toddler's own Seatbelt sandbox, one per agent, stays as code.** Sandcastle runs Claude with `--dangerously-skip-permissions` and Codex with `--dangerously-bypass-approvals-and-sandbox`, so the sandbox is the only boundary between an agent and phol's machine.
+Settled with phol 2026-11-25. **Infant's own Seatbelt sandbox, one per agent, stays as code.** Sandcastle runs Claude with `--dangerously-skip-permissions` and Codex with `--dangerously-bypass-approvals-and-sandbox`, so the sandbox is the only boundary between an agent and phol's machine.
 
 - **What it guards against**: agent mistakes that reach the host (deleting or editing files outside the worktree, `~/.ssh`, other repos) and untrusted issue text steering the agent (reading or sending out secrets, pushing). Rule 1 of [ADR 0001](../../../../docs/adr/0001-code-agent-or-cut.md): a guard stays code.
 - **Not delegated to the providers' own sandboxes or permission modes**: an agent can't be its own guard, and one Seatbelt profile around either provider guards both the same way.

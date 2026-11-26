@@ -24,12 +24,12 @@ import { connect, validatePushRemote } from "./forge.ts";
 import { smokeForge } from "./smoke-forge.ts";
 
 const usage =
-  "Usage: toddler [init|setup|doctor|plan|run|smoke [codex|claude]|smoke forge <github|gitlab> <scratch-repository>]";
+  "Usage: infant [init|setup|doctor|plan|run|smoke [codex|claude]|smoke forge <github|gitlab> <scratch-repository>]";
 // This runner uses subscriptions exclusively; avoid accidental metered API use.
 for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY"])
   delete process.env[key];
 
-// Run a script bundled with toddler from the current directory, passing its exit code through.
+// Run a script bundled with infant from the current directory, passing its exit code through.
 function script(file: string, args: string[] = []) {
   const path = fileURLToPath(new URL(`../scripts/${file}`, import.meta.url));
   const result = spawnSync(
@@ -95,12 +95,12 @@ async function init(root: string) {
       ignore,
       ".env\nlogs/\nworktrees/\nstate.json\nstate.json.tmp\nrunner.lock\n",
     );
-  console.log(`Wrote ${path} for ${repository ?? "local issues (no forge repository found)"}.${remotes ? `\nGit remote(s) ${remotes.replaceAll("\n", ", ")} could not be read. Log in with gh or glab and rerun toddler init (remove the generated config first).` : ""}
+  console.log(`Wrote ${path} for ${repository ?? "local issues (no forge repository found)"}.${remotes ? `\nGit remote(s) ${remotes.replaceAll("\n", ", ")} could not be read. Log in with gh or glab and rerun infant init (remove the generated config first).` : ""}
 Next:${repository ? `\n  0. Label issues ${defaults.issueLabel} or set \"issues\": \"files\".` : '\n  0. Write issues as .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files (spec in spec.md beside issues/). Nothing is pushed. Set "autoMerge": true to fast-forward approved work into the base branch.'}
   1. Optionally set "install" to a shell command that installs dependencies in each new sandbox (e.g. "npm ci"),
      and "verify" to a shell command that checks this project inside the sandbox (e.g. "npm test").
   2. Optionally write stack-specific agent notes in .sandcastle/project.md.
-  3. Commit .sandcastle/, then run: toddler setup`);
+  3. Commit .sandcastle/, then run: infant setup`);
 }
 
 async function doctor(config: Config, root: string) {
@@ -203,7 +203,7 @@ async function main() {
   try {
     root = await command("git", ["rev-parse", "--show-toplevel"]);
   } catch {
-    throw new Error("Run toddler inside the git repository it should work on");
+    throw new Error("Run infant inside the git repository it should work on");
   }
   process.chdir(root);
   if (existsSync(join(root, ".sandcastle/.env")))

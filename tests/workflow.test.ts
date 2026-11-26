@@ -137,7 +137,7 @@ test("a run with only waiting-on-you jobs exits 0", async () => {
     assert.ok(lines.includes("Landed this run: none"));
     assert.ok(
       lines.includes(
-        `Waiting on you: #1 ${forge === "none" ? "toddler/issue-1" : "https://github.com/example/repo/pull/1"}`,
+        `Waiting on you: #1 ${forge === "none" ? "infant/issue-1" : "https://github.com/example/repo/pull/1"}`,
       ),
     );
     assert.ok(lines.includes("Needs attention: none"));
@@ -266,7 +266,7 @@ test("an approved job labelled on-hold is not delivered", async () => {
   runner.tracker.issues = async () => [issue(1, ["on-hold"])];
   state.jobs[1] = {
     number: 1,
-    branch: "toddler/issue-1",
+    branch: "infant/issue-1",
     baseBranch: "main",
     baseSha: "base",
     status: "approved",
@@ -535,7 +535,7 @@ test("runner reports a fatal stop condition when the same poll cancels a stage",
     );
     runner.stage = Runner.prototype.stage;
     runner.git = async (args) =>
-      args[0] === "branch" ? "toddler/issue-1" : "base";
+      args[0] === "branch" ? "infant/issue-1" : "base";
     runner.authentication = {
       codex: async () => "fake",
       claude: async () => "fake",
@@ -1439,7 +1439,7 @@ test("implementation -> opposite-provider review -> push exact SHA -> PR without
   );
   const request = events.find((event) => event[0] === "open")!;
   assert.deepEqual(request.slice(1, 5), [
-    "toddler/issue-1",
+    "infant/issue-1",
     "reviewed",
     "main",
     "Fix #1: Issue 1",
@@ -1524,9 +1524,9 @@ test("a refused delivery is needs attention and the job stays approved", async (
   assert.equal(state.jobs[1].attention?.reason, "refused");
   assert.match(state.jobs[1].attention!.detail, /auto-merge is not allowed/);
 });
-// A real temp repo whose main is pushed to a bare remote; toddler/local-1 holds the reviewed work.
+// A real temp repo whose main is pushed to a bare remote; infant/local-1 holds the reviewed work.
 function landingRepo() {
-  const top = mkdtempSync(join(tmpdir(), "toddler-land-"));
+  const top = mkdtempSync(join(tmpdir(), "infant-land-"));
   const root = join(top, "work");
   mkdirSync(root);
   const git = (...args: string[]) => {
@@ -1550,8 +1550,8 @@ function landingRepo() {
   git("add", ".");
   git("commit", "-qm", "base");
   git("push", "-q", "origin", "main");
-  git("branch", "toddler/local-1");
-  const reviewed = commit("toddler/local-1", "work");
+  git("branch", "infant/local-1");
+  const reviewed = commit("infant/local-1", "work");
   git("checkout", "-q", "main");
   return { top, root, git, commit, reviewed };
 }
@@ -1583,7 +1583,7 @@ function landing(
   };
   state.jobs[1] = {
     number: 1,
-    branch: "toddler/local-1",
+    branch: "infant/local-1",
     baseBranch: "main",
     baseSha: "",
     status: "approved",
@@ -1616,7 +1616,7 @@ test("NoneForge: a clean compare-and-swap lands and fast-forwards a clean checke
       const forge = new NoneForge(repo.root);
       const poll = () =>
         forge.poll({
-          branch: "toddler/local-1",
+          branch: "infant/local-1",
           sha: repo.reviewed,
           base: "main",
         });
@@ -1657,7 +1657,7 @@ test("NoneForge: a base moved during verify is moved, then landing merges again 
     );
     assert.equal(
       repo.git("log", "-1", "--format=%s", "main"),
-      "Merge main into toddler/local-1",
+      "Merge main into infant/local-1",
     );
     assert.equal(repo.git("rev-parse", "HEAD"), head);
     assert.equal(repo.git("status", "--porcelain"), "");
@@ -1682,14 +1682,14 @@ test("NoneForge: a dirty checked-out base is refused and the checkout is untouch
     rmSync(repo.top, { recursive: true, force: true });
   }
 });
-// Issue 1's file on toddler/local-1 with the given frontmatter status; reviewedSha moves to that commit.
+// Issue 1's file on infant/local-1 with the given frontmatter status; reviewedSha moves to that commit.
 const issueFile = ".sandcastle/specs/1-landing/issues/1-thing.md";
 function withIssue(repo: ReturnType<typeof landingRepo>, status: string) {
   mkdirSync(join(repo.root, ".sandcastle/specs/1-landing/issues"), {
     recursive: true,
   });
   const sha = repo.commit(
-    "toddler/local-1",
+    "infant/local-1",
     issueFile,
     `---\ntitle: Thing\nstatus: ${status}\nblocked_by: []\n---\nBody status: open\n`,
   );
@@ -1767,7 +1767,7 @@ test("close commit: a symlinked issue file or specs directory is refused and the
       mkdirSync(join(outside, "1-landing/issues"), { recursive: true });
       const secret = join(outside, "1-landing/issues/1-thing.md");
       writeFileSync(secret, "---\nstatus: open\n---\nhost file\n");
-      repo.git("checkout", "-q", "toddler/local-1");
+      repo.git("checkout", "-q", "infant/local-1");
       mkdirSync(join(repo.root, ".sandcastle/specs/1-landing/issues"), {
         recursive: true,
       });
@@ -1814,13 +1814,13 @@ test("chain proof: a foreign commit or a hand-edited merge refuses the publish",
           "-q",
           "--no-ff",
           "-m",
-          "Merge main into toddler/local-1",
+          "Merge main into infant/local-1",
           "main",
         );
       } else {
         repo.git("merge", "-q", "--no-ff", "--no-commit", "main");
         writeFileSync(join(repo.root, "work"), "edited");
-        repo.git("commit", "-qam", "Merge main into toddler/local-1");
+        repo.git("commit", "-qam", "Merge main into infant/local-1");
       }
       const evil = repo.git("rev-parse", "HEAD");
       repo.git("checkout", "-q", "main");
@@ -1876,7 +1876,7 @@ test("a local run without autoMerge stops at approved and does not unblock depen
   assert.ok(
     !events.some((event) => event[0] === "poll" || event[0] === "open"),
   );
-  assert.ok(lines.includes("Waiting on you: #1 toddler/issue-1"));
+  assert.ok(lines.includes("Waiting on you: #1 infant/issue-1"));
 });
 
 // A fake forge: only deliver and poll are scripted, per job, in order.
@@ -1906,8 +1906,8 @@ test("fake forge: deliver, waiting until auto-merge lands it, and only then do d
   scripted(
     runner,
     {
-      "toddler/issue-1": ["none", "waiting", "waiting", "waiting", "landed"],
-      "toddler/issue-2": ["none", "landed"],
+      "infant/issue-1": ["none", "waiting", "waiting", "waiting", "landed"],
+      "infant/issue-2": ["none", "landed"],
     },
     delivered,
   );
@@ -1964,7 +1964,7 @@ test("fake forge: each forge needs-attention reason stops landing at once", asyn
     const delivered: string[] = [];
     scripted(
       runner,
-      { "toddler/issue-1": ["none", "waiting", polled] },
+      { "infant/issue-1": ["none", "waiting", polled] },
       delivered,
     );
     await runner.work(issue(1), "codex", "main");
@@ -2062,7 +2062,7 @@ test("fake forge: landing polls every landingPollSeconds and an interrupt ends t
   const delivered: string[] = [];
   scripted(
     runner,
-    { "toddler/issue-1": ["none", "waiting", "waiting"] },
+    { "infant/issue-1": ["none", "waiting", "waiting"] },
     delivered,
   );
   const waits: number[] = [];
@@ -2118,7 +2118,7 @@ test("fake forge: behind means a host merge and verify with no agent, then the m
         runner,
         // A forge conflict takes the same host merge path as behind.
         {
-          "toddler/local-1": [
+          "infant/local-1": [
             "none",
             outcome === "conflict" ? "conflict" : "behind",
             "landed",
@@ -2264,21 +2264,21 @@ function hostMerge(repo: ReturnType<typeof landingRepo>) {
     "-q",
     "--no-ff",
     "-m",
-    "Merge main into toddler/local-1",
+    "Merge main into infant/local-1",
     "main",
   );
   const merge = repo.git("rev-parse", "HEAD");
   repo.git("checkout", "-q", "main");
   return merge;
 }
-test("GitHub head: an older push of toddler's own is delivered over, never refused", async () => {
+test("GitHub head: an older push of infant's own is delivered over, never refused", async () => {
   for (const scenario of ["after a merge fix round", "after a failed push"]) {
     const repo = landingRepo();
     try {
       let job: Partial<Job>, expected: string;
       if (scenario === "after a merge fix round") {
         // The PR still shows the earlier push; the round's approved head builds on it.
-        const fixed = repo.commit("toddler/local-1", "fix");
+        const fixed = repo.commit("infant/local-1", "fix");
         repo.git("checkout", "-q", "main");
         job = { reviewedSha: fixed, deliveredSha: repo.reviewed };
         expected = fixed;
@@ -2356,7 +2356,7 @@ function mergeFixRun(
   const delivered: string[] = [];
   scripted(
     runner,
-    { "toddler/local-1": ["none", "behind", "behind", "landed"] },
+    { "infant/local-1": ["none", "behind", "behind", "landed"] },
     delivered,
   );
   repo.git("checkout", "-qb", "other", "main");
@@ -2398,7 +2398,7 @@ function mergeFixRun(
     codex: agent,
     claudeCode: agent,
     createSandbox: async (options: { branch: string }) => {
-      if (options.branch !== "toddler/local-1")
+      if (options.branch !== "infant/local-1")
         return verifySandbox(options as never);
       if (!seen.length) repo.git("worktree", "add", worktree, options.branch);
       return {
@@ -2464,7 +2464,7 @@ test("fake forge: behind → conflict → a merge fix round on MERGE_HEAD of the
       work: "partial",
     });
     assert.equal(seen[2].role, "review");
-    const merged = repo.git("rev-parse", "toddler/local-1");
+    const merged = repo.git("rev-parse", "infant/local-1");
     assert.equal(
       repo.git("rev-parse", `${merged}^1`, `${merged}^2`),
       `${repo.reviewed}\n${moved}`,
@@ -2506,7 +2506,7 @@ test("regression: a commit smuggled in through a side branch off the base shows 
       writeFileSync(join(repo.top, "issue-worktree", "extra"), "sneaky");
       git("add", "extra");
       git("commit", "-qm", "side");
-      git("checkout", "-q", "toddler/local-1");
+      git("checkout", "-q", "infant/local-1");
       spawnSync("git", ["merge", "-q", "side"], {
         cwd: join(repo.top, "issue-worktree"),
       });
@@ -2552,7 +2552,7 @@ function conflicts(runner: Runner, count = Infinity) {
 }
 const approvedJob = (number: number, changes: Partial<Job> = {}): Job => ({
   number,
-  branch: `toddler/issue-${number}`,
+  branch: `infant/issue-${number}`,
   baseBranch: "main",
   baseSha: "base",
   status: "approved",
@@ -2568,7 +2568,7 @@ test("a merge fix implementation that drops approved work fails the stage", asyn
   const repo = landingRepo();
   try {
     // The approved head's last commit undoes something its parent added.
-    const fixed = repo.commit("toddler/local-1", "backdoor", "removed");
+    const fixed = repo.commit("infant/local-1", "backdoor", "removed");
     repo.git("checkout", "-q", "main");
     const dir = join(repo.top, "issue-worktree");
     const run = mergeFixRun(repo, (git) => {
@@ -2601,7 +2601,7 @@ test("a merge fix implementation that makes an octopus merge fails the stage", a
       writeFileSync(join(dir, "extra"), "side");
       git("add", "extra");
       git("commit", "-qm", "side");
-      git("checkout", "-q", "toddler/local-1");
+      git("checkout", "-q", "infant/local-1");
       writeFileSync(join(dir, "work"), "both");
       writeFileSync(join(dir, "extra"), "sneaky");
       git("add", "-A");
@@ -2648,7 +2648,7 @@ test("files tracker: a merge fix round starts from the pushed close commit, so t
     assert.equal(job.attention, undefined);
     assert.equal(job.status, "landed");
     assert.equal(job.mergeFixRounds, 1);
-    const merged = repo.git("rev-parse", "toddler/local-1");
+    const merged = repo.git("rev-parse", "infant/local-1");
     assert.equal(job.reviewedSha, merged);
     const [first, second] = run.delivered;
     assert.equal(run.delivered.length, 2);
@@ -2735,8 +2735,8 @@ test("a job fixed after a merge fix rejoins landing at the back", async () => {
   scripted(
     runner,
     {
-      "toddler/issue-1": ["none", "none", "landed"],
-      "toddler/issue-2": ["none", "landed"],
+      "infant/issue-1": ["none", "none", "landed"],
+      "infant/issue-2": ["none", "landed"],
     },
     [],
   );
@@ -2746,7 +2746,7 @@ test("a job fixed after a merge fix rejoins landing at the back", async () => {
     return { state: "waiting", url: "https://github.com/example/repo/pull/1" };
   };
   const { lines } = await summary(() => runner.run("main"));
-  assert.deepEqual(delivered, ["toddler/issue-2", "toddler/issue-1"]);
+  assert.deepEqual(delivered, ["infant/issue-2", "infant/issue-1"]);
   assert.equal(state.jobs[1].status, "landed");
   assert.equal(state.jobs[1].mergeFixRounds, 1);
   assert.ok(lines.includes("Landed this run: #2, #1"));
@@ -2757,7 +2757,7 @@ test("fake forge: a resumed job re-polls first; none delivers again, landed is d
     runner.tracker.issues = async () => [issue(1)];
     state.jobs[1] = {
       number: 1,
-      branch: "toddler/issue-1",
+      branch: "infant/issue-1",
       baseBranch: "main",
       baseSha: "base",
       status: "landing",
@@ -2770,7 +2770,7 @@ test("fake forge: a resumed job re-polls first; none delivers again, landed is d
       pr: "https://github.com/example/repo/pull/1",
     };
     const delivered: string[] = [];
-    scripted(runner, { "toddler/issue-1": [first, "landed"] }, delivered);
+    scripted(runner, { "infant/issue-1": [first, "landed"] }, delivered);
     await summary(() => runner.run("main"));
     assert.deepEqual(delivered, first === "none" ? ["reviewed"] : []);
     assert.equal(state.jobs[1].status, "landed");
@@ -2778,7 +2778,7 @@ test("fake forge: a resumed job re-polls first; none delivers again, landed is d
   }
 });
 test("local issues skip closed and blocked files, never call GitHub, and stop on a local branch when openPr is false", async () => {
-  const root = mkdtempSync(join(tmpdir(), "toddler-local-"));
+  const root = mkdtempSync(join(tmpdir(), "infant-local-"));
   try {
     mkdirSync(join(root, ".sandcastle/specs/1-a/issues"), { recursive: true });
     mkdirSync(join(root, ".sandcastle/specs/2-b/issues"), { recursive: true });
@@ -2800,7 +2800,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
     );
     await runner.work(candidates[0], "codex", "main");
     assert.equal(state.jobs[2].status, "approved");
-    assert.equal(state.jobs[2].branch, "toddler/local-2");
+    assert.equal(state.jobs[2].branch, "infant/local-2");
     assert.ok(
       events.some((event) => event[1] === "rev-parse" && event[2] === "main"),
       "offline jobs start from the local branch",
@@ -2825,7 +2825,7 @@ test("local issues with openPr open a PR that does not close a GitHub issue", as
   await runner.landing.land(issue(7));
   assert.equal(state.jobs[7].status, "approved");
   const create = events.find((event) => event[0] === "open")!;
-  assert.equal(create[1], "toddler/local-7");
+  assert.equal(create[1], "infant/local-7");
   assert.equal(create[2], "reviewed");
   assert.equal(create[4], "Fix local issue 7: Issue 7");
   assert.doesNotMatch(create[5], /Closes #7/);
@@ -2879,7 +2879,7 @@ test("quota interruption transfers unfinished implementation and uses remaining 
     ],
   );
   assert.equal(state.jobs[1].status, "approved");
-  assert.equal(state.jobs[1].branch, "toddler/issue-1");
+  assert.equal(state.jobs[1].branch, "infant/issue-1");
 });
 test("review selection uses the review model while implementation remains available", async () => {
   const { runner, events, quotas } = fixture();
@@ -2930,7 +2930,7 @@ test("run waits for a parallel stage before reporting a fallback ranking failure
   ];
   state.jobs[2] = {
     number: 2,
-    branch: "toddler/issue-2",
+    branch: "infant/issue-2",
     baseBranch: "main",
     baseSha: "base",
     status: "implementation",
@@ -3059,7 +3059,7 @@ test("implementation stages run the formatter and commit its changes before veri
     authentication: { codex: async () => "auth", claude: async () => "t" },
     git: async (_file, args = []) => {
       gits.push(args);
-      if (args[0] === "branch") return "toddler/issue-1";
+      if (args[0] === "branch") return "infant/issue-1";
       if (args[0] === "rev-parse") return head;
       if (args[0] === "status") return dirty ? " M src/a.ts" : "";
       if (args[0] === "commit") {
@@ -3071,7 +3071,7 @@ test("implementation stages run the formatter and commit its changes before veri
   });
   const job = fake<Job>({
     number: 1,
-    branch: "toddler/issue-1",
+    branch: "infant/issue-1",
     baseSha: "base",
   });
   const result = await runner.stage(job, "codex", "implementation", "task");
@@ -3160,7 +3160,7 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
     assert.equal(captured.logging.type, "file");
     assert.match(
       captured.agent.buildPrintCommand({}).command,
-      /toddler-agent\.pid"; unset CODEX_HOME .*; native-cli; /,
+      /infant-agent\.pid"; unset CODEX_HOME .*; native-cli; /,
     );
     if (provider === "claude")
       assert.ok(
@@ -3229,7 +3229,7 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
     );
     assert.ok(
       !commands.some(
-        ({ cmd, options }) => !options && !cmd.includes("toddler-agent.pid"),
+        ({ cmd, options }) => !options && !cmd.includes("infant-agent.pid"),
       ),
       "no verify command runs when verify is empty",
     );
@@ -3341,9 +3341,9 @@ test("same provider/role sessions queue while distinct roles can proceed", async
 });
 
 test("project config overrides defaults, must name a repository, and verify is optional", () => {
-  const root = mkdtempSync(join(tmpdir(), "toddler-config-"));
+  const root = mkdtempSync(join(tmpdir(), "infant-config-"));
   try {
-    assert.throws(() => loadConfig(root), /toddler init/);
+    assert.throws(() => loadConfig(root), /infant init/);
     mkdirSync(join(root, ".sandcastle"));
     const write = (value: object) =>
       writeFileSync(

@@ -19,7 +19,7 @@ Prefactor: move every host call out of the runner behind two interfaces, so GitL
    - `openRequest({ branch, sha, base, title, body })` pushes, opens the request and returns its URL. The runner still writes title and body.
    - `doctorChecks(config)` → `[name, action][]` (the `skillDoctorChecks` shape). GitHub: today's checks. None: today's "not used" line.
    - None has no tracker side; for now the runner marks the job `done` and never calls `openRequest`.
-4. **Wiring**: the runner gets `tracker` and `forge` and never checks a host name. Until #51 the host is picked from today's `issues`/`openPr`. The only files check left in the loop is the branch prefix (`toddler/local-N`).
+4. **Wiring**: the runner gets `tracker` and `forge` and never checks a host name. Until #51 the host is picked from today's `issues`/`openPr`. The only files check left in the loop is the branch prefix (`infant/local-N`).
 
 Done when the GitHub tracker and forge have their own tests with a fake `gh` recording arguments (as today), the files tracker has tests for open/closed/`blocked_by`, and the runner's workflow tests use in-memory fake `Tracker` and `Forge` objects instead of faking `gh` arguments, with the same behaviours covered.
 

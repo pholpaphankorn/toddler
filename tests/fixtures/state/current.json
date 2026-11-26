@@ -3,7 +3,7 @@
   "jobs": {
     "1": {
       "number": 1,
-      "branch": "toddler/issue-1",
+      "branch": "infant/issue-1",
       "status": "approved",
       "reviewRounds": 1,
       "mergeFixRounds": 0,

@@ -1,4 +1,4 @@
-# Claude Code skill discovery in toddler's sandboxed `claude -p` runs
+# Claude Code skill discovery in infant's sandboxed `claude -p` runs
 
 Researched 2026-11-04 against code.claude.com docs and Claude Code 2.1.306 (local `claude --version`).
 Sources: [skills], [headless], [cli], [env], [sdk-features]. Links at the bottom.
@@ -7,11 +7,11 @@ Sources: [skills], [headless], [cli], [env], [sdk-features]. Links at the bottom
 
 Yes: plain `claude -p` loads skills exactly like an interactive session. Only `--bare`, `--safe-mode`,
 `--disable-slash-commands`, `CLAUDE_CODE_SIMPLE=1`, or a `--setting-sources` list that leaves a source
-out turn discovery off. Sandcastle passes none of these. In toddler's sandbox, Claude finds:
+out turn discovery off. Sandcastle passes none of these. In infant's sandbox, Claude finds:
 
 - **Project skills**: `.claude/skills/<name>/SKILL.md` in the worktree cwd and every parent up to the repo root.
-- **User skills**: `$HOME/.claude/skills/<name>/SKILL.md`. Toddler's HOME is private and empty, so there are none
-  unless toddler writes them there.
+- **User skills**: `$HOME/.claude/skills/<name>/SKILL.md`. Infant's HOME is private and empty, so there are none
+  unless infant writes them there.
 
 When two skills share a name, **enterprise beats personal and personal beats project** [skills].
 
@@ -47,18 +47,18 @@ Claude Code also watches the user, project and `--add-dir` skill dirs and reload
 
 - `CLAUDE_CONFIG_DIR` overrides the config directory, which defaults to `~/.claude`. The docs say "All settings, session history, and plugins are stored under this path" [env].
   **Unverified**: the docs never state that personal skills move to `$CLAUDE_CONFIG_DIR/skills`. That is the likely reading, but I have not tested it.
-- Toddler unsets `CLAUDE_CONFIG_DIR`, so the user dir is `~/.claude` under the sandbox HOME. **Unverified, inferred**:
+- Infant unsets `CLAUDE_CONFIG_DIR`, so the user dir is `~/.claude` under the sandbox HOME. **Unverified, inferred**:
   Claude Code resolves `~` through Node's `os.homedir()`, which honours `$HOME` on macOS. To ship user-level skills, write them to
   `$HOME/.claude/skills/<name>/` (for example in the same setup exec that writes `$HOME/.codex/auth.json` in runner.ts).
 
-## Do toddler's flags and env vars affect skill loading?
+## Do infant's flags and env vars affect skill loading?
 
 | Item                                         | Effect on skills                                                                                                                                                                                                                                                                                                 | Source                      |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
 | `-p` / `--print`                             | None. "Without it [`--bare`], `claude -p` discovers and loads them as an interactive session would, including anything configured in the working directory or `~/.claude`." Typing `/skill-name` in the prompt also works under `-p`                                                                             | [headless]                  |
 | `--dangerously-skip-permissions`             | None documented. It is the same as `--permission-mode bypassPermissions` and only concerns permission prompts                                                                                                                                                                                                    | [cli]                       |
 | `--setting-sources`                          | Not passed, so all sources load (the default equals `user,project,local`). Leaving out `project` would drop project skills; leaving out `user` would drop `~/.claude/skills`                                                                                                                                     | [cli][sdk-features][skills] |
-| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` | Its documented list (auto-updates, telemetry, error reporting, release notes, feature flags, plugin `command` sources...) says nothing about local skill discovery. **Unverified**: it might change claude.ai skill sync, but that already needs a claude.ai login, and toddler uses a `CLAUDE_CODE_OAUTH_TOKEN` | [env]                       |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` | Its documented list (auto-updates, telemetry, error reporting, release notes, feature flags, plugin `command` sources...) says nothing about local skill discovery. **Unverified**: it might change claude.ai skill sync, but that already needs a claude.ai login, and infant uses a `CLAUDE_CODE_OAUTH_TOKEN` | [env]                       |
 | `CLAUDE_CODE_TMPDIR`                         | Unrelated: it only moves temp files                                                                                                                                                                                                                                                                              | [env]                       |
 | Turn skills off                              | `--bare` / `CLAUDE_CODE_SIMPLE=1`, `--safe-mode`, `--disable-slash-commands`, `strictPluginOnlyCustomization` policy, `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS` (bundled skills only)                                                                                                                                 | [cli][env][skills]          |
 
@@ -92,7 +92,7 @@ project's `.claude/skills/`, `/deploy` runs the personal one."
 - A skill beats a `.claude/commands/` file with the same name.
 - Plugin skills never clash, because they are namespaced.
 
-**For toddler**: a skill toddler seeds into the sandbox HOME overrides a same-named skill committed in the target repo.
+**For infant**: a skill infant seeds into the sandbox HOME overrides a same-named skill committed in the target repo.
 
 ## Sources
 

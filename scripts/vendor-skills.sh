@@ -14,7 +14,7 @@ import { execFileSync } from 'node:child_process';
 
 const root = process.env.ROOT;
 const manifest = JSON.parse(readFileSync(process.env.SKILLS_MANIFEST || join(root, 'vendor/skills.json'), 'utf8'));
-const temp = mkdtempSync(join(tmpdir(), 'toddler-skills-'));
+const temp = mkdtempSync(join(tmpdir(), 'infant-skills-'));
 const output = join(root, 'vendor/skills');
 const safeName = (name) => typeof name === 'string' && name !== '.' && name !== '..' && /^[a-zA-Z0-9._-]+$/.test(name);
 try {

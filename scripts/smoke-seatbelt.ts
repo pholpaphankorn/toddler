@@ -7,7 +7,7 @@ import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
 import { command } from "../src/process.ts";
 import { indexSkills, skillLinks } from "../src/skills.ts";
 
-const directory = await mkdtemp(join(tmpdir(), "toddler-seatbelt-smoke-"));
+const directory = await mkdtemp(join(tmpdir(), "infant-seatbelt-smoke-"));
 const root = join(directory, "repo");
 const { mkdir } = await import("node:fs/promises");
 await mkdir(root);

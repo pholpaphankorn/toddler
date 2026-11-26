@@ -92,7 +92,7 @@ export class Landing {
       // A head object missing locally is no push of ours.
       const is = (older: string, newer: string) =>
         this.ancestor(older, newer).catch(() => false);
-      // Toddler's own earlier push (before a merge fix round, or a push that then failed): a plain push fast-forwards it.
+      // Infant's own earlier push (before a merge fix round, or a push that then failed): a plain push fast-forwards it.
       if (await is(head, sha)) return { state: "none" };
       // Host commits pushed on reviewedSha but not recorded: carry on from them once proven.
       if (await is(job.reviewedSha!, head)) {
@@ -272,7 +272,7 @@ export class Landing {
   private async close(job: Job): Promise<string | undefined> {
     const runner = this.runner;
     if (!runner.local()) return;
-    const directory = await mkdtemp(join(tmpdir(), "toddler-close-"));
+    const directory = await mkdtemp(join(tmpdir(), "infant-close-"));
     try {
       await runner.git([
         "worktree",
@@ -329,7 +329,7 @@ export class Landing {
   // A throwaway host worktree, so phol's checkout is never touched.
   private async merge(job: Job, sha: string, base: string): Promise<string> {
     const runner = this.runner;
-    const directory = await mkdtemp(join(tmpdir(), "toddler-merge-"));
+    const directory = await mkdtemp(join(tmpdir(), "infant-merge-"));
     try {
       await runner.git(["worktree", "add", "--detach", directory, sha]);
       try {
@@ -362,7 +362,7 @@ export class Landing {
   private async verify(job: Job, sha: string, base: string): Promise<void> {
     const { config, sandcastle, sandboxProvider } = this.runner;
     if (!config.verify.trim()) return;
-    const branch = `toddler/verify-${job.number}-${sha.slice(0, 12)}`;
+    const branch = `infant/verify-${job.number}-${sha.slice(0, 12)}`;
     const sandbox = await sandcastle!.createSandbox({
       cwd: this.runner.root,
       branch,
