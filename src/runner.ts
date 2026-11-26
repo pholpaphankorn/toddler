@@ -16,6 +16,7 @@ import {
   type Ranker,
   RankingError,
 } from "./policy.ts";
+import { logTail } from "./logtail.ts";
 import { command, type Command } from "./process.ts";
 import {
   claudeToken,
@@ -436,10 +437,16 @@ export class Runner {
           if (!this.config.verify.trim())
             return { stdout: result.stdout, sha: after, verification: "" };
           const verification = await sandbox.exec(this.config.verify);
-          if (verification.exitCode)
+          if (verification.exitCode) {
+            const { stdout, stderr } = verification;
+            const output =
+              stdout && !stdout.endsWith("\n")
+                ? `${stdout}\n${stderr}`
+                : stdout + stderr;
             throw new Error(
-              `Host-required verification failed: ${this.config.verify}`,
+              `Host-required verification failed: ${this.config.verify}\n${logTail(output)}`,
             );
+          }
           return {
             stdout: result.stdout,
             sha: after,
@@ -680,7 +687,8 @@ export class Runner {
                   )
                 ? "refused"
                 : "stage-failed",
-          detail: message.slice(0, 1000),
+          // Keep the end: failures (e.g. a verify logTail, up to 16 KB) end with the actual error.
+          detail: message.slice(-20_000),
           ...(log && { log }),
           at: new Date().toISOString(),
         },

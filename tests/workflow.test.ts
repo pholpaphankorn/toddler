@@ -1343,6 +1343,53 @@ test("a merge-tree failure that is not a conflict is a host fault and ends the r
   assert.equal(state.jobs[1].attention, undefined);
   assert.ok(!events.some((event) => event[2] === "review"));
 });
+test("a long verify failure keeps its last lines in attention.detail", async () => {
+  const { runner, state, quotas } = fixture({ verify: "npm test" });
+  runner.stage = Runner.prototype.stage;
+  Object.assign(quotas, {
+    run: async (
+      _p: Provider,
+      _m: string,
+      action: (s: AbortSignal) => unknown,
+    ) => action(new AbortController().signal),
+  });
+  const agent = (model: string) => ({
+    model,
+    buildPrintCommand: () => ({ command: "cli", stdin: "" }),
+  });
+  Object.assign(runner, {
+    authentication: { codex: async () => "", claude: async () => "" },
+    sandcastle: fake({
+      codex: agent,
+      claudeCode: agent,
+      createSandbox: async () => ({
+        worktreePath: "/fixture",
+        close: async () => ({}),
+        run: async () => ({ stdout: "done" }),
+        exec: async (cmd: string) =>
+          cmd === "npm test"
+            ? {
+                exitCode: 1,
+                stdout: Array.from(
+                  { length: 60 },
+                  (_, i) => `  ok ${i + 1} some test name here`,
+                ).join("\n"),
+                stderr:
+                  "not ok 61 - the actual failure\nAssertionError: expected 1 to equal 2",
+              }
+            : { exitCode: 0, stdout: "", stderr: "" },
+      }),
+    }),
+  });
+  const git = runner.gitCommand;
+  runner.gitCommand = async (file, args = [], options) =>
+    args[0] === "branch" ? runner.branch(1) : git(file, args, options);
+  await runner.work(issue(1), "codex", "main");
+  const error = state.jobs[1].attention!.detail;
+  assert.ok(error.length > 1000);
+  assert.match(error, /some test name here\nnot ok 61/);
+  assert.ok(error.endsWith("AssertionError: expected 1 to equal 2"));
+});
 test("a refused auto-merge leaves the PR open and the job at pr", async () => {
   const { runner, state } = fixture({ autoMerge: true });
   runner.forge.enableAutoMerge = async () => {
