@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Delivered } from "./forge.ts";
+import { closeIssueFile, type Delivered } from "./forge.ts";
 import { logTail } from "./logtail.ts";
 import type { Issue } from "./policy.ts";
 import type { Job, Runner } from "./runner.ts";
@@ -130,6 +130,7 @@ export class Landing {
         "refused",
         "Branch changed after review; refusing to publish",
       );
+    if (sha === job.reviewedSha) sha = (await this.close(job)) ?? sha;
     while (!runner.interrupted) {
       const { ref } = await runner.forge.base(job.baseBranch);
       const base = await runner.git(["rev-parse", ref]);
@@ -138,6 +139,7 @@ export class Landing {
         await this.verify(job, sha);
         if (runner.interrupted) return;
       }
+      await this.prove(job, sha, base);
       const delivered = await runner.forge.deliver({
         branch: job.branch,
         sha,
@@ -157,6 +159,64 @@ export class Landing {
     } catch (error) {
       if ((error as { code?: unknown }).code === 1) return false;
       throw error;
+    }
+  }
+  // Files tracker only: the host's commit on reviewedSha that sets the issue file to closed; undefined when it already is.
+  private async close(job: Job): Promise<string | undefined> {
+    const runner = this.runner;
+    if (!runner.local()) return;
+    const directory = await mkdtemp(join(tmpdir(), "toddler-close-"));
+    try {
+      await runner.git([
+        "worktree",
+        "add",
+        "--detach",
+        directory,
+        job.reviewedSha!,
+      ]);
+      const closing = await closeIssueFile(directory, job.number).catch(
+        (error) => {
+          throw new AttentionError("refused", (error as Error).message);
+        },
+      );
+      if (!closing) return;
+      await runner.git(
+        ["commit", "--no-verify", "-qam", `Close local issue ${job.number}`],
+        directory,
+      );
+      return await runner.git(["rev-parse", "HEAD"], directory);
+    } finally {
+      await runner.git(["worktree", "remove", "--force", directory]);
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+  // First-parent from sha down to reviewedSha: at most one close commit right on reviewedSha, then clean host merges
+  // of the base. Proven by recomputing each tree, never by trusting authors or messages.
+  private async prove(job: Job, sha: string, base: string): Promise<void> {
+    const git = (args: string[]) => this.runner.git(args);
+    const tree = (commit: string) => git(["rev-parse", `${commit}^{tree}`]);
+    for (let commit = sha; commit !== job.reviewedSha;) {
+      const [, first, second, ...more] = (
+        await git(["rev-list", "--parents", "-n", "1", commit])
+      ).split(" ");
+      let expected: string | undefined;
+      if (second && !more.length && (await this.ancestor(second, base)))
+        expected = await git(["merge-tree", "--write-tree", first, second])
+          .then((output) => output.split("\n")[0])
+          .catch((error) => {
+            if (error.code === 1) return undefined; // conflicted: not a clean host merge
+            throw error;
+          });
+      else if (first === job.reviewedSha && !second) {
+        const close = await this.close(job);
+        expected = close && (await tree(close));
+      }
+      if (!expected || expected !== (await tree(commit)))
+        throw new AttentionError(
+          "refused",
+          `${commit} on ${job.branch} is neither the reviewed work nor a host merge or close commit; refusing to publish`,
+        );
+      commit = first;
     }
   }
   // A throwaway host worktree, so phol's checkout is never touched.
