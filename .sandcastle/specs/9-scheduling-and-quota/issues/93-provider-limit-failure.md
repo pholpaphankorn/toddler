@@ -13,3 +13,5 @@ status: open
 - Which stop it sets: the whole provider, or provider + model; and what makes it lift (ties to [When a stop lifts](91-stops-lift.md)).
 - What happens to the job: back to ready with its preserved worktree; does the interrupted stage count against `maxReviewRounds` / `maxMergeFixRounds`; does the sticky implementer move to the other provider.
 - Whether other live sessions on the same provider are cancelled at once or left to hit the limit themselves.
+
+> From [When a stop lifts](91-stops-lift.md): stops lift when no condition returns them on a fresh reading. A failure-based stop has no condition, so decide how it lifts; lifting on the next reading loops when the reading still shows quota left (the reading lags the provider's own limit).
