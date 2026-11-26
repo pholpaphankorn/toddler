@@ -3,7 +3,7 @@ title: Host-commit chain proof and the files-tracker close commit
 labels: []
 blocked_by: [85]
 parent: 8
-status: open
+status: closed
 ---
 Nothing reaches the base or a PR branch that was neither reviewed nor provably made by the host.
 
