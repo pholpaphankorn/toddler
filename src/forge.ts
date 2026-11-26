@@ -805,6 +805,38 @@ export function connect(
   return { forge, tracker };
 }
 
+// Sets `status: closed` in issue `number`'s file under root; false when it is already closed or has no file.
+export async function closeIssueFile(
+  root: string,
+  number: number,
+): Promise<boolean> {
+  const prefix = join(root, ".sandcastle/specs");
+  const files = existsSync(prefix)
+    ? await readdir(prefix, { recursive: true })
+    : [];
+  for (const file of files.filter((file) =>
+    /^[^/]+\/issues\/[^/]+\.md$/.test(file),
+  )) {
+    const text = await readFile(join(prefix, file), "utf8");
+    const issue = localIssue(file, text);
+    if (issue.number !== number) continue;
+    if (issue.closed) return false;
+    const front = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+    const start = text.indexOf("\n") + 1;
+    await writeFile(
+      join(prefix, file),
+      !front
+        ? `---\nstatus: closed\n---\n${text}`
+        : text.slice(0, start) +
+            (/^\s*status:/m.test(front[1])
+              ? front[1].replace(/^\s*status:.*$/gm, "status: closed")
+              : `${front[1]}\nstatus: closed`) +
+            text.slice(start + front[1].length),
+    );
+    return true;
+  }
+  return false;
+}
 // .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md (next to that spec's spec.md), with optional "key: value" frontmatter
 // (title, labels: [a, b], blocked_by: [1, 2], status: closed). Issue numbers are unique across specs.
 function localIssue(

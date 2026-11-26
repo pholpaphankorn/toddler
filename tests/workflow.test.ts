@@ -1730,6 +1730,122 @@ test("NoneForge: a dirty checked-out base is refused and the checkout is untouch
     rmSync(repo.top, { recursive: true, force: true });
   }
 });
+// Issue 1's file on toddler/local-1 with the given frontmatter status; reviewedSha moves to that commit.
+const issueFile = ".sandcastle/specs/1-landing/issues/1-thing.md";
+function withIssue(repo: ReturnType<typeof landingRepo>, status: string) {
+  mkdirSync(join(repo.root, ".sandcastle/specs/1-landing/issues"), {
+    recursive: true,
+  });
+  const sha = repo.commit(
+    "toddler/local-1",
+    issueFile,
+    `---\ntitle: Thing\nstatus: ${status}\nblocked_by: []\n---\nBody status: open\n`,
+  );
+  repo.git("checkout", "-q", "main");
+  return sha;
+}
+test("close commit: added once on reviewedSha, then a chain of two host merges lands", async () => {
+  const repo = landingRepo();
+  try {
+    const reviewed = withIssue(repo, "open");
+    const merges: string[] = [];
+    const { runner, state, sandboxes } = landing(repo, () => {
+      // The base moves again during the first verify, so two host merges stack on the close commit.
+      if (!merges.length) merges.push(repo.commit("main", `m${merges.length}`));
+      return pass();
+    });
+    repo.commit("main", "first");
+    state.jobs[1].reviewedSha = reviewed;
+    assert.equal(await runner.landing.land(issue(1)), "landed");
+    assert.equal(sandboxes.length, 2);
+    const close = repo.git("rev-parse", "main^1^1");
+    assert.equal(repo.git("rev-parse", `${close}^`), reviewed);
+    assert.equal(
+      repo.git("log", "-1", "--format=%s %ae %P", close),
+      `Close local issue 1 t@example.com ${reviewed}`,
+    );
+    assert.equal(
+      repo.git("show", `main:${issueFile}`),
+      "---\ntitle: Thing\nstatus: closed\nblocked_by: []\n---\nBody status: open",
+    );
+    assert.equal(
+      repo
+        .git("log", "--format=%s", "main")
+        .split("\n")
+        .filter((s) => s.startsWith("Close")).length,
+      1,
+    );
+    assert.equal(repo.git("worktree", "list").split("\n").length, 1);
+  } finally {
+    rmSync(repo.top, { recursive: true, force: true });
+  }
+});
+test("close commit: none when the file is already closed, re-added after an agent reverted it", async () => {
+  for (const reverted of [false, true]) {
+    const repo = landingRepo();
+    try {
+      let reviewed = withIssue(repo, "closed");
+      if (reverted) reviewed = withIssue(repo, "open");
+      const { runner, state } = landing(repo, pass);
+      state.jobs[1].reviewedSha = reviewed;
+      assert.equal(await runner.landing.land(issue(1)), "landed");
+      if (!reverted) assert.equal(repo.git("rev-parse", "main"), reviewed);
+      else {
+        assert.equal(repo.git("rev-parse", "main^"), reviewed);
+        assert.equal(
+          repo.git("log", "-1", "--format=%s", "main"),
+          "Close local issue 1",
+        );
+        assert.match(
+          repo.git("show", `main:${issueFile}`),
+          /^status: closed$/m,
+        );
+      }
+    } finally {
+      rmSync(repo.top, { recursive: true, force: true });
+    }
+  }
+});
+test("chain proof: a foreign commit or a hand-edited merge refuses the publish", async () => {
+  for (const tamper of ["foreign commit", "hand-edited merge"] as const) {
+    const repo = landingRepo();
+    try {
+      const before = repo.commit("main", "first");
+      repo.git("checkout", "-qb", "evil", repo.reviewed);
+      if (tamper === "foreign commit") {
+        repo.commit("evil", "sneak");
+        repo.git(
+          "merge",
+          "-q",
+          "--no-ff",
+          "-m",
+          "Merge main into toddler/local-1",
+          "main",
+        );
+      } else {
+        repo.git("merge", "-q", "--no-ff", "--no-commit", "main");
+        writeFileSync(join(repo.root, "work"), "edited");
+        repo.git("commit", "-qam", "Merge main into toddler/local-1");
+      }
+      const evil = repo.git("rev-parse", "HEAD");
+      repo.git("checkout", "-q", "main");
+      const { runner, state } = landing(repo, pass);
+      runner.landing["merge"] = async () => evil;
+      assert.equal(
+        await quiet(() => runner.landing.land(issue(1))),
+        "attention",
+      );
+      assert.equal(state.jobs[1].attention?.reason, "refused");
+      assert.match(
+        state.jobs[1].attention!.detail,
+        /neither the reviewed work/,
+      );
+      assert.equal(repo.git("rev-parse", "main"), before);
+    } finally {
+      rmSync(repo.top, { recursive: true, force: true });
+    }
+  }
+});
 test("regression: a failed local fast-forward never ends in landed and keeps dependents blocked", async () => {
   const repo = landingRepo();
   try {
