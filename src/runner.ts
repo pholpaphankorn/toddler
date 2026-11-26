@@ -268,20 +268,17 @@ export class Runner {
         this.finished(issue.number)
       )
         continue;
-      // No job yet: skip an issue that already has a request (sha unused off NoneForge).
-      // A closed request does not hold the issue: a new job opens another.
+      // No job yet: skip an issue that already has a request, a closed one included (sha unused off NoneForge).
       if (
         !this.state.jobs[issue.number] &&
         this.config.forge !== "none" &&
-        !["none", "closed"].includes(
-          (
-            await this.forge.poll({
-              branch: this.branch(issue.number),
-              sha: "",
-              base: "",
-            })
-          ).state,
-        )
+        (
+          await this.forge.poll({
+            branch: this.branch(issue.number),
+            sha: "",
+            base: "",
+          })
+        ).state !== "none"
       )
         continue;
       if (

@@ -1972,6 +1972,32 @@ test("fake forge: each forge needs-attention reason stops landing at once", asyn
     assert.equal(delivered.length, 1);
   }
 });
+test("fake forge: a foreign head on the PR is refused needs attention", async () => {
+  const { runner, state } = fixture({ autoMerge: true });
+  const polls: Polled[] = [
+    { state: "none" },
+    {
+      state: "refused",
+      reason: "pr head is foreign, not the delivered reviewed",
+    },
+  ];
+  runner.forge.poll = async () => polls.shift()!;
+  await runner.work(issue(1), "codex", "main");
+  assert.equal(await quiet(() => runner.landing.land(issue(1))), "attention");
+  assert.deepEqual(
+    [state.jobs[1].attention?.reason, state.jobs[1].attention?.detail],
+    ["refused", "pr head is foreign, not the delivered reviewed"],
+  );
+});
+test("an issue without a job whose only request is closed is skipped before any agent runs", async () => {
+  const { runner, state, events } = fixture({ autoMerge: true });
+  runner.tracker.issues = async () => [issue(1)];
+  runner.forge.poll = async () => ({ state: "closed" });
+  const { lines } = await summary(() => runner.run("main"));
+  assert.equal(state.jobs[1], undefined);
+  assert.ok(!events.some((event) => event[0] === "stage"));
+  assert.ok(lines.includes("Stopped: no available issues."));
+});
 test("fake forge: a refused auto-merge enable ends as auto-merge-off on the next run, not waiting forever", async () => {
   const { runner, state } = fixture({ autoMerge: true });
   runner.forge.deliver = async () => ({

@@ -228,12 +228,12 @@ test("GitHub uses an allowed merge method for noninteractive auto-merge and clea
       return "";
     },
   );
-  await forge.enableAutoMerge("url");
+  await forge.enableAutoMerge("url", "abc");
   assert.deepEqual(calls, [
     ["api", "repos/owner/repo"],
     ["repo", "view", "owner/repo", "--json", "viewerDefaultMergeMethod"],
-    ["pr", "merge", "url", "--auto", "--squash"],
-    ["pr", "merge", "url", "--squash"],
+    ["pr", "merge", "url", "--auto", "--squash", "--match-head-commit", "abc"],
+    ["pr", "merge", "url", "--squash", "--match-head-commit", "abc"],
   ]);
 });
 
@@ -253,12 +253,27 @@ test("GitHub forge merges immediately when auto-merge has no pending checks", as
       return "";
     },
   );
-  await forge.enableAutoMerge("https://example.com/pr/1");
+  await forge.enableAutoMerge("https://example.com/pr/1", "abc");
   assert.deepEqual(calls, [
     ["api", "repos/owner/repo"],
     ["repo", "view", "owner/repo", "--json", "viewerDefaultMergeMethod"],
-    ["pr", "merge", "https://example.com/pr/1", "--auto", "--merge"],
-    ["pr", "merge", "https://example.com/pr/1", "--merge"],
+    [
+      "pr",
+      "merge",
+      "https://example.com/pr/1",
+      "--auto",
+      "--merge",
+      "--match-head-commit",
+      "abc",
+    ],
+    [
+      "pr",
+      "merge",
+      "https://example.com/pr/1",
+      "--merge",
+      "--match-head-commit",
+      "abc",
+    ],
   ]);
 });
 
@@ -279,14 +294,14 @@ test("GitHub enables auto-merge and propagates refusals", async () => {
       return "";
     },
   );
-  await forge.enableAutoMerge("url");
+  await forge.enableAutoMerge("url", "abc");
   assert.deepEqual(calls, [
     ["api", "repos/owner/repo"],
     ["repo", "view", "owner/repo", "--json", "viewerDefaultMergeMethod"],
-    ["pr", "merge", "url", "--auto", "--merge"],
+    ["pr", "merge", "url", "--auto", "--merge", "--match-head-commit", "abc"],
   ]);
   refuse = true;
-  await assert.rejects(forge.enableAutoMerge("url"), /not allowed/);
+  await assert.rejects(forge.enableAutoMerge("url", "abc"), /not allowed/);
   assert.equal(calls.length, 6);
 });
 
@@ -398,6 +413,7 @@ test("files tracker parses issue frontmatter and validates issue files", async (
 const open = {
   url: "pr",
   state: "OPEN",
+  headRefOid: "abc",
   mergeable: "MERGEABLE",
   mergeStateStatus: "BLOCKED",
   reviewDecision: "APPROVED",
@@ -514,6 +530,14 @@ const pollRows: [string, object[], object][] = [
     { state: "waiting" },
   ],
   [
+    "a foreign head + ci-failed",
+    [{ ...open, headRefOid: "foreign", ...failing }],
+    {
+      state: "refused",
+      reason: "pr head is foreign, not the delivered abc",
+    },
+  ],
+  [
     "mergeable unknown",
     [{ ...open, mergeable: "UNKNOWN" }],
     { state: "waiting" },
@@ -538,7 +562,7 @@ for (const [name, requests, expected] of pollRows)
     );
     assert.equal(
       calls[0],
-      "pr list --repo owner/repo --head branch --state all --json url,state,mergeable,mergeStateStatus,reviewDecision,autoMergeRequest,statusCheckRollup",
+      "pr list --repo owner/repo --head branch --state all --json url,state,headRefOid,mergeable,mergeStateStatus,reviewDecision,autoMergeRequest,statusCheckRollup",
     );
     // Logs are read only for failing GitHub Actions jobs, only on ci-failed.
     assert.deepEqual(
@@ -595,7 +619,7 @@ const deliverRows: {
       "gh pr list --repo owner/repo --head branch --state all --json url,state",
       "gh api repos/owner/repo",
       "gh repo view owner/repo --json viewerDefaultMergeMethod",
-      "gh pr merge pr --auto --merge",
+      "gh pr merge pr --auto --merge --match-head-commit abc",
     ],
   },
   {
@@ -620,8 +644,8 @@ const deliverRows: {
       "gh pr list --repo owner/repo --head branch --state all --json url,state",
       "gh api repos/owner/repo",
       "gh repo view owner/repo --json viewerDefaultMergeMethod",
-      "gh pr merge pr --auto --merge",
-      "gh pr merge pr --merge",
+      "gh pr merge pr --auto --merge --match-head-commit abc",
+      "gh pr merge pr --merge --match-head-commit abc",
     ],
   },
 ];

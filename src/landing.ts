@@ -63,7 +63,7 @@ export class Landing {
       try {
         const { state: polled } = await forge.poll({
           branch: job.branch,
-          sha: job.reviewedSha!,
+          sha: job.deliveredSha ?? job.reviewedSha!,
           base: job.baseBranch,
         });
         if (polled !== "landed") continue;
@@ -138,6 +138,8 @@ export class Landing {
             "auto-merge-off",
             `auto-merge was turned off on ${job.pr ?? job.branch}`,
           );
+        case "refused":
+          throw new AttentionError("refused", polled.reason);
         case "ci-failed":
           return await this.mergeFix(job, {
             trigger: "ci-failed",

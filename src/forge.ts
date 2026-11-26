@@ -76,6 +76,7 @@ export type Polled =
         | "auto-merge-off"
         | "waiting";
     }
+  | { state: "refused"; reason: string }
   | {
       state: "ci-failed";
       checks: { name: string; link: string; tail?: string }[];
@@ -188,7 +189,7 @@ async function deliverRequest(
       branch: string,
     ): Promise<{ url: string; open: boolean } | undefined>;
     openRequest(input: Delivery): Promise<string>;
-    enableAutoMerge(url: string): Promise<void>;
+    enableAutoMerge(url: string, sha: string): Promise<void>;
   },
   push: () => Promise<unknown>,
   autoMerge: boolean,
@@ -207,7 +208,7 @@ async function deliverRequest(
   const url = existing?.open ? existing.url : await forge.openRequest(input);
   if (autoMerge) {
     try {
-      await forge.enableAutoMerge(url);
+      await forge.enableAutoMerge(url, input.sha);
     } catch (error) {
       return {
         state: "refused",
@@ -227,6 +228,7 @@ async function pollRequest(
 interface GitHubRequest {
   url: string;
   state: "OPEN" | "MERGED" | "CLOSED";
+  headRefOid?: string;
   mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN" | null;
   mergeStateStatus?: string | null;
   reviewDecision?: string | null;
@@ -395,7 +397,7 @@ export class GitHubForge implements Forge {
         "--state",
         "all",
         "--json",
-        "url,state,mergeable,mergeStateStatus,reviewDecision,autoMergeRequest,statusCheckRollup",
+        "url,state,headRefOid,mergeable,mergeStateStatus,reviewDecision,autoMergeRequest,statusCheckRollup",
       ]),
     );
     const find = (state: GitHubRequest["state"]) =>
@@ -403,6 +405,12 @@ export class GitHubForge implements Forge {
     if (find("MERGED")) return { state: "landed" };
     const pr = find("OPEN");
     if (!pr) return { state: find("CLOSED") ? "closed" : "none" };
+    // Someone else pushed to the PR branch: unreviewed, so never wait on or land it.
+    if (job.sha && pr.headRefOid !== job.sha)
+      return {
+        state: "refused",
+        reason: `${pr.url} head is ${pr.headRefOid}, not the delivered ${job.sha}`,
+      };
     if (["REVIEW_REQUIRED", "CHANGES_REQUESTED"].includes(pr.reviewDecision!))
       return { state: "review-required" };
     // Still being computed: ask again next poll.
@@ -551,7 +559,8 @@ export class GitHubForge implements Forge {
         : []),
     ];
   }
-  async enableAutoMerge(url: string) {
+  // Tied to the pushed SHA: a foreign push in between is never merged or armed.
+  async enableAutoMerge(url: string, sha: string) {
     const repo = JSON.parse(
       await this.gh(["api", `repos/${this.config.repository}`]),
     );
@@ -579,11 +588,12 @@ export class GitHubForge implements Forge {
             ? "--rebase"
             : undefined);
     if (!method) throw new Error("Repository has no enabled merge method");
-    await this.gh(["pr", "merge", url, "--auto", method]).catch(
+    const head = ["--match-head-commit", sha];
+    await this.gh(["pr", "merge", url, "--auto", method, ...head]).catch(
       (error: Error) => {
         // GitHub refuses auto-merge when nothing is pending: merge now.
         if (!/clean status/i.test(error.message)) throw error;
-        return this.gh(["pr", "merge", url, method]);
+        return this.gh(["pr", "merge", url, method, ...head]);
       },
     );
   }
