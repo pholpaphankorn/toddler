@@ -665,17 +665,23 @@ export class Runner {
         this.quotas.stop();
         throw error;
       }
-      if (
-        !(error instanceof StageFailure) &&
-        !(error instanceof AttentionError)
-      )
-        throw error;
+      // Only host faults end the run; anything else (stage, forge, tracker) pauses this issue.
+      if (error instanceof HostError) throw error;
+      const message = String((error as Error).message);
+      const log = (error as StageFailure).log;
       this.persist(job, {
         attention: {
           reason:
-            error instanceof AttentionError ? error.reason : "stage-failed",
-          detail: error.message.slice(0, 1000),
-          ...(error.log && { log: error.log }),
+            error instanceof AttentionError
+              ? error.reason
+              : !(error instanceof StageFailure) &&
+                  /rejected|denied|refused|permission|access needed/i.test(
+                    message,
+                  )
+                ? "refused"
+                : "stage-failed",
+          detail: message.slice(0, 1000),
+          ...(log && { log }),
           at: new Date().toISOString(),
         },
       });
