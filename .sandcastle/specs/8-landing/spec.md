@@ -1,7 +1,7 @@
 ---
 title: Landing
 labels: [wayfinder:map, on-hold]
-status: open
+status: closed
 ---
 <!-- Wayfinder map. Tickets are files in issues/ with `parent: 8`. All carry `on-hold` so `toddler` never tries to implement them. -->
 
