@@ -23,10 +23,11 @@ A spec, ready to break into toddler issues, for the third reshape area: `setup` 
 
 ## Decisions so far
 
+- [What happens to Codex's setsid() children when a stage is cancelled](issues/111-codex-setsid-children.md): Codex kills its `setsid()`'d commands only on SIGINT; toddler's `stopAgent` sends SIGINT, but Ctrl+C/SIGTERM on toddler (sandcastle SIGKILLs and exits first), a slow shutdown, a crash, or self-detached commands leave orphans; reaping works only from the host (descendant list, `lsof` cwd), not from inside the sandbox.
+
 ## Not yet specified
 
 - How spec 10 is tested (kit writer on temp repos, marker edge cases, setup's commit rule, the doctor row against forge fixtures): once the kit, setup and doctor tickets settle.
-- What toddler does about Codex's `setsid()` children on cancel, if anything: once [What happens to Codex's setsid() children when a stage is cancelled](issues/111-codex-setsid-children.md) reports.
 - README/GLOSSARY sweep and retiring `scripts/setup.sh`: what changes falls out of the other tickets; likely implementation only.
 
 ## Out of scope
