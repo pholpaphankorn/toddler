@@ -3,7 +3,7 @@ title: Job states, needs attention and the run summary
 labels: [parallel-safe]
 blocked_by: []
 parent: 8
-status: open
+status: closed
 ---
 A run ends by telling phol what landed, what waits on them and what needs attention, and every job's state says which phase it is in and, separately, whether it needs attention.
 
