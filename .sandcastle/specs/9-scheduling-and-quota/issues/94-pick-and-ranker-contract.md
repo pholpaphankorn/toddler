@@ -15,3 +15,5 @@ status: open
 - Sticky implementer across merge fix rounds and resumed jobs (state field?), and what "has quota" means for stickiness.
 - Where `maxParallelIssues` and `parallel-safe` are read (the scheduler seam), and what replaces `assignments()` / `reviewer()`.
 - Whether the built-in modules ship as files loaded through the same loader as a project's module.
+
+> From [A provider-limit failure counted as a quota stop](93-provider-limit-failure.md): a limit stop is an ordinary stop for stickiness; decide here whether a stopped sticky implementer moves to another provider.

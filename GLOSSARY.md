@@ -28,6 +28,9 @@ _Avoid_: reserve, limit
 **Stop condition**: a check toddler runs on each fresh quota reading that can stop a provider, or that provider for one model, for as long as the check keeps returning that stop. The stop thresholds are the built-in one; a project can add its own.
 _Avoid_: guard, rule
 
+**Provider limit**: the usage limit the provider itself enforces. Hitting it stops that provider, or that provider for one model, until its reset, like a stop threshold.
+_Avoid_: hard limit, rate limit
+
 **Ranking**: the order in which toddler prefers the providers still available when a stage starts, for any role. Either one of toddler's own (balancing by quota left against sessions already running, or always the most quota left) or supplied by the project.
 _Avoid_: priority, prioritization
 
