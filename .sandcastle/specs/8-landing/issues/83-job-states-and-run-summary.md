@@ -16,7 +16,7 @@ A run ends by telling phol what landed, what waits on them and what needs attent
 
 - [ ] A failed stage marks its issue `attention: stage-failed` with the log path, and the summary lists it
 - [ ] Old `state.json` fixtures under `tests/fixtures/state/` (`pr`/`done`, `rounds`, `lastError`, `conflictBase`) each translate as above
-- [ ] The run summary's text and exit code are asserted: exit 1 when any issue needs attention ([79](79-job-states.md)). [80](80-landing-tests.md) says exit 1 on "waiting on you" too; ask phol which one holds before coding it
+- [ ] The run summary's text and exit code are asserted: exit 1 when any issue needs attention, exit 0 when issues are only waiting on you (phol, 2026-11-26: [79](79-job-states.md) holds over [80](80-landing-tests.md))
 - [ ] `attention` survives a run that never retries the issue
 
 Decision record: [79](79-job-states.md).
