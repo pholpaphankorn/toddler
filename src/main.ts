@@ -212,7 +212,7 @@ async function main() {
   const ranker = await loadRanker(root, config);
   const stopConditions = await loadStopConditions(root, config);
   const statePath = join(root, ".sandcastle/state.json");
-  const state = loadState(statePath, config.repository);
+  const state = loadState(statePath, config.repository, config.autoMerge);
   const quotas = new Quotas(config, undefined, stopConditions);
   const runner = new Runner({
     root,

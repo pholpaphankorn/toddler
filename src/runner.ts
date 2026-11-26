@@ -32,8 +32,28 @@ export interface Job {
   branch: string;
   baseBranch: string;
   baseSha: string;
-  status: "implementation" | "review" | "approved" | "pr" | "done";
-  rounds: number;
+  status: "implementation" | "review" | "approved" | "landing" | "landed";
+  reviewRounds: number;
+  mergeFixRounds: number;
+  mergeFix?: {
+    trigger: "conflict" | "ci-failed" | "verify";
+    base?: string;
+    checks?: { name: string; link: string; tail?: string }[];
+    output?: string;
+  };
+  attention?: {
+    reason:
+      | "stage-failed"
+      | "review-cap"
+      | "merge-fix-cap"
+      | "review-required"
+      | "request-closed"
+      | "auto-merge-off"
+      | "refused";
+    detail: string;
+    log?: string;
+    at: string;
+  };
   implementer: Provider;
   implementationSha?: string;
   verification?: string;
@@ -42,9 +62,6 @@ export interface Job {
   reviewer?: Provider;
   report?: ReviewReport;
   pr?: string;
-  /** Fresh base SHA the branch conflicts with; the implementer merges it next. */
-  conflictBase?: string;
-  lastError?: string;
 }
 export interface State {
   repository: string;
@@ -84,11 +101,33 @@ export interface RunnerOptions {
 const own = (name: string) =>
   fileURLToPath(new URL(`../prompts/${name}`, import.meta.url));
 
-export function loadState(path: string, repository: string): State {
+export function loadState(
+  path: string,
+  repository: string,
+  autoMerge = false,
+): State {
   if (!existsSync(path)) return { repository, jobs: {} };
   const state = JSON.parse(readFileSync(path, "utf8"));
   if (state.repository !== repository || !state.jobs)
     throw new Error("State belongs to another repository or is invalid");
+  for (const job of Object.values(state.jobs) as any[]) {
+    if (job.mergeFixRounds !== undefined) continue;
+    if (job.status === "done") job.status = "landed";
+    if (job.status === "pr") job.status = autoMerge ? "landing" : "approved";
+    job.reviewRounds = job.rounds ?? 0;
+    job.mergeFixRounds = 0;
+    if (job.lastError)
+      job.attention = {
+        reason: "stage-failed",
+        detail: job.lastError,
+        at: new Date().toISOString(),
+      };
+    if (job.conflictBase)
+      job.mergeFix = { trigger: "conflict", base: job.conflictBase };
+    delete job.rounds;
+    delete job.lastError;
+    delete job.conflictBase;
+  }
   return state;
 }
 export function saveState(path: string, state: State): void {
@@ -96,6 +135,28 @@ export function saveState(path: string, state: State): void {
     mode: 0o600,
   });
   renameSync(`${path}.tmp`, path);
+}
+
+class HostError extends Error {}
+class StageFailure extends Error {
+  log?: string;
+  constructor(message: string, log?: string) {
+    super(message);
+    this.log = log;
+  }
+}
+class AttentionError extends Error {
+  reason: NonNullable<Job["attention"]>["reason"];
+  log?: string;
+  constructor(
+    reason: NonNullable<Job["attention"]>["reason"],
+    message: string,
+    log?: string,
+  ) {
+    super(message);
+    this.reason = reason;
+    this.log = log;
+  }
 }
 
 export class Runner {
@@ -113,6 +174,8 @@ export class Runner {
   tracker: Tracker;
   forge: Forge;
   attempted = new Set<number>();
+  landedThisRun = new Set<number>();
+  stageLogs = new Map<number, string>();
   interrupted = false;
   slots = new Map<string, Promise<void>>();
   private fastForwardQueue: Promise<void> = Promise.resolve();
@@ -151,8 +214,17 @@ export class Runner {
     this.tracker = tracker ?? connected.tracker;
     this.forge = forge ?? connected.forge;
   }
-  git(args: string[], cwd = this.root): Promise<string> {
-    return this.gitCommand("git", args, { cwd });
+  async git(args: string[], cwd = this.root): Promise<string> {
+    try {
+      return await this.gitCommand("git", args, { cwd });
+    } catch (error) {
+      if (
+        (error as { code?: unknown }).code === 1 &&
+        (args[0] === "merge-tree" || args[0] === "merge-base")
+      )
+        throw error;
+      throw new HostError((error as Error).message);
+    }
   }
   persist(job: Job, changes: Partial<Job>): void {
     Object.assign(job, changes);
@@ -165,7 +237,15 @@ export class Runner {
     return `toddler/${this.local() ? "local" : "issue"}-${number}`;
   }
   finished(number: number): boolean {
-    return ["pr", "done"].includes(this.state.jobs[number]?.status ?? "");
+    return (
+      this.state.jobs[number]?.status === "landed" ||
+      this.state.jobs[number]?.status === "landing" ||
+      (this.state.jobs[number]?.status === "approved" &&
+        !!this.state.jobs[number]?.pr) ||
+      (this.state.jobs[number]?.status === "approved" &&
+        !this.forge.enabled &&
+        !this.config.autoMerge)
+    );
   }
   async candidates(): Promise<Issue[]> {
     const issues = await this.tracker.issues();
@@ -179,7 +259,7 @@ export class Runner {
       if (
         !(await this.tracker.blocked(
           issue,
-          (number) => this.state.jobs[number]?.status === "done",
+          (number) => this.state.jobs[number]?.status === "landed",
         ))
       )
         result.push(issue);
@@ -202,6 +282,13 @@ export class Runner {
     await previous;
     try {
       return await this.runStage(job, provider, role, prompt);
+    } catch (error) {
+      if (error instanceof HostError || error instanceof StopConditionError)
+        throw error;
+      throw new StageFailure(
+        (error as Error).message,
+        (error as StageFailure).log ?? this.stageLogs.get(job.number),
+      );
     } finally {
       release();
       if (this.slots.get(key) === next) this.slots.delete(key);
@@ -275,21 +362,28 @@ export class Runner {
             ["rev-parse", "HEAD"],
             sandbox.worktreePath,
           );
-          const result = await sandbox.run({
-            agent,
-            prompt,
-            maxIterations: 1,
-            name: `issue-${job.number}-${provider}-${role}`,
-            signal,
-            logging: {
-              type: "file",
-              path: join(
-                this.root,
-                ".sandcastle/logs",
-                `issue-${job.number}-${provider}-${role}-${Date.now()}.log`,
-              ),
-            },
-          });
+          const log = join(
+            this.root,
+            ".sandcastle/logs",
+            `issue-${job.number}-${provider}-${role}-${Date.now()}.log`,
+          );
+          this.stageLogs.set(job.number, log);
+          let result;
+          try {
+            result = await sandbox.run({
+              agent,
+              prompt,
+              maxIterations: 1,
+              name: `issue-${job.number}-${provider}-${role}`,
+              signal,
+              logging: {
+                type: "file",
+                path: log,
+              },
+            });
+          } catch (error) {
+            throw new StageFailure((error as Error).message, log);
+          }
           signal.throwIfAborted();
           let after = await this.git(
             ["rev-parse", "HEAD"],
@@ -418,13 +512,21 @@ export class Runner {
           baseRef ?? (await this.forge.base(baseBranch)).ref,
         ]),
         status: "implementation",
-        rounds: 0,
+        reviewRounds: 0,
+        mergeFixRounds: 0,
         implementer: initialProvider,
       };
       this.state.jobs[issue.number] = job;
       this.save();
     }
     try {
+      if (job.attention) {
+        const changes: Partial<Job> = { attention: undefined };
+        if (job.attention.reason === "review-cap") changes.reviewRounds = 0;
+        if (job.attention.reason === "merge-fix-cap")
+          changes.mergeFixRounds = 0;
+        this.persist(job, changes);
+      }
       const context = await this.context(issue, job);
       while (!this.interrupted) {
         await this.quotas.refresh();
@@ -461,17 +563,17 @@ export class Runner {
                 (job.feedback
                   ? `\nResolve these review findings:\n${JSON.stringify(job.feedback)}\n`
                   : "") +
-                (job.conflictBase
-                  ? `\nThe base branch moved and now conflicts with this branch. Run \`git merge ${job.conflictBase}\` (a local merge is allowed for this), resolve every conflict keeping the intent of both sides, rerun the checks, and commit the merge.\n`
+                (job.mergeFix?.base
+                  ? `\nThe base branch moved and now conflicts with this branch. Run \`git merge ${job.mergeFix?.base}\` (a local merge is allowed for this), resolve every conflict keeping the intent of both sides, rerun the checks, and commit the merge.\n`
                   : "") +
                 "\nContinue any existing changes on this branch; do not discard prior progress.",
             );
             this.persist(job, {
               status: "review",
               // Review the diff against the base the conflicts were resolved on.
-              ...(job.conflictBase && {
-                baseSha: job.conflictBase,
-                conflictBase: undefined,
+              ...(job.mergeFix?.base && {
+                baseSha: job.mergeFix?.base,
+                mergeFix: undefined,
               }),
               implementer: provider,
               implementationSha: result.sha,
@@ -523,7 +625,15 @@ export class Runner {
               continue;
             throw error;
           }
-          const report = reviewReport(result.stdout);
+          let report: ReviewReport;
+          try {
+            report = reviewReport(result.stdout);
+          } catch (error) {
+            throw new StageFailure(
+              (error as Error).message,
+              this.stageLogs.get(job.number),
+            );
+          }
           if (report.verdict === "approved") {
             this.persist(job, {
               status: "approved",
@@ -535,11 +645,12 @@ export class Runner {
           } else {
             this.persist(job, {
               status: "implementation",
-              rounds: job.rounds + 1,
+              reviewRounds: job.reviewRounds + 1,
               feedback: report.findings,
             });
-            if (job.rounds >= this.config.maxReviewRounds)
-              throw new Error(
+            if (job.reviewRounds >= this.config.maxReviewRounds)
+              throw new AttentionError(
+                "review-cap",
                 "Review round limit reached; needs human attention",
               );
           }
@@ -554,21 +665,39 @@ export class Runner {
         this.quotas.stop();
         throw error;
       }
-      // Keep status/branch for the next invocation, but do not hot-loop a failed task.
+      if (
+        !(error instanceof StageFailure) &&
+        !(error instanceof AttentionError)
+      )
+        throw error;
       this.persist(job, {
-        lastError: String((error as Error).message).slice(0, 1000),
+        attention: {
+          reason:
+            error instanceof AttentionError ? error.reason : "stage-failed",
+          detail: error.message.slice(0, 1000),
+          ...(error.log && { log: error.log }),
+          at: new Date().toISOString(),
+        },
       });
-      console.error(`[issue #${issue.number}] paused: ${job.lastError}`);
+      console.error(
+        `[issue #${issue.number}] paused: ${job.attention!.detail}`,
+      );
     }
   }
   async publish(issue: Issue, job: Job): Promise<void> {
     if (this.interrupted) return;
     const current = await this.git(["rev-parse", job.branch]);
     if (current !== job.reviewedSha)
-      throw new Error("Branch changed after review; refusing to publish");
+      throw new AttentionError(
+        "refused",
+        "Branch changed after review; refusing to publish",
+      );
     if (!this.forge.enabled) {
       if (this.config.autoMerge) await this.fastForward(job);
-      this.persist(job, { status: "done" });
+      if (this.config.autoMerge) {
+        this.persist(job, { status: "landed" });
+        this.landedThisRun.add(job.number);
+      }
       console.log(
         `[issue #${issue.number}] approved on local branch ${job.branch}`,
       );
@@ -576,7 +705,10 @@ export class Runner {
     }
     const existing = await this.forge.findRequest(job.branch);
     if (existing?.open) {
-      this.persist(job, { status: "pr", pr: existing.url });
+      this.persist(job, {
+        status: this.config.autoMerge ? "landing" : "approved",
+        pr: existing.url,
+      });
     } else {
       const { ref, closes } = this.tracker.requestReference(issue);
       const url = await this.forge.openRequest({
@@ -586,7 +718,10 @@ export class Runner {
         title: `Fix ${ref}: ${issue.title}`.slice(0, 200),
         body: `## Summary\n\nIssue ${ref} → implementation → review → ${this.config.forge === "gitlab" ? "merge" : "pull"} request\n\n${job.report!.summary}\n\n${closes}## Evidence\n\n- **Before:** Issue ${ref} was open when assigned.\n- **After:** ${job.report!.validation}\n\n${this.config.verify.trim() ? `Coordinator verification (\`${this.config.verify}\`): passed.` : "Coordinator verification: none configured."}\n\nReviewed by ${this.config.roles.review.models[job.reviewer!]} at ${job.reviewedSha}.\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** ${this.config.repository}\n\nReview the diff and any manual QA limitations before merging.\n`,
       });
-      this.persist(job, { status: "pr", pr: url });
+      this.persist(job, {
+        status: this.config.autoMerge ? "landing" : "approved",
+        pr: url,
+      });
       console.log(`[issue #${issue.number}] ${url}`);
     }
     if (this.config.autoMerge) {
@@ -594,8 +729,9 @@ export class Runner {
         await this.forge.enableAutoMerge(job.pr!);
         console.log(`[issue #${issue.number}] auto-merge enabled: ${job.pr}`);
       } catch (error) {
-        console.error(
-          `[issue #${issue.number}] could not enable auto-merge for ${job.pr}: ${(error as Error).message}`,
+        throw new AttentionError(
+          "refused",
+          `Could not enable auto-merge: ${(error as Error).message}`,
         );
       }
     }
@@ -615,14 +751,17 @@ export class Runner {
     }
     this.persist(job, {
       status: "implementation",
-      conflictBase: base,
-      rounds: job.rounds + 1,
+      mergeFix: { trigger: "conflict", base },
+      mergeFixRounds: job.mergeFixRounds + 1,
     });
     console.log(
       `[issue #${job.number}] conflicts with ${this.config.remote}/${job.baseBranch}; back to the implementer`,
     );
-    if (job.rounds >= this.config.maxReviewRounds)
-      throw new Error("Review round limit reached; needs human attention");
+    if (job.mergeFixRounds >= this.config.maxReviewRounds)
+      throw new AttentionError(
+        "merge-fix-cap",
+        "Merge fix round limit reached; needs human attention",
+      );
     return true;
   }
   async fastForward(job: Job): Promise<void> {
@@ -649,7 +788,8 @@ export class Runner {
       } catch (error) {
         if ((error as { code?: unknown }).code !== 1) throw error;
         // shortcut: pauses for a human; the merge fix loop (spec 7, Unattended runs from a queue) replaces this.
-        throw new Error(
+        throw new AttentionError(
+          "refused",
           `cannot fast-forward ${job.baseBranch}; approved work left on ${job.branch}`,
         );
       }
@@ -679,57 +819,71 @@ export class Runner {
     }
   }
   async run(baseBranch: string): Promise<void> {
-    while (!this.interrupted) {
-      const base = await this.forge.base(baseBranch);
-      await this.quotas.refresh();
-      if (
-        !this.config.providers.some((name) =>
-          modelsForProvider(this.config, name).some((model) =>
-            this.quotas.available(name, model),
-          ),
-        )
-      ) {
-        console.log(
-          "Stopped: no provider has verified quota above its stop thresholds.",
+    let stop = "Stopped: run interrupted.";
+    try {
+      while (!this.interrupted) {
+        const base = await this.forge.base(baseBranch);
+        await this.quotas.refresh();
+        if (
+          !this.config.providers.some((name) =>
+            modelsForProvider(this.config, name).some((model) =>
+              this.quotas.available(name, model),
+            ),
+          )
+        ) {
+          stop =
+            "Stopped: no provider has verified quota above its stop thresholds.";
+          return;
+        }
+        const issues = await this.candidates();
+        const batch = assignments(
+          issues,
+          (name) =>
+            this.quotas.available(
+              name,
+              this.config.roles.implementation.models[name],
+            ),
+          this.config,
+          this.quotas,
+          this.ranker,
         );
-        return;
-      }
-      const issues = await this.candidates();
-      const batch = assignments(
-        issues,
-        (name) =>
-          this.quotas.available(
-            name,
-            this.config.roles.implementation.models[name],
+        if (!batch.length) {
+          stop = "Stopped: no available issues.";
+          return;
+        }
+        for (const { issue } of batch) this.attempted.add(issue.number);
+        // One pipeline per provider: no two implementation agents race on an issue.
+        const results = await Promise.allSettled(
+          batch.map(({ issue, provider }) =>
+            this.work(issue, provider, base.branch, base.ref),
           ),
-        this.config,
-        this.quotas,
-        this.ranker,
-      );
-      if (!batch.length) {
-        const paused = [...this.attempted].filter(
-          (number) => !this.finished(number),
         );
-        if (paused.length) {
-          console.log(
-            `Stopped: tasks need attention: ${paused.map((number) => `#${number}`).join(", ")}. See .sandcastle/state.json.`,
-          );
-          process.exitCode = 1;
-        } else
-          console.log(
-            "Stopped: no available issues (remaining work may be blocked or already have a PR).",
-          );
-        return;
+        const failure = results.find((result) => result.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
       }
-      for (const { issue } of batch) this.attempted.add(issue.number);
-      // One pipeline per provider: no two implementation agents race on an issue.
-      const results = await Promise.allSettled(
-        batch.map(({ issue, provider }) =>
-          this.work(issue, provider, base.branch, base.ref),
-        ),
+    } catch (error) {
+      stop = `Stopped: ${(error as Error).message}`;
+      throw error;
+    } finally {
+      console.log(stop);
+      const jobs = Object.values(this.state.jobs);
+      console.log(
+        `Landed this run: ${[...this.landedThisRun].map((n) => `#${n}`).join(", ") || "none"}`,
       );
-      const failure = results.find((result) => result.status === "rejected");
-      if (failure?.status === "rejected") throw failure.reason;
+      const waiting = jobs.filter(
+        (job) =>
+          job.status === "approved" &&
+          !job.attention &&
+          (job.pr || !this.forge.enabled),
+      );
+      console.log(
+        `Waiting on you: ${waiting.map((job) => `#${job.number} ${job.pr ?? job.branch}`).join(", ") || "none"}`,
+      );
+      const attention = jobs.filter((job) => job.attention);
+      console.log(
+        `Needs attention: ${attention.map((job) => `#${job.number} ${job.attention!.reason}: ${job.attention!.detail}${job.attention!.log ? ` (${job.attention!.log})` : ""}`).join(", ") || "none"}`,
+      );
+      if (attention.length) process.exitCode = 1;
     }
   }
 }
