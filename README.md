@@ -144,10 +144,11 @@ the worktree. Toddler's workflow rules in the prompt take precedence over them.
 Set `roles.<role>.prompt` to a non-empty Markdown file path relative to the
 project root (for example, `".sandcastle/prompts/review.md"`) to replace that
 role's instructions. Unset roles use the bundled prompts. To customize one,
-copy [implementation.md](prompts/implementation.md) or [review.md](prompts/review.md)
-and edit it. Workflow rules are still appended.
-Shared workflow rules live in `prompts/rules.md`, with role-specific rules in
-`prompts/rules/implementation.md` and `prompts/rules/review.md`.
+copy [implementation/instructions.md](prompts/implementation/instructions.md) or
+[review/instructions.md](prompts/review/instructions.md) and edit it. Workflow
+rules are still appended.
+Shared workflow rules live in `prompts/shared-rules.md`, with role-specific rules in
+`prompts/implementation/rules.md` and `prompts/review/rules.md`.
 
 The project's `.sandcastle/` also holds the ignored runtime files: `.env`, `state.json`,
 `logs/`, `worktrees/` and `runner.lock`. The repo must have the `toddler`,
