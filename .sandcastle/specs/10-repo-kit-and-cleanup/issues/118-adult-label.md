@@ -3,7 +3,7 @@ title: adultLabel keeps person-only issues out on every tracker
 labels: []
 blocked_by: []
 parent: 10
-status: open
+status: closed
 ---
 An issue meant for a person, not toddler, carries one label on any tracker and is never picked, whatever its other labels. Settled in [doctor row for spec children missing issueLabel](110-doctor-missing-issue-label.md) and [How spec 10's setup, kit and doctor row are tested](114-testing-spec-10.md).
 
