@@ -81,7 +81,7 @@ export function onStopSignal(listener: NodeJS.SignalsListener): () => void {
 // process.exit(1) before a stage's finally can stop its agent. Node copies the
 // listener list before calling it, so removing them inside toddler's handler
 // would be too late.
-// shortcut: relies on sandcastle installing its listeners once behind a flag; switch to an upstream option if sandcastle adds one.
+// shortcut: relies on sandcastle's internal listener behaviour (a flag that keeps them gone until every teardown unregisters); switch to an upstream option if sandcastle adds one.
 export function stripSignalListeners(): void {
   if (!ownSignalListeners.size) return;
   for (const name of ["SIGINT", "SIGTERM"] as const)
