@@ -3,7 +3,7 @@ title: Check the kit's gh and glab commands against real forges
 labels: [adult]
 blocked_by: [120]
 parent: 10
-status: open
+status: closed
 ---
 For a person, not toddler (sandboxes hold no forge token): confirm a planning session following the kit's forge templates produces issues toddler picks up. Settled in [How spec 10's setup, kit and doctor row are tested](114-testing-spec-10.md) (step 6). Not added to `smoke:forge`.
 
@@ -14,3 +14,7 @@ For a person, not toddler (sandboxes hold no forge token): confirm a planning se
 - [ ] Sub-issue and native blocking wiring works on GitHub; `toddler plan` shows the unblocked issue ready, the other blocked
 - [ ] `Spec:` / `Blocked by:` lines work on GitLab with the same `plan` result
 - [ ] Any broken command fixed in the templates (or filed as an issue), result noted in `## Answer`
+
+## Answer
+
+Closed without the check (phol, 2026-11-28): phol will run the kit's `gh`/`glab` commands against real repos by hand, outside this tracker. Anything broken gets filed as a new issue.
