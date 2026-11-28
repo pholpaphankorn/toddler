@@ -37,3 +37,4 @@ A spec, ready to break into toddler issues, for the third reshape area: `setup` 
 - [Spec 5 PM role](../5-pm-role/spec.md) and [spec 6 Provider logins](../6-provider-logins/spec.md): postponed/paused; `setup` keeps local logins only, standalone logins come with spec 6.
 - Landing (spec 8) and scheduling (spec 9), beyond the shim removal above.
 - Running toddler off macOS.
+- [Do subagents inside one issue need their own branches?](issues/112-subagent-branches.md): no stage has started a subagent or clashed over a shared checkout, and `rules.md` already says to wait for subagents before committing. Comes back as a fresh effort if a run ever trips on it.
