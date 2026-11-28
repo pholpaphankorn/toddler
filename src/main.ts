@@ -332,7 +332,7 @@ async function main() {
         if (provider === "codex") await codexAuth();
         else await claudeToken();
       } catch {
-        quotas.disable(provider, "subscription login unavailable");
+        quotas.lock(provider, "subscription login unavailable");
       }
     }
     await runner.run(baseBranch);

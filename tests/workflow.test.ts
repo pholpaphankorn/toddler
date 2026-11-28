@@ -329,7 +329,7 @@ test("custom stop conditions stop a provider and preserve the first reason", asy
   assert.equal(quotas.disabled.get("codex"), "first");
 });
 
-test("stop modules run in order, stop models, and skip stopped or unverifiable providers", async () => {
+test("stop modules run in order, stop models, and re-read stopped and unverifiable providers", async () => {
   const root = mkdtempSync(join(tmpdir(), "stops-"));
   try {
     writeFileSync(
@@ -365,7 +365,7 @@ test("stop modules run in order, stop models, and skip stopped or unverifiable p
     assert.equal(quotas.disabled.get("codex"), "whole");
     assert.match(quotas.disabled.get("claude")!, /could not be verified/);
     await quotas.refresh();
-    assert.equal(calls, 2);
+    assert.equal(calls, 4);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -965,7 +965,7 @@ test("old override JSON is rejected with README guidance", async () => {
     else process.env.CODEX_USAGE_COMMAND = previous;
   }
 });
-test("a scoped weekly stop persists only for the matching model", async () => {
+test("a scoped weekly stop applies only to the matching model and lifts on recovery", async () => {
   let remaining = 10;
   const scopedConfig = {
     ...config,
@@ -992,7 +992,7 @@ test("a scoped weekly stop persists only for the matching model", async () => {
   assert.equal(quotas.available("claude", "claude-sonnet"), true);
   remaining = 100;
   await quotas.refresh();
-  assert.equal(quotas.available("claude", "claude-fable-5"), false);
+  assert.equal(quotas.available("claude", "claude-fable-5"), true);
 });
 test("a model stop aborts only sessions on that model", async () => {
   let remaining = 50;
@@ -1057,7 +1057,7 @@ test("weekly stop affects only its provider", async () => {
   assert.equal(quotas.available("claude"), false);
   assert.equal(quotas.available("codex"), true);
 });
-test("at 5% both roles stop; no automatic reset/restart within a run", async () => {
+test("at 5% both providers stop, and lift once a reading shows quota again", async () => {
   let remaining = 5;
   const quotas = new Quotas(config, async () => usage(remaining));
   await quotas.refresh();
@@ -1065,7 +1065,7 @@ test("at 5% both roles stop; no automatic reset/restart within a run", async () 
   assert.equal(quotas.available("claude"), false);
   remaining = 100;
   await quotas.refresh();
-  assert.equal(quotas.available("codex"), false);
+  assert.equal(quotas.available("codex"), true);
 });
 test("live quota drop aborts every active role of that provider, leaving the other usable", async () => {
   let codexRemaining = 50;

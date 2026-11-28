@@ -239,3 +239,86 @@ test("a ranker that prefers a busy provider is obeyed for a second fresh issue",
   assert.equal(s.pick("implementation", issue(2))!.provider, "codex");
   assert.equal(s.running("codex"), 2);
 });
+
+test("a stop lifts on a reading above threshold", async () => {
+  const { quotas } = await scheduler(
+    {},
+    { codex: [reading({ fiveHour: 3 }), reading({ fiveHour: 50 })] },
+  );
+  assert.equal(quotas.available("codex"), false);
+  await quotas.refresh();
+  assert.equal(quotas.available("codex"), true);
+});
+
+test("per-model and provider-wide stops lift independently; a changed reason is neither lift nor new stop", async () => {
+  const model = defaults.roles.implementation.models.codex;
+  let stops: { reason: string; model?: string }[] = [];
+  const quotas = new Quotas(defaults, scripted({}), [() => stops]);
+  const all: string[] = [];
+  const log = console.log;
+  console.log = (line: string) => void all.push(line);
+  try {
+    stops = [{ reason: "wide 4%" }, { model, reason: "model" }];
+    await quotas.refresh();
+    stops = [{ reason: "wide 3%" }, { model, reason: "model" }];
+    await quotas.refresh();
+    assert.equal(quotas.disabled.get("codex"), "wide 4%");
+    assert.equal(all.filter((line) => line.includes("codex")).length, 2);
+    stops = [{ model, reason: "model" }];
+    await quotas.refresh();
+    assert.equal(quotas.available("codex", model), false);
+    assert.equal(quotas.disabled.has("codex"), false);
+    stops = [];
+    await quotas.refresh();
+    assert.equal(quotas.available("codex", model), true);
+  } finally {
+    console.log = log;
+  }
+  const logs = all.filter((line) => line.includes("codex"));
+  assert.deepEqual(logs.slice(2), [
+    "[quota] codex stop lifted (was: wide 4%)",
+    `[quota] codex (${model}) stop lifted (was: model)`,
+  ]);
+});
+
+test("a failed read blocks starts, leaves live sessions, and lifts on the next good read", async () => {
+  const { scheduler: s, quotas } = await scheduler(
+    {},
+    { codex: [reading(), new Error("down"), reading()] },
+  );
+  const held = s.pick("implementation", issue(1))!;
+  assert.equal(held.provider, "codex");
+  await quotas.refresh();
+  assert.equal(quotas.available("codex"), false);
+  assert.equal(held.signal.aborted, false);
+  assert.equal(s.pick("implementation", issue(2))!.provider, "claude");
+  await quotas.refresh();
+  assert.equal(quotas.available("codex"), true);
+});
+
+test("an interrupt starts nothing new and is not a quota stop", async () => {
+  const { scheduler: s, quotas } = await scheduler();
+  const held = s.reserve("codex", defaults.roles.implementation.models.codex);
+  s.stop();
+  assert.equal(held.signal.aborted, true);
+  assert.equal(s.pick("implementation", issue(1)), undefined);
+  assert.equal(quotas.disabled.size, 0);
+  await quotas.refresh();
+  assert.equal(s.pick("implementation", issue(1)), undefined);
+});
+
+test("a failed read does not mask a following quota stop", async () => {
+  const { scheduler: s, quotas } = await scheduler(
+    {},
+    {
+      codex: [reading(), new Error("down"), reading({ fiveHour: 1 })],
+    },
+  );
+  const held = s.pick("implementation", issue(1))!;
+  assert.equal(held.provider, "codex");
+  await quotas.refresh();
+  assert.equal(held.signal.aborted, false);
+  await quotas.refresh();
+  assert.equal(held.signal.aborted, true);
+  assert.match(quotas.disabled.get("codex")!, /fiveHour remaining/);
+});
