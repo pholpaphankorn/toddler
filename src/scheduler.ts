@@ -91,13 +91,7 @@ export class Scheduler {
           ? job.implementer
           : undefined;
     } else if (job && usable(job.implementer)) provider = job.implementer;
-    else {
-      const order = this.ranked(role);
-      // A new issue prefers a provider nothing is running on.
-      provider = job
-        ? order[0]
-        : (order.find((name) => !this.running(name)) ?? order[0]);
-    }
+    else provider = this.ranked(role)[0];
     return provider && this.reserve(provider, model(provider));
   }
   reserve(provider: Provider, model: string): Reservation {

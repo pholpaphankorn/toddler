@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { defaults, type Provider } from "../src/config.ts";
 import { Quotas, type ReadUsage, type Reading } from "../src/quota.ts";
+import type { Ranker } from "../src/policy.ts";
 import { Scheduler, type Clock } from "../src/scheduler.ts";
 
 const reading = ({
@@ -54,6 +55,10 @@ const issue = (number: number, labels: string[] = []) => ({
 });
 const safe = (number: number) => issue(number, ["parallel-safe"]);
 
+// Least busy first, so a second fresh issue lands on the idle provider.
+const ranker: Ranker = ({ candidates }) =>
+  [...candidates].sort((a, b) => a.running - b.running).map((c) => c.provider);
+
 async function scheduler(
   overrides: Partial<typeof defaults> = {},
   queues: Parameters<typeof scripted>[0] = {},
@@ -61,7 +66,7 @@ async function scheduler(
   const config = { ...defaults, ...overrides };
   const quotas = new Quotas(config, scripted(queues));
   await quotas.refresh();
-  return { quotas, scheduler: new Scheduler({ config, quotas }) };
+  return { quotas, scheduler: new Scheduler({ config, quotas, ranker }) };
 }
 
 test("two picks in one pass see each other's running; release() decrements", async () => {
@@ -69,7 +74,6 @@ test("two picks in one pass see each other's running; release() decrements", asy
   const first = s.pick("implementation", issue(1))!;
   assert.equal(first.provider, "codex");
   assert.equal(s.running("codex"), 1);
-  // The next fresh issue prefers the provider nothing is running on.
   const second = s.pick("implementation", issue(2))!;
   assert.equal(second.provider, "claude");
   // Reservations count across roles.
@@ -220,4 +224,18 @@ test("ranker is skipped below two candidates and sees only { candidates } at two
   again.scheduler.pick("implementation", issue(1));
   const second = calls.at(-1) as { candidates: { running: number }[] };
   assert.equal(second.candidates[0].running, 1); // codex
+});
+
+test("a ranker that prefers a busy provider is obeyed for a second fresh issue", async () => {
+  const config = { ...defaults };
+  const quotas = new Quotas(config, scripted({}));
+  await quotas.refresh();
+  const s = new Scheduler({
+    config,
+    quotas,
+    ranker: ({ candidates }) => candidates.map((c) => c.provider),
+  });
+  assert.equal(s.pick("implementation", issue(1))!.provider, "codex");
+  assert.equal(s.pick("implementation", issue(2))!.provider, "codex");
+  assert.equal(s.running("codex"), 2);
 });
