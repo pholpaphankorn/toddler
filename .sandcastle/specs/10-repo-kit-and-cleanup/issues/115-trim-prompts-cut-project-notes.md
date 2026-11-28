@@ -3,7 +3,7 @@ title: Trim role prompts and cut project notes
 labels: []
 blocked_by: []
 parent: 10
-status: open
+status: closed
 ---
 Agents get a shorter prompt that keeps only toddler's own workflow, and stack-specific instructions live in the project's `AGENTS.md`/`CLAUDE.md` instead of `.sandcastle/project.md`. Exactly as settled in spec 7's [Role prompts, workflow rules and prompt assembly](../../7-harness-boundary/issues/73-prompts-rules.md).
 
