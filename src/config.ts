@@ -76,18 +76,6 @@ export function loadConfig(
       "No .sandcastle/config.json in this project; run toddler init",
     );
   const project = JSON.parse(readFileSync(path, "utf8"));
-  if ("models" in project || "skills" in project)
-    throw new Error(
-      `${path}: obsolete setting; use roles.<role>.models and roles.<role>.skills; see README`,
-    );
-  if ("openPr" in project)
-    throw new Error(
-      `${path}: openPr: obsolete setting; set forge to github or none`,
-    );
-  if (project.issues === "github" || project.issues === "local")
-    throw new Error(
-      `${path}: issues: obsolete setting; use issues: "${project.issues === "local" ? "files" : "forge"}" and set forge`,
-    );
   const isObject = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === "object" && !Array.isArray(value);
   if (project.roles !== undefined) {
@@ -221,8 +209,6 @@ export function loadConfig(
       }
     }
   }
-  if ("reservePercent" in project || "codexLimitId" in project)
-    throw new Error(`${path}: obsolete quota setting; see README`);
   if (config.forge === "none") {
     if (project.repository !== undefined)
       throw new Error(`${path}: repository is only used with a forge`);

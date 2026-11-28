@@ -60,7 +60,7 @@ test("role prompt paths load from the project and reject invalid files", () => {
   }
 });
 
-test("role settings validate paths and reject obsolete keys", () => {
+test("role settings validate paths", () => {
   const root = mkdtempSync(join(tmpdir(), "roles-"));
   try {
     mkdirSync(join(root, ".sandcastle"));
@@ -86,8 +86,6 @@ test("role settings validate paths and reject obsolete keys", () => {
       ],
       [{ roles: { review: { skills: [2] } } }, /roles\.review\.skills/],
       [{ roles: { review: { skills: ["missing"] } } }, /roles\.review\.skills/],
-      [{ models: {} }, /obsolete setting.*roles\.<role>.*README/],
-      [{ skills: {} }, /obsolete setting.*roles\.<role>.*README/],
     ] as const) {
       write(settings);
       assert.throws(() => loadConfig(root), path);

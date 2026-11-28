@@ -42,41 +42,13 @@ import {
 } from "../src/config.ts";
 import { indexSkills } from "../src/skills.ts";
 
-test("legacy state fixtures translate phases and fields on load", async () => {
+test("current state round-trips on load", async () => {
   const { loadState } = await import("../src/runner.ts");
-  const load = (name: string, autoMerge = false) =>
-    loadState(
-      fileURLToPath(new URL(`fixtures/state/${name}.json`, import.meta.url)),
-      "repo",
-      autoMerge,
-    ).jobs[1] as Job & Record<string, unknown>;
-  const gone = (job: Record<string, unknown>) =>
-    ["rounds", "lastError", "conflictBase"].forEach((field) =>
-      assert.ok(!(field in job), field),
-    );
-  for (const name of ["pr", "done", "rounds", "last-error", "conflict-base"]) {
-    const job = load(name);
-    gone(job);
-    assert.equal(job.mergeFixRounds, 0);
-  }
-  assert.equal(load("pr", true).status, "landing");
-  assert.equal(load("pr", true).pr, "https://github.com/example/repo/pull/1");
-  assert.equal(load("pr").status, "approved");
-  assert.equal(load("done").status, "landed");
-  assert.equal(load("rounds").reviewRounds, 2);
-  const failed = load("last-error");
-  assert.equal(failed.attention?.reason, "stage-failed");
-  assert.equal(failed.attention?.detail, "codex exited 1");
-  assert.equal(failed.status, "review");
-  assert.deepEqual(load("conflict-base").mergeFix, {
-    trigger: "conflict",
-    base: "abc123",
-  });
   const current = fileURLToPath(
     new URL("fixtures/state/current.json", import.meta.url),
   );
   assert.deepEqual(
-    loadState(current, "repo", true),
+    loadState(current, "repo"),
     JSON.parse(readFileSync(current, "utf8")),
   );
 });
