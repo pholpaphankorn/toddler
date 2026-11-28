@@ -79,8 +79,20 @@ function repo(config: object = {}) {
   const root = mkdtempSync(join(tmpdir(), "setup-kit-"));
   const bin = join(root, ".bin");
   mkdirSync(bin);
+  // Fake CLIs log their arguments; status checks exit FAKE_STATUS, logins FAKE_LOGIN.
   for (const name of ["gh", "glab", "codex", "claude"]) {
-    writeFileSync(join(bin, name), "#!/bin/sh\nexit 0\n");
+    writeFileSync(
+      join(bin, name),
+      `#!/bin/sh
+echo "${name} $*" >> "${join(bin, "log")}"
+case "$*" in
+  *"config get host"*) echo gitlab.example.com ;;
+  *status*) exit \${FAKE_STATUS:-0} ;;
+  *login*) exit \${FAKE_LOGIN:-0} ;;
+esac
+exit 0
+`,
+    );
     chmodSync(join(bin, name), 0o755);
   }
   const env = {
@@ -113,10 +125,10 @@ function repo(config: object = {}) {
   setConfig(config);
   git("add", ".");
   git("commit", "-q", "-m", "init");
-  const setup = () => {
-    const result = spawnSync(process.execPath, [main, "setup"], {
+  const setup = (extra: Record<string, string> = {}, mode = "setup") => {
+    const result = spawnSync(process.execPath, [main, mode], {
       cwd: root,
-      env,
+      env: { ...env, ...extra },
       encoding: "utf8",
       timeout: 60_000,
     });
@@ -125,7 +137,29 @@ function repo(config: object = {}) {
   const commits = () => Number(git("rev-list", "--count", "HEAD"));
   const status = () => git("status", "--porcelain", "--untracked-files=all");
   const cleanup = () => rmSync(root, { recursive: true, force: true });
-  return { root, git, write, read, setConfig, setup, commits, status, cleanup };
+  // Login-step calls only, not the CLI calls doctor makes.
+  const logins = () => {
+    const path = join(bin, "log");
+    return existsSync(path)
+      ? readFileSync(path, "utf8")
+          .split("\n")
+          .filter((line) => / (auth|login|config get) /.test(`${line} `))
+      : [];
+  };
+  const clearLog = () => rmSync(join(bin, "log"), { force: true });
+  return {
+    root,
+    git,
+    write,
+    read,
+    setConfig,
+    setup,
+    commits,
+    status,
+    logins,
+    clearLog,
+    cleanup,
+  };
 }
 
 const kit = [
@@ -169,7 +203,8 @@ test("setup writes and commits the kit once, then is up to date", () => {
     assert.match(r.read("AGENTS.md"), /^<!-- toddler:start -->\n/);
     assert.match(r.read(".sandcastle/templates/issue.md"), /`adult`/);
     // Logins and doctor still run after the kit.
-    assert.match(first.stdout, /Codex/);
+    assert.ok(first.lines.includes("codex: signed in"), first.stdout);
+    assert.match(first.stdout, /OK {3}Ranking/);
 
     const second = r.setup();
     assert.ok(second.lines.includes("kit: up to date"), second.stdout);
@@ -295,6 +330,86 @@ test("bad markers stop setup before anything is written", () => {
     assert.ok(!existsSync(join(r.root, "AGENTS.md")));
     assert.equal(r.status(), "");
     assert.equal(r.commits(), 2);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("setup signs in only the CLIs the config uses", () => {
+  const r = repo();
+  try {
+    let result = r.setup();
+    assert.ok(result.lines.includes("codex: signed in"), result.stdout);
+    assert.ok(result.lines.includes("claude: skipped (no role uses it)"));
+    assert.deepEqual(r.logins(), ["codex login status"]);
+
+    r.setConfig({ forge: "github", repository: "o/r", providers: ["claude"] });
+    r.clearLog();
+    result = r.setup();
+    assert.ok(result.lines.includes("gh: signed in"), result.stdout);
+    assert.ok(result.lines.includes("codex: skipped (no role uses it)"));
+    assert.ok(result.lines.includes("claude: signed in"));
+    assert.deepEqual(r.logins(), [
+      "gh auth status --hostname github.com",
+      "claude auth status",
+    ]);
+
+    r.setConfig({
+      forge: "gitlab",
+      repository: "g/p",
+      providers: ["codex", "claude"],
+    });
+    r.clearLog();
+    result = r.setup();
+    assert.ok(result.lines.includes("glab: signed in"), result.stdout);
+    assert.ok(!result.stdout.includes("gh:"));
+    assert.deepEqual(r.logins(), [
+      "glab config get host",
+      "glab auth status",
+      "codex login status",
+      "claude auth status",
+    ]);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("setup logs in after a failing status and goes on when login fails", () => {
+  const r = repo({
+    forge: "gitlab",
+    repository: "g/p",
+    providers: ["codex", "claude"],
+  });
+  try {
+    const fakes = { FAKE_STATUS: "1", FAKE_LOGIN: "1" };
+    const result = r.setup(fakes);
+    for (const cli of ["glab", "codex", "claude"]) {
+      assert.ok(result.lines.includes(`${cli}: signing in…`), result.stdout);
+      assert.ok(result.lines.includes(`${cli}: not signed in`));
+    }
+    assert.deepEqual(r.logins(), [
+      "glab config get host",
+      "glab auth status",
+      "glab auth login --hostname gitlab.example.com",
+      "codex login status",
+      "codex login",
+      "claude auth status",
+      "claude auth login",
+    ]);
+    assert.match(result.stdout, /^(OK {3}|FAIL )Ranking/m);
+    assert.equal(result.status, r.setup(fakes, "doctor").status);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("a login that succeeds after a failing status says signed in", () => {
+  const r = repo({ forge: "github", repository: "o/r" });
+  try {
+    const result = r.setup({ FAKE_STATUS: "1" });
+    assert.ok(result.lines.includes("gh: signing in…"), result.stdout);
+    assert.ok(result.lines.includes("gh: signed in"));
+    assert.ok(r.logins().includes("gh auth login --hostname github.com"));
   } finally {
     r.cleanup();
   }

@@ -43,7 +43,7 @@ Keep it linked rather than packed: Node does not strip types from files under
 cd ~/some/project
 toddler init      # writes .sandcastle/config.json and .sandcastle/.gitignore
 # edit .sandcastle/config.json, commit .sandcastle/
-toddler setup     # write and commit the planning kit, sign in to GitHub, Codex and Claude Code, then run doctor
+toddler setup     # write and commit the planning kit, sign in to the CLIs the config uses, then run doctor
 toddler doctor    # check sandbox, logins, quota and models
 toddler plan      # show the next stages and stops without starting agents (--json for scripts)
 toddler           # run (same as `toddler run`)
@@ -179,8 +179,13 @@ HEAD nothing is committed.
 
 ## Authentication
 
-The setup wizard signs in through the native GitHub, Codex, and Claude Code CLIs.
-Existing GitHub and Codex logins are retained. No API keys are needed or used.
+After the kit, `toddler setup` signs in through the native CLIs the config uses: `gh`
+for `forge: github`, `glab` for `forge: gitlab` (host from `glab config get host`, else
+gitlab.com), and `codex` / `claude` when listed in `providers` (otherwise
+`<provider>: skipped (no role uses it)`). Each step runs the CLI's status check and
+only logs in when it fails, printing `<cli>: signed in`, `signing in…` or `not signed in`;
+a failed login does not stop `setup`. It then runs `doctor` and exits with doctor's
+code. Existing logins are retained. No API keys are needed or used.
 
 - **Claude:** `claude auth login` stores subscription OAuth credentials in Claude
   Code's native Keychain entry. No manually generated `setup-token` is necessary.

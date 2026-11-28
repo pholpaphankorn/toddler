@@ -20,7 +20,7 @@ Total: ~3.6k lines in `src/` + `scripts/`; ~3.7k lines of tests, 2k of them in `
 |---|---|---|---|---|---|
 | 1 | CLI entry and modes (`run`, `plan`, `init`, `setup`, `doctor`, `smoke`) | `main.ts` `main` | 150 | none direct | G1 |
 | 2 | `init`: detect GitHub/GitLab/none, write config | `main.ts` `init` | 60 | config-forge "init detects…" | none |
-| 3 | `setup`: wizard for GitHub auth, Codex and Claude sign-in | `scripts/setup.sh` | 245 (≈160 is generated wizard library) | none | none |
+| 3 | `setup`: wizard for GitHub auth, Codex and Claude sign-in | the bash setup wizard | 245 (≈160 is generated wizard library) | none | none |
 | 4 | `doctor`: ranking, stop modules, forge, skills, logins checks | `main.ts` `doctor`, `forge.ts` `*.doctorChecks`, `skill-doctor.ts` | 90 + 90 + 134 | forge/gitlab doctor tests, skill-doctor, workflow "doctor reports…" ×2 | none |
 | 5 | `smoke`: one real model call per role in the sandbox; Seatbelt smoke without models | `scripts/smoke-agents.ts`, `scripts/smoke-seatbelt.ts` | 124 + 90 | none (they are the checks) | G2 |
 | 6 | `plan`: dry-run printing quotas and next assignments | `main.ts` plan branch | 35 | none | none |

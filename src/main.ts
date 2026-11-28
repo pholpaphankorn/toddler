@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { defaults, modelsForProvider } from "./config.ts";
+import { defaults, modelsForProvider, providers } from "./config.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { mkdir, open, rm, writeFile, type FileHandle } from "node:fs/promises";
@@ -34,12 +34,20 @@ for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY"])
 // Run a script bundled with toddler from the current directory, passing its exit code through.
 function script(file: string, args: string[] = []) {
   const path = fileURLToPath(new URL(`../scripts/${file}`, import.meta.url));
-  const result = spawnSync(
-    file.endsWith(".sh") ? "bash" : process.execPath,
-    [path, ...args],
-    { stdio: "inherit" },
-  );
+  const result = spawnSync(process.execPath, [path, ...args], {
+    stdio: "inherit",
+  });
   process.exitCode = result.status ?? 1;
+}
+
+// One setup login step: the CLI's signed-in check, else its login with the terminal
+// attached. A failed or cancelled login is reported and setup goes on.
+function signIn(cli: string, status: string[], login: string[]) {
+  if (spawnSync(cli, status, { stdio: "ignore" }).status === 0)
+    return console.log(`${cli}: signed in`);
+  console.log(`${cli}: signing in…`);
+  const ok = spawnSync(cli, login, { stdio: "inherit" }).status === 0;
+  console.log(`${cli}: ${ok ? "signed in" : "not signed in"}`);
 }
 
 async function init(root: string) {
@@ -206,13 +214,31 @@ async function main() {
   if (mode === "setup") {
     if (!existsSync(configPath(root)))
       throw new Error("No .sandcastle/config.json: run `toddler init` first");
-    for (const line of writeKit(
-      root,
-      loadConfig(root, { checkSkillNames: false }),
-    ))
-      console.log(line);
-    // shortcut: logins and doctor stay in setup.sh until they move to TypeScript (local issue 121).
-    return script("setup.sh");
+    const config = loadConfig(root, { checkSkillNames: false });
+    for (const line of writeKit(root, config)) console.log(line);
+    if (config.forge === "github")
+      signIn(
+        "gh",
+        ["auth", "status", "--hostname", "github.com"],
+        ["auth", "login", "--hostname", "github.com"],
+      );
+    if (config.forge === "gitlab") {
+      const host = spawnSync("glab", ["config", "get", "host"], {
+        encoding: "utf8",
+      }).stdout?.trim();
+      signIn(
+        "glab",
+        ["auth", "status"],
+        ["auth", "login", "--hostname", host || "gitlab.com"],
+      );
+    }
+    for (const provider of providers)
+      if (!config.providers.includes(provider))
+        console.log(`${provider}: skipped (no role uses it)`);
+      else if (provider === "codex")
+        signIn("codex", ["login", "status"], ["login"]);
+      else signIn("claude", ["auth", "status"], ["auth", "login"]);
+    return doctor(config, root);
   }
   const config = loadConfig(root, { checkSkillNames: mode !== "doctor" });
   if (mode === "doctor") return doctor(config, root);
