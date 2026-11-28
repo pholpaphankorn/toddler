@@ -3,7 +3,7 @@ title: Ranker contract, balanced and most-quota built-ins, doctor ranking row
 labels: [parallel-safe]
 blocked_by: [99]
 parent: 9
-status: open
+status: closed
 ---
 Rankers decide only between real choices, see how busy each provider already is, and the two built-in strategies are ordinary ranker files any project could have written.
 
