@@ -3,7 +3,7 @@ title: Skill doctor becomes one repo test
 labels: []
 blocked_by: []
 parent: 10
-status: open
+status: closed
 ---
 `doctor` stops checking bundled skills; the checks that guard toddler's own committed skill files run in toddler's test suite instead. Exactly as settled in spec 7's [Bundled skills, vendoring and skill doctor](../../7-harness-boundary/issues/70-skills.md).
 
