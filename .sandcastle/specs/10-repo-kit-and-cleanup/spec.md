@@ -1,7 +1,7 @@
 ---
 title: Repo kit and cleanup
 labels: [wayfinder:map, on-hold]
-status: open
+status: closed
 ---
 <!-- Wayfinder map. Tickets are files in issues/ with `parent: 10`. All carry `on-hold` so `toddler` never tries to implement them. -->
 
