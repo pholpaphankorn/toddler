@@ -3,7 +3,7 @@ title: Scheduler module at the loop's seam
 labels: []
 blocked_by: []
 parent: 9
-status: open
+status: closed
 ---
 The run loop stops reaching into quotas and the ranker: it only asks the scheduler whether an issue may start and which provider a stage gets, and every stage hands its provider back when it ends. Rankings and stops behave as today; this is the seam every later spec 9 ticket fills.
 
