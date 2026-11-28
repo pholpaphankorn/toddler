@@ -3,7 +3,7 @@ title: setup login steps in TypeScript, with a glab step
 labels: []
 blocked_by: [120]
 parent: 10
-status: open
+status: closed
 ---
 `toddler setup` signs in only the CLIs this repo's config uses, including `glab` for GitLab, and the bash wizard goes. Settled in [setup as a toddler command](109-setup-command.md) (steps 1–4, 7) and [How spec 10's setup, kit and doctor row are tested](114-testing-spec-10.md) (step 3).
 
