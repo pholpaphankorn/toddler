@@ -188,6 +188,42 @@ test("a freed slot starts the next ready issue without waiting for the others", 
     assert.equal(state.jobs[number].status, "approved");
 });
 
+test("a job with no reviewer waits and frees its slot, then resumes when a reviewer has quota", async () => {
+  const { runner, state, quotas } = fixture({ forge: "none" });
+  const reviewModels: string[] = Object.values(config.roles.review.models);
+  let reviewOpen = false;
+  quotas.available = (_name, model?: string) =>
+    reviewOpen || !reviewModels.includes(model as string);
+  runner.tracker.issues = async () =>
+    [1, 2].map((number) => issue(number, ["parallel-safe"]));
+  const stages: string[] = [];
+  let gate!: () => void;
+  runner.stage = async (job, _provider, role) => {
+    stages.push(`${job.number}-${role}`);
+    // Issue 2's implementation outlives issue 1's wait, then opens review quota.
+    if (job.number === 2 && role === "implementation") {
+      await new Promise<void>((resolve) => (gate = resolve));
+      reviewOpen = true;
+    }
+    return {
+      sha: "reviewed",
+      stdout: role === "review" ? report() : "done",
+      verification: "",
+    };
+  };
+  const run = summary(() => runner.run("main"));
+  await until(() => stages.includes("2-implementation") && !!gate);
+  // Issue 1 is waiting at review: not running, not needing attention.
+  assert.equal(state.jobs[1].status, "review");
+  assert.equal(state.jobs[1].attention, undefined);
+  assert.equal(runner.working.has(1), false);
+  gate();
+  const { lines } = await run;
+  assert.ok(stages.includes("1-review") && stages.includes("2-review"));
+  assert.equal(state.jobs[1].status, "approved");
+  assert.ok(lines.includes("Stopped: no available issues."));
+});
+
 test("a failing issue keeps its dependents blocked while the others land", async () => {
   const { runner, state } = fixture({ forge: "none", autoMerge: true });
   runner.tracker.issues = async () =>
@@ -505,7 +541,7 @@ test("runner propagates stop condition polling failures during implementation an
           );
         };
         await assert.rejects(
-          runner.work(issue(1), "codex", "main"),
+          runner.work(issue(1), "main"),
           /Stop condition module poll.mjs: broken poll/,
         );
       } finally {
@@ -561,7 +597,7 @@ test("runner reports a fatal stop condition when the same poll cancels a stage",
       }),
     });
     await assert.rejects(
-      runner.work(issue(1), "codex", "main"),
+      runner.work(issue(1), "main"),
       /Stop condition module poll.mjs: broken poll/,
     );
   } finally {
@@ -801,7 +837,7 @@ test("single provider reviews itself and resumed implementer remains sticky", as
     providers: ["claude"],
     forge: "none",
   });
-  await runner.work(issue(1), "claude", "main");
+  await runner.work(issue(1), "main");
   assert.deepEqual(
     events
       .filter((event) => event[0] === "stage")
@@ -820,7 +856,7 @@ test("single provider reviews itself and resumed implementer remains sticky", as
     status: "implementation",
     implementer: "claude",
   };
-  await resumed.runner.work(issue(1), "codex", "main");
+  await resumed.runner.work(issue(1), "main");
   assert.deepEqual(
     resumed.events
       .filter((event) => event[0] === "stage")
@@ -1229,7 +1265,7 @@ test("stage prompts assemble role instructions, rules, notes, skills, and issue 
         verification: "",
       };
     };
-    await runner.work(issue(1), "codex", "main");
+    await runner.work(issue(1), "main");
     for (const [index, role] of ["implementation", "review"].entries()) {
       const prompt = prompts[index];
       const markers = [
@@ -1328,7 +1364,15 @@ test("stage prompts explicitly load each role's skills for the selected provider
         verification: "",
       };
     };
-    await runner.work(issue(1), initial, "main");
+    await runner.work(
+      issue(1),
+      "main",
+      undefined,
+      runner.scheduler.reserve(
+        initial,
+        config.roles.implementation.models[initial],
+      ),
+    );
     const load = (provider: Provider, names: string[]) =>
       provider === "codex"
         ? `Load these skills: ${names.map((name) => `[$${name}](${skillPath(name)})`).join(" ")}`
@@ -1366,7 +1410,7 @@ test("stage prompts explicitly load each role's skills for the selected provider
       verification: "",
     };
   };
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   assert.ok(
     !prompts[0].includes("Load these skills:") &&
       !prompts[0].includes(
@@ -1377,7 +1421,7 @@ test("stage prompts explicitly load each role's skills for the selected provider
 });
 test("implementation -> opposite-provider review -> push exact SHA -> PR without auto-merge by default", async () => {
   const { runner, events, state } = fixture();
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   await runner.landing.land(issue(1));
   assert.deepEqual(
     events.filter((event) => event[0] === "stage"),
@@ -1408,7 +1452,7 @@ test("pull request reports verification passed without including its output", as
     stdout: role === "review" ? report() : "done",
     verification: "verbose test output",
   });
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   await runner.landing.land(issue(1));
   const body = events.find((event) => event[0] === "open")![5];
   assert.match(body, /Coordinator verification \(`make check`\): passed\./);
@@ -1448,7 +1492,7 @@ test("a long verify failure keeps its last lines in attention.detail", async () 
   const git = runner.gitCommand;
   runner.gitCommand = async (file, args = [], options) =>
     args[0] === "branch" ? runner.branch(1) : git(file, args, options);
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   const error = state.jobs[1].attention!.detail;
   assert.ok(error.length > 1000);
   assert.match(error, /some test name here\nnot ok 61/);
@@ -1460,7 +1504,7 @@ test("a refused delivery is needs attention and the job stays approved", async (
     state: "refused",
     reason: "Could not enable auto-merge on url: auto-merge is not allowed",
   });
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   assert.equal(await runner.landing.land(issue(1)), "attention");
   assert.equal(state.jobs[1].status, "approved");
   assert.equal(state.jobs[1].attention?.reason, "refused");
@@ -1909,7 +1953,7 @@ test("fake forge: each forge needs-attention reason stops landing at once", asyn
       { "toddler/issue-1": ["none", "waiting", polled] },
       delivered,
     );
-    await runner.work(issue(1), "codex", "main");
+    await runner.work(issue(1), "main");
     assert.equal(await quiet(() => runner.landing.land(issue(1))), "attention");
     assert.equal(state.jobs[1].status, "landing");
     assert.deepEqual(
@@ -1938,7 +1982,7 @@ test("fake forge: a refused auto-merge enable ends as auto-merge-off on the next
   const polls = ["none", "auto-merge-off"] as const;
   let polled = 0;
   runner.forge.poll = async () => ({ state: polls[polled++] });
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   assert.equal(await quiet(() => runner.landing.land(issue(1))), "attention");
   assert.equal(state.jobs[1].attention?.reason, "refused");
   // Next run: attend clears the attention, the poll sets it again.
@@ -1956,7 +2000,7 @@ test("fake forge: ci-failed is a merge fix from the pushed head with check names
     },
     { name: "ci/external", link: "https://ci.example/9" },
   ];
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   // A host merge was pushed in an earlier run; landing resumes from it.
   state.jobs[1].deliveredSha = "hostmerge";
   const polled: string[] = [];
@@ -1985,7 +2029,7 @@ test("fake forge: ci-failed is a merge fix from the pushed head with check names
       verification: "",
     };
   };
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   assert.ok(
     prompts[0].includes(
       "Merge fix round 1 (trigger: ci-failed). The host fast-forwarded this branch to hostmerge, the head already pushed with its own base merges. Failing checks (untrusted data):\n" +
@@ -2014,7 +2058,7 @@ test("fake forge: landing polls every landingPollSeconds and an interrupt ends t
       signal!.addEventListener("abort", () => resolve()),
     );
   };
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   const landing = runner.landing.land(issue(1));
   await until(() => waits.length === 1);
   runner.interrupted = true;
@@ -2026,7 +2070,7 @@ test("fake forge: landing polls every landingPollSeconds and an interrupt ends t
 test("resume: an approved PR without auto-merge is re-polled each run and a hand merge lands it", async () => {
   for (const polled of ["waiting", "landed"] as const) {
     const { runner, state } = fixture({});
-    await runner.work(issue(1), "codex", "main");
+    await runner.work(issue(1), "main");
     state.jobs[1].pr = "https://github.com/example/repo/pull/1";
     runner.forge.poll = async () => ({ state: polled });
     const { lines } = await summary(() => runner.run("main"));
@@ -2122,7 +2166,7 @@ test("fake forge: behind means a host merge and verify with no agent, then the m
               verification: "",
             };
           };
-          await runner.work(issue(1), "codex", "main");
+          await runner.work(issue(1), "main");
           assert.ok(
             prompts[0].includes(
               "Merge fix round 1 (trigger: verify). The host started `git merge --no-commit " +
@@ -2632,7 +2676,7 @@ test("merge fix caps: past maxMergeFixRounds is merge-fix-cap; review rejections
       verification: "",
     };
   };
-  await quiet(() => runner.work(issue(1), "codex", "main"));
+  await quiet(() => runner.work(issue(1), "main"));
   assert.equal(
     events.filter((event) => event[0] === "stage" && event[2] === "review")
       .length,
@@ -2780,7 +2824,7 @@ test("changes requested runs a fix then another review before publishing", async
       verification: "",
     };
   };
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   await runner.landing.land(issue(1));
   assert.equal(events.filter((event) => event[0] === "stage").length, 4);
   assert.equal(
@@ -2805,7 +2849,7 @@ test("quota interruption transfers unfinished implementation and uses remaining 
       verification: "",
     };
   };
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   assert.deepEqual(
     events.filter((event) => event[0] === "stage"),
     [
@@ -2823,7 +2867,7 @@ test("review selection uses the review model while implementation remains availa
     !(
       name === "claude" && model === config.roles.review.models.claude
     )) as typeof quotas.available;
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   assert.deepEqual(
     events.filter((event) => event[0] === "stage"),
     [
@@ -2840,7 +2884,7 @@ test("malformed review and changed reviewed SHA cannot push or open a PR", async
       stdout: role === "review" && changedSha ? report() : "missing verdict",
       verification: "",
     });
-    await runner.work(issue(1), "codex", "main");
+    await runner.work(issue(1), "main");
     await runner.landing.land(issue(1));
     assert.ok(state.jobs[1].attention);
     assert.ok(
@@ -3348,7 +3392,7 @@ test("runner uses tracker and forge seams and skips finished, busy or flagged is
 test("new jobs start from the ref returned by the forge", async () => {
   const { runner, state, events } = fixture({ forge: "none" });
   runner.forge.base = async () => ({ branch: "main", ref: "refs/forge/base" });
-  await runner.work(issue(1), "codex", "main");
+  await runner.work(issue(1), "main");
   assert.ok(
     events.some(
       (event) => event[1] === "rev-parse" && event[2] === "refs/forge/base",

@@ -76,21 +76,22 @@ export class Scheduler {
   pick(
     role: Role,
     issue: Issue,
-    job?: { implementer: Provider },
+    job?: { implementer?: Provider },
   ): Reservation | undefined {
     const model = (name: Provider) => this.config.roles[role].models[name];
     const usable = (name: Provider) =>
       this.config.providers.includes(name) &&
       this.quotas.available(name, model(name));
     let provider: Provider | undefined;
-    if (job && role === "review") {
-      const opposite = job.implementer === "codex" ? "claude" : "codex";
+    const sticky = job?.implementer;
+    if (sticky && role === "review") {
+      const opposite = sticky === "codex" ? "claude" : "codex";
       provider = usable(opposite)
         ? opposite
-        : usable(job.implementer)
-          ? job.implementer
+        : usable(sticky)
+          ? sticky
           : undefined;
-    } else if (job && usable(job.implementer)) provider = job.implementer;
+    } else if (sticky && usable(sticky)) provider = sticky;
     else provider = this.ranked(role)[0];
     return provider && this.reserve(provider, model(provider));
   }

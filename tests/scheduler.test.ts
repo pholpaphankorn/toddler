@@ -322,3 +322,42 @@ test("a failed read does not mask a following quota stop", async () => {
   assert.equal(held.signal.aborted, true);
   assert.match(quotas.disabled.get("codex")!, /fiveHour remaining/);
 });
+
+test("sticky implementer moves at once when stopped and never moves back after the lift", async () => {
+  const { scheduler: s, quotas } = await scheduler(
+    {},
+    { codex: [reading({ fiveHour: 50 }), reading({ fiveHour: 3 }), reading()] },
+  );
+  const job: { implementer?: Provider } = { implementer: "codex" };
+  assert.equal(s.pick("implementation", issue(1), job)!.provider, "codex");
+  await quotas.refresh(); // codex stopped
+  const moved = s.pick("implementation", issue(1), job)!;
+  assert.equal(moved.provider, "claude");
+  job.implementer = moved.provider; // the stage succeeded
+  await quotas.refresh(); // codex lifted
+  assert.equal(quotas.available("codex"), true);
+  assert.equal(s.pick("implementation", issue(1), job)!.provider, "claude");
+});
+
+test("a job without an implementer yet takes the ranker's pick for any role", async () => {
+  const { scheduler: s } = await scheduler();
+  assert.equal(s.pick("review", issue(1), {})!.provider, "codex");
+});
+
+test("review is re-picked each round from current quota", async () => {
+  const { scheduler: s, quotas } = await scheduler();
+  const job = { implementer: "codex" as Provider };
+  assert.equal(s.pick("review", issue(1), job)!.provider, "claude");
+  quotas.disableModel("claude", defaults.roles.review.models.claude, "stop");
+  assert.equal(s.pick("review", issue(1), job)!.provider, "codex");
+  quotas.disableModel("codex", defaults.roles.review.models.codex, "stop");
+  assert.equal(s.pick("review", issue(1), job), undefined);
+});
+
+test("a per-model stop gives none for one role while another stage can start", async () => {
+  const { scheduler: s, quotas } = await scheduler();
+  for (const provider of ["codex", "claude"] as const)
+    quotas.disableModel(provider, defaults.roles.review.models[provider], "x");
+  assert.equal(s.pick("review", issue(1), { implementer: "codex" }), undefined);
+  assert.ok(s.pick("implementation", issue(2)));
+});
