@@ -23,7 +23,7 @@ import { bundledSkillsPath } from "./skills.ts";
 import { planJson, planPass, planText } from "./plan.ts";
 import { connect, validatePushRemote } from "./forge.ts";
 import { smokeForge } from "./smoke-forge.ts";
-import { writeKit } from "./kit.ts";
+import { commitOnly, writeKit } from "./kit.ts";
 
 const usage =
   "Usage: toddler [init|setup|doctor|plan|run|smoke [codex|claude]|smoke forge <github|gitlab> <scratch-repository>]";
@@ -91,18 +91,23 @@ async function init(root: string) {
     ? { forge, repository, install: "", verify: "" }
     : { forge: "none", install: "", verify: "" };
   await writeFile(path, `${JSON.stringify(project, null, 2)}\n`);
+  const created = [".sandcastle/config.json"];
   const ignore = join(root, ".sandcastle/.gitignore");
-  if (!existsSync(ignore))
+  if (!existsSync(ignore)) {
     await writeFile(
       ignore,
       ".env\nlogs/\nworktrees/\nstate.json\nstate.json.tmp\nrunner.lock\n",
     );
+    created.push(".sandcastle/.gitignore");
+  }
+  const committed = commitOnly(root, created, "toddler: add config", "config");
   console.log(`Wrote ${path} for ${repository ?? "local issues (no forge repository found)"}.${remotes ? `\nGit remote(s) ${remotes.replaceAll("\n", ", ")} could not be read. Log in with gh or glab and rerun toddler init (remove the generated config first).` : ""}
+${committed}
 Next:${repository ? `\n  0. Label issues ${defaults.issueLabel} or set \"issues\": \"files\".` : '\n  0. Write issues as .sandcastle/specs/<spec-number>-<slug>/issues/<number>-<slug>.md files (spec in spec.md beside issues/). Nothing is pushed. Set "autoMerge": true to fast-forward approved work into the base branch.'}
   1. Optionally set "install" to a shell command that installs dependencies in each new sandbox (e.g. "npm ci"),
      and "verify" to a shell command that checks this project inside the sandbox (e.g. "npm test").
   2. Optionally put stack-specific agent notes in AGENTS.md or CLAUDE.md; agents read them from the worktree.
-  3. Commit .sandcastle/, then run: toddler setup`);
+  3. Then run: toddler setup`);
 }
 
 async function doctor(config: Config, root: string) {

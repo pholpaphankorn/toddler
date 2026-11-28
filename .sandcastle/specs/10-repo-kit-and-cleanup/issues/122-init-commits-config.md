@@ -3,7 +3,7 @@ title: init commits its config
 labels: []
 blocked_by: [120]
 parent: 10
-status: open
+status: closed
 ---
 `toddler init` writes the config and commits it, and nothing else; the person no longer commits `.sandcastle/` by hand. Settled in spec 7's [doctor, setup, init, plan and smoke](../../7-harness-boundary/issues/72-cli-modes.md) (2026-11-26 revision).
 
