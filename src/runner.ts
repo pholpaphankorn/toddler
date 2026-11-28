@@ -562,13 +562,13 @@ export class Runner {
     const override = this.config.roles[role].prompt;
     return (
       (await readFile(
-        override ? join(this.root, override) : own(`${role}.md`),
+        override ? join(this.root, override) : own(`${role}/instructions.md`),
         "utf8",
       )) +
       "\n" +
-      (await readFile(own("rules.md"), "utf8")) +
+      (await readFile(own("shared-rules.md"), "utf8")) +
       "\n" +
-      (await readFile(own(`rules/${role}.md`), "utf8"))
+      (await readFile(own(`${role}/rules.md`), "utf8"))
     );
   }
   skillInstructions(provider: Provider, role: Role, job: Job): string {
