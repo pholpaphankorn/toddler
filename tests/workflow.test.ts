@@ -2836,7 +2836,7 @@ test("fake forge: a resumed job re-polls first; none delivers again, landed is d
     assert.ok(!events.some((event) => event[0] === "stage"));
   }
 });
-test("local issues skip closed and blocked files, never call GitHub, and stop on a local branch when openPr is false", async () => {
+test("local issues skip closed and blocked files, never call GitHub, and stop on a local branch with forge none", async () => {
   const root = mkdtempSync(join(tmpdir(), "toddler-local-"));
   try {
     mkdirSync(join(root, ".sandcastle/specs/1-a/issues"), { recursive: true });
@@ -2878,7 +2878,7 @@ test("local issues skip closed and blocked files, never call GitHub, and stop on
     rmSync(root, { recursive: true, force: true });
   }
 });
-test("local issues with openPr open a PR that does not close a GitHub issue", async () => {
+test("local issues with a forge open a PR that does not close a GitHub issue", async () => {
   const { runner, events, state } = fixture({ issues: "files" });
   await runner.work(issue(7), "codex", "main");
   await runner.landing.land(issue(7));
