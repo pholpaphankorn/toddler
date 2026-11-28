@@ -3,7 +3,7 @@ title: doctor row for spec children missing issueLabel
 labels: []
 blocked_by: [118]
 parent: 10
-status: open
+status: closed
 ---
 On a forge tracker, `doctor` fails when an open spec's open children lack `issueLabel`, since toddler would never pick them and nothing else says so. Settled in [doctor row for spec children missing issueLabel](110-doctor-missing-issue-label.md) and [How spec 10's setup, kit and doctor row are tested](114-testing-spec-10.md) (step 4).
 
