@@ -25,11 +25,12 @@ A spec, ready to break into toddler issues, for the third reshape area: `setup` 
 
 - [What happens to Codex's setsid() children when a stage is cancelled](issues/111-codex-setsid-children.md): Codex kills its `setsid()`'d commands only on SIGINT; toddler's `stopAgent` sends SIGINT, but Ctrl+C/SIGTERM on toddler (sandcastle SIGKILLs and exits first), a slow shutdown, a crash, or self-detached commands leave orphans; reaping works only from the host (descendant list, `lsof` cwd), not from inside the sandbox.
 - [Planning kit templates and the toddler block](issues/108-planning-kit-templates.md): templates follow to-spec (spec sections) and to-tickets (issue template), with toddler's label (`Sandcastle` for `ready-for-agent`), paths/numbering and blocker format replacing the skills' tracker steps; labels baked in from config and re-rendered each `setup`; usage notes in a top comment; a ~3-line block pointing agents (and those skills) at the templates.
+- [setup as a toddler command: kit step, login steps and glab](issues/109-setup-command.md): TypeScript in `main.ts`, `setup.sh` deleted; login steps follow `forge` and the roles' providers; glab's host comes from glab; commits kit paths git reports changed (skipping ones with prior uncommitted edits, none on detached HEAD); kit → commit → logins → doctor.
 
 ## Not yet specified
 
 - How spec 10 is tested (kit writer on temp repos, marker edge cases, setup's commit rule, the doctor row against forge fixtures): once the kit, setup and doctor tickets settle.
-- README/GLOSSARY sweep and retiring `scripts/setup.sh`: what changes falls out of the other tickets; likely implementation only.
+- README/GLOSSARY sweep: what changes falls out of the other tickets (`scripts/setup.sh` is deleted per the setup ticket); likely implementation only.
 
 ## Out of scope
 

@@ -69,6 +69,9 @@ _Avoid_: auth, token
 **Local login**: the user's own sign-in to a provider's CLI on this machine, which toddler reads instead of holding a provider login of its own.
 _Avoid_: host login
 
+**Planning kit**: the spec and issue templates and the short note in the repo's agent files, committed to the repo so that planning sessions run outside toddler write specs and issues toddler will pick up.
+_Avoid_: scaffold, starter files
+
 **Run**: one `toddler run` that phol starts and leaves alone. It works ready issues and lands approved ones, and ends only when nothing is ready, no agent is working and nothing is waiting to land. Every provider being stopped never ends it; it sleeps instead.
 _Avoid_: session, batch
 
