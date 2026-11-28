@@ -5,6 +5,15 @@ import { indexSkills } from "./skills.ts";
 export type Provider = "codex" | "claude";
 export type Role = "implementation" | "review";
 export const providers: Provider[] = ["codex", "claude"];
+// Reasoning effort each provider CLI accepts.
+export const efforts = {
+  codex: ["low", "medium", "high", "xhigh"],
+  claude: ["low", "medium", "high", "xhigh", "max"],
+} as const;
+export type Efforts = {
+  codex?: (typeof efforts.codex)[number];
+  claude?: (typeof efforts.claude)[number];
+};
 
 export const defaults = {
   providers: [...providers],
@@ -14,9 +23,9 @@ export const defaults = {
   forge: "github" as "github" | "gitlab" | "none",
   issues: "forge" as "forge" | "files",
   autoMerge: false,
-  issueLabel: "Sandcastle",
+  issueLabel: "toddler",
   parallelLabel: "parallel-safe",
-  maxParallelIssues: 2,
+  maxParallelIssues: 10,
   blockedLabels: ["blocked", "on-hold"],
   adultLabel: "adult",
   stopAt: {
@@ -32,21 +41,28 @@ export const defaults = {
     implementation: {
       skills: ["tdd", "diagnosing-bugs", "codebase-design", "ponytail"],
       models: { codex: "gpt-6.1-terra", claude: "claude-sonnet-5-5" },
+      efforts: { codex: "medium", claude: "medium" } as Efforts,
     },
     review: {
       skills: ["code-review", "ponytail-review", "codebase-design"],
       models: { codex: "gpt-6.1-sol", claude: "claude-opus-5-5" },
+      efforts: { codex: "medium", claude: "medium" } as Efforts,
     },
   } satisfies Record<
     Role,
-    { skills: string[]; models: Record<Provider, string> }
+    { skills: string[]; models: Record<Provider, string>; efforts: Efforts }
   >,
 };
 export type Defaults = typeof defaults;
 export interface Config extends Defaults {
   roles: Record<
     Role,
-    { skills: string[]; models: Record<Provider, string>; prompt?: string }
+    {
+      skills: string[];
+      models: Record<Provider, string>;
+      efforts: Efforts;
+      prompt?: string;
+    }
   >;
   /** GitHub owner/name whose issues are worked. */
   repository: string;
@@ -87,7 +103,7 @@ export function loadConfig(
         throw new Error(`${path}: invalid ${rolePath}`);
       for (const [field, value] of Object.entries(settings)) {
         const fieldPath = `${rolePath}.${field}`;
-        if (field !== "skills" && field !== "models" && field !== "prompt")
+        if (!["skills", "models", "efforts", "prompt"].includes(field))
           throw new Error(`${path}: invalid ${fieldPath}`);
         if (field === "prompt") {
           if (typeof value !== "string" || !value.trim() || isAbsolute(value))
@@ -97,6 +113,21 @@ export function loadConfig(
               throw new Error("empty prompt");
           } catch {
             throw new Error(`${path}: invalid ${fieldPath}`);
+          }
+        }
+        if (field === "efforts") {
+          if (!isObject(value))
+            throw new Error(`${path}: invalid ${fieldPath}`);
+          for (const [provider, effort] of Object.entries(value)) {
+            if (
+              !providers.includes(provider as Provider) ||
+              !(efforts[provider as Provider] as readonly unknown[]).includes(
+                effort,
+              )
+            )
+              throw new Error(
+                `${path}: invalid ${fieldPath}.${provider}; ${providers.includes(provider as Provider) ? `use one of ${efforts[provider as Provider].join(", ")}` : "unknown provider"}`,
+              );
           }
         }
         if (field === "models") {
@@ -124,6 +155,7 @@ export function loadConfig(
           ...settings,
           ...project.roles?.[role],
           models: { ...settings.models, ...project.roles?.[role]?.models },
+          efforts: { ...settings.efforts, ...project.roles?.[role]?.efforts },
         },
       ]),
     ) as Config["roles"],
