@@ -71,7 +71,7 @@ async function scheduler(
   overrides: Partial<typeof defaults> = {},
   queues: Parameters<typeof scripted>[0] = {},
 ) {
-  const config = { ...defaults, ...overrides };
+  const config = { ...defaults, maxParallelIssues: 2, ...overrides };
   const quotas = new Quotas(config, scripted(queues));
   await quotas.refresh();
   return { quotas, scheduler: new Scheduler({ config, quotas, ranker }) };
@@ -200,7 +200,7 @@ test("ranker is skipped below two candidates and sees only { candidates } at two
       .reverse();
   };
   const make = async (overrides: Partial<typeof defaults> = {}) => {
-    const config = { ...defaults, ...overrides };
+    const config = { ...defaults, maxParallelIssues: 2, ...overrides };
     const quotas = new Quotas(config, scripted({}));
     await quotas.refresh();
     return { quotas, scheduler: new Scheduler({ config, quotas, ranker }) };

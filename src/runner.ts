@@ -345,6 +345,7 @@ export class Runner {
         }
         let agent: AgentProvider;
         const model = this.config.roles[role].models[provider];
+        const effort = this.config.roles[role].efforts[provider];
         const auth =
           provider === "codex" ? await this.authentication.codex() : undefined;
         const setupCommand =
@@ -359,10 +360,14 @@ export class Runner {
         if (setup.exitCode)
           throw new Error("Could not initialize isolated skills and login");
         if (provider === "codex") {
-          agent = sandcastle.codex(model, { captureSessions: false });
+          agent = sandcastle.codex(model, {
+            captureSessions: false,
+            effort: this.config.roles[role].efforts.codex,
+          });
         } else {
           agent = sandcastle.claudeCode(model, {
             captureSessions: false,
+            effort: this.config.roles[role].efforts.claude,
             env: {
               CLAUDE_CODE_OAUTH_TOKEN: await this.authentication.claude(),
               CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
@@ -370,7 +375,9 @@ export class Runner {
           });
         }
         agent = privateHomeAgent(agent, provider);
-        console.log(`[issue #${job.number}] ${role}: ${provider} (${model})`);
+        console.log(
+          `[issue #${job.number}] ${role}: ${provider} (${model}${effort ? `, ${effort}` : ""})`,
+        );
         if (
           (await this.git(
             ["branch", "--show-current"],

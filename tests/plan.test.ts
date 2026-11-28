@@ -36,7 +36,7 @@ async function setup(
   readings: Partial<Record<Provider, Reading | Error>> = {},
   overrides: Partial<typeof defaults> = {},
 ) {
-  const config = { ...defaults, ...overrides };
+  const config = { ...defaults, maxParallelIssues: 2, ...overrides };
   const read: ReadUsage = async (provider) => {
     const r = readings[provider] ?? reading();
     if (r instanceof Error) throw r;

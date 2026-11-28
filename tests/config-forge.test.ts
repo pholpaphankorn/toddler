@@ -27,7 +27,7 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
       load({ repository: "a/b", landingPollSeconds: 10 }).landingPollSeconds,
       10,
     );
-    assert.equal(load({ repository: "a/b" }).maxParallelIssues, 2);
+    assert.equal(load({ repository: "a/b" }).maxParallelIssues, 10);
     assert.equal(
       load({ repository: "a/b", maxParallelIssues: 3 }).maxParallelIssues,
       3,
@@ -146,7 +146,7 @@ test("init detects GitHub, GitLab, or no forge", () => {
       assert.match(
         result.stdout,
         github || scenario === "gitlab"
-          ? /Sandcastle.*issues.*files/
+          ? /toddler.*issues.*files/
           : /Write issues.*Nothing is pushed/,
       );
       if (scenario === "remote")

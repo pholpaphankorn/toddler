@@ -24,6 +24,7 @@ test("role overrides merge by role, field and provider", () => {
     assert.deepEqual(config.roles.review, {
       skills: defaults.roles.review.skills,
       models: { codex: "gpt-6.1-sol", claude: "x" },
+      efforts: defaults.roles.review.efforts,
     });
     assert.deepEqual(modelsForProvider(config, "claude"), [
       "claude-sonnet-5-5",
@@ -85,6 +86,15 @@ test("role settings validate paths", () => {
         /roles\.review\.models\.claude/,
       ],
       [{ roles: { review: { skills: [2] } } }, /roles\.review\.skills/],
+      [
+        { roles: { review: { efforts: { codex: "max" } } } },
+        /roles\.review\.efforts\.codex/,
+      ],
+      [
+        { roles: { review: { efforts: { claud: "low" } } } },
+        /roles\.review\.efforts\.claud/,
+      ],
+      [{ roles: { review: { efforts: "low" } } }, /roles\.review\.efforts/],
       [{ roles: { review: { skills: ["missing"] } } }, /roles\.review\.skills/],
     ] as const) {
       write(settings);
@@ -114,6 +124,34 @@ test("role settings validate paths", () => {
       ),
       ["same"],
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("role efforts default to medium and merge per provider", () => {
+  const root = mkdtempSync(join(tmpdir(), "roles-"));
+  try {
+    mkdirSync(join(root, ".sandcastle"));
+    writeFileSync(
+      join(root, ".sandcastle/config.json"),
+      JSON.stringify({
+        repository: "owner/repo",
+        roles: {
+          implementation: { efforts: { claude: "max" } },
+          review: { efforts: { codex: "xhigh" } },
+        },
+      }),
+    );
+    const config = loadConfig(root);
+    assert.deepEqual(config.roles.implementation.efforts, {
+      codex: "medium",
+      claude: "max",
+    });
+    assert.deepEqual(config.roles.review.efforts, {
+      codex: "xhigh",
+      claude: "medium",
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

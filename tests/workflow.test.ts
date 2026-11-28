@@ -814,6 +814,7 @@ test("doctor's ranking row is a load check: built-in, project path, failure", ()
 const fake = <T>(value: unknown) => value as T;
 const config: Config = {
   ...defaults,
+  maxParallelIssues: 2,
   repository: "example/repo",
   verify: "make check",
   install: "",
