@@ -3,7 +3,7 @@ title: plan explains rankings and stops
 labels: []
 blocked_by: [100, 101, 103, 105, 106]
 parent: 9
-status: open
+status: closed
 ---
 `toddler plan` shows in plain text what a run would do next and why: which provider each stage would get, which are stopped and how they lift, which slots are full, and whether the run would sleep.
 

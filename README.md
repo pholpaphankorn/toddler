@@ -45,7 +45,7 @@ toddler init      # writes .sandcastle/config.json and .sandcastle/.gitignore
 # edit .sandcastle/config.json, optionally add .sandcastle/project.md, commit .sandcastle/
 toddler setup     # sign in to GitHub, Codex and Claude Code, then run doctor
 toddler doctor    # check sandbox, logins, quota and models
-toddler plan      # show the next assignments without starting agents
+toddler plan      # show the next stages and stops without starting agents (--json for scripts)
 toddler           # run (same as `toddler run`)
 toddler smoke [codex|claude]   # 1 tiny model call per role (uses quota)
 toddler smoke forge github owner/scratch   # by hand, against a scratch repo only (see Verification)
@@ -224,7 +224,7 @@ all active sessions for that provider are cancelled. A per-model weekly bucket a
 or below **10%** stops only that provider and model, cancelling only sessions on
 that model. Unfinished work remains on disk, and other available models can continue.
 Stops last for the rest of the invocation, even if a window resets. `toddler plan`
-lists per-model stops under `unavailableModels`.
+prints providers, stops and how they lift, slots, the next stages and whether the run would sleep; `toddler plan --json` gives the same data for scripts (per-model stops under `unavailableModels`).
 
 The runner exits when no actionable issues remain. When every provider is stopped it sleeps until the earliest reset (plus a minute, rechecking at least every 30 minutes) and carries on; an interrupt ends the sleep.
 Blocked issues, issues with workflow PRs, and tasks already attempted unsuccessfully
