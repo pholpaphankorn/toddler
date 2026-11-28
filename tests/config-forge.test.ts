@@ -162,6 +162,49 @@ test("init detects GitHub, GitLab, or no forge", () => {
   }
 });
 
+test("init names the fork on origin, not the upstream parent", () => {
+  const root = mkdtempSync(join(tmpdir(), "init-fork-"));
+  try {
+    const git = (...args: string[]) =>
+      assert.equal(spawnSync("git", args, { cwd: root }).status, 0);
+    git("init", "-q");
+    git("remote", "add", "origin", "https://github.com/me/fork.git");
+    git("remote", "add", "upstream", "https://github.com/them/repo.git");
+    const bin = join(root, "bin");
+    mkdirSync(bin);
+    // Like gh: with no repo argument it picks the upstream remote.
+    writeFileSync(
+      join(bin, "gh"),
+      '#!/bin/sh\ncase "$*" in *me/fork*) echo me/fork;; *) echo them/repo;; esac\n',
+    );
+    chmodSync(join(bin, "gh"), 0o755);
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL("../src/main.ts", import.meta.url)), "init"],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@example.com",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@example.com",
+        },
+        encoding: "utf8",
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(
+      JSON.parse(readFileSync(join(root, ".sandcastle/config.json"), "utf8"))
+        .repository,
+      "me/fork",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("init commits only the files it created, once", () => {
   const root = mkdtempSync(join(tmpdir(), "init-commit-"));
   const bin = join(root, ".bin");
