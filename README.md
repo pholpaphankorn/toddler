@@ -41,8 +41,8 @@ Keep it linked rather than packed: Node does not strip types from files under
 
 ```sh
 cd ~/some/project
-toddler init      # writes .sandcastle/config.json and .sandcastle/.gitignore
-# edit .sandcastle/config.json, commit .sandcastle/
+toddler init      # writes and commits .sandcastle/config.json and .sandcastle/.gitignore
+# optionally edit .sandcastle/config.json (commit your edits)
 toddler setup     # write and commit the planning kit, sign in to GitHub, Codex and Claude Code, then run doctor
 toddler doctor    # check sandbox, logins, quota and models
 toddler plan      # show the next stages and stops without starting agents (--json for scripts)

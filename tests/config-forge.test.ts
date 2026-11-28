@@ -113,7 +113,14 @@ test("init detects GitHub, GitLab, or no forge", () => {
         [fileURLToPath(new URL("../src/main.ts", import.meta.url)), "init"],
         {
           cwd: root,
-          env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+          env: {
+            ...process.env,
+            PATH: `${bin}:${process.env.PATH}`,
+            GIT_AUTHOR_NAME: "t",
+            GIT_AUTHOR_EMAIL: "t@example.com",
+            GIT_COMMITTER_NAME: "t",
+            GIT_COMMITTER_EMAIL: "t@example.com",
+          },
           encoding: "utf8",
         },
       );
@@ -152,5 +159,68 @@ test("init detects GitHub, GitLab, or no forge", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  }
+});
+
+test("init commits only the files it created, once", () => {
+  const root = mkdtempSync(join(tmpdir(), "init-commit-"));
+  const bin = join(root, ".bin");
+  mkdirSync(bin);
+  for (const name of ["gh", "glab"]) {
+    writeFileSync(join(bin, name), "#!/bin/sh\nexit 1\n");
+    chmodSync(join(bin, name), 0o755);
+  }
+  const env = {
+    ...process.env,
+    PATH: `${bin}:${process.env.PATH}`,
+    HOME: root,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_AUTHOR_NAME: "t",
+    GIT_AUTHOR_EMAIL: "t@example.com",
+    GIT_COMMITTER_NAME: "t",
+    GIT_COMMITTER_EMAIL: "t@example.com",
+  };
+  const git = (...args: string[]) => {
+    const result = spawnSync("git", args, { cwd: root, env, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  const init = () => {
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL("../src/main.ts", import.meta.url)), "init"],
+      { cwd: root, env, encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout;
+  };
+  try {
+    git("init", "-q", "-b", "main");
+    writeFileSync(join(root, ".gitignore"), ".bin/\n");
+    writeFileSync(join(root, "other.txt"), "staged\n");
+    git("add", "other.txt");
+    const first = init();
+    assert.match(first, /config: committed \w+ \(toddler: add config\)/);
+    assert.match(first, /run: toddler setup\n$/);
+    assert.doesNotMatch(first, /Commit \.sandcastle/);
+    assert.equal(git("log", "--format=%s"), "toddler: add config");
+    assert.equal(
+      git("show", "--name-only", "--format=", "HEAD"),
+      ".sandcastle/.gitignore\n.sandcastle/config.json",
+    );
+    const status = git("status", "--porcelain", "--untracked-files=all");
+    assert.equal(status, "A  other.txt\n?? .gitignore");
+    assert.match(init(), /already exists/);
+    assert.equal(git("rev-list", "--count", "HEAD"), "1");
+    assert.equal(git("status", "--porcelain", "--untracked-files=all"), status);
+
+    rmSync(join(root, ".sandcastle"), { recursive: true });
+    git("checkout", "-q", "--detach");
+    git("rm", "-q", "--cached", "-r", ".sandcastle");
+    const detached = init();
+    assert.match(detached, /detached HEAD: config written, not committed/);
+    assert.equal(git("rev-list", "--count", "HEAD"), "1");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

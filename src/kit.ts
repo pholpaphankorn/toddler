@@ -228,16 +228,29 @@ export function writeKit(root: string, config: Config): string[] {
     if (!lines.length) lines.push("kit: up to date");
     return lines;
   }
+  lines.push(commitOnly(root, commit, message, "kit"));
+  return lines;
+}
+
+/** Commits exactly these paths on the current branch, leaving other staged changes staged. Returns the output line. */
+export function commitOnly(
+  root: string,
+  paths: string[],
+  message: string,
+  what: string,
+): string {
+  const git = (...args: string[]) =>
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   try {
     git("symbolic-ref", "-q", "HEAD");
   } catch {
-    lines.push("detached HEAD: kit written, not committed");
-    return lines;
+    return `detached HEAD: ${what} written, not committed`;
   }
-  git("add", "--", ...commit);
-  git("commit", "--only", "-m", message, "--", ...commit);
-  lines.push(
-    `kit: committed ${git("rev-parse", "--short", "HEAD").trim()} (${message})`,
-  );
-  return lines;
+  git("add", "--", ...paths);
+  git("commit", "--only", "-m", message, "--", ...paths);
+  return `${what}: committed ${git("rev-parse", "--short", "HEAD").trim()} (${message})`;
 }
