@@ -3,7 +3,7 @@ title: Stops lift
 labels: [parallel-safe]
 blocked_by: [99]
 parent: 9
-status: open
+status: closed
 ---
 A provider stopped for low quota comes back on its own once a reading shows quota again, and a failed quota read no longer kills the provider for the rest of the run.
 

@@ -347,8 +347,15 @@ export async function readUsage(
 export class Quotas {
   config: Defaults;
   read: ReadUsage;
+  // Stops, keyed by provider (+ model); a fresh reading recomputes them and lifts the ones no condition returns.
   disabled = new Map<Provider, string>();
   disabledModels = new Map<Provider, Map<string, string>>();
+  // Providers stopped for good (no login); never re-read or lifted.
+  permanent = new Set<Provider>();
+  // Providers whose current provider-wide stop is a failed read; a good read replaces it.
+  unverified = new Set<Provider>();
+  // Run-level interrupt: starts nothing new, outside the stop map, never lifts.
+  interrupted = false;
   // Told of every stop; the scheduler aborts the reservations it covers.
   onStop?: (
     provider: Provider,
@@ -369,17 +376,23 @@ export class Quotas {
   }
   available(provider: Provider, model?: string): boolean {
     return (
+      !this.interrupted &&
       this.config.providers.includes(provider) &&
       this.values.has(provider) &&
       !this.disabled.has(provider) &&
       (model === undefined || !this.disabledModels.get(provider)?.has(model))
     );
   }
-  disable(provider: Provider, reason: string): void {
+  // `cancel: false` blocks new starts without aborting live sessions.
+  disable(provider: Provider, reason: string, cancel = true): void {
     if (this.disabled.has(provider)) return;
     this.disabled.set(provider, reason);
     console.log(`[quota] ${provider} stopped: ${reason}`);
-    this.onStop?.(provider, undefined, reason);
+    if (cancel) this.onStop?.(provider, undefined, reason);
+  }
+  lock(provider: Provider, reason: string): void {
+    this.permanent.add(provider);
+    this.disable(provider, reason);
   }
   disableModel(provider: Provider, model: string, reason: string): void {
     const models = this.disabledModels.get(provider) ?? new Map();
@@ -393,14 +406,17 @@ export class Quotas {
     if (this.refreshing) return this.refreshing;
     this.refreshing = Promise.all(
       this.config.providers.map(async (provider) => {
-        if (this.disabled.has(provider)) return;
+        if (this.permanent.has(provider)) return;
         let usage: Reading;
         try {
           usage = validateUsage(await this.read(provider, this.config));
         } catch (error) {
+          // Lifts on the next good read; live sessions carry on.
+          if (!this.disabled.has(provider)) this.unverified.add(provider);
           this.disable(
             provider,
             `subscription usage could not be verified: ${error instanceof Error ? error.message : error} (run doctor for details)`,
+            false,
           );
           return;
         }
@@ -410,10 +426,33 @@ export class Quotas {
           reading: usage,
           models: modelsForProvider(this.config, provider),
         };
+        // The first condition to name a stop keeps its reason.
+        const stops = new Map<string | undefined, string>();
         for (const condition of this.conditions)
           for (const stop of condition(input))
-            if (stop.model === undefined) this.disable(provider, stop.reason);
-            else this.disableModel(provider, stop.model, stop.reason);
+            if (!stops.has(stop.model)) stops.set(stop.model, stop.reason);
+        const wide = this.disabled.get(provider);
+        // A failed-read stop is replaced by whatever the checks say now, so a real stop fires onStop.
+        if (
+          wide !== undefined &&
+          (!stops.has(undefined) || this.unverified.has(provider))
+        ) {
+          this.disabled.delete(provider);
+          if (!stops.has(undefined))
+            console.log(`[quota] ${provider} stop lifted (was: ${wide})`);
+        }
+        this.unverified.delete(provider);
+        const models = this.disabledModels.get(provider);
+        for (const [model, was] of models ?? [])
+          if (!stops.has(model)) {
+            models!.delete(model);
+            console.log(
+              `[quota] ${provider} (${model}) stop lifted (was: ${was})`,
+            );
+          }
+        for (const [model, reason] of stops)
+          if (model === undefined) this.disable(provider, reason);
+          else this.disableModel(provider, model, reason);
       }),
     ).finally(() => {
       this.refreshing = null;
@@ -421,7 +460,8 @@ export class Quotas {
     return this.refreshing;
   }
   stop(): void {
+    this.interrupted = true;
     for (const provider of providers)
-      this.disable(provider, "runner interrupted");
+      this.onStop?.(provider, undefined, "runner interrupted");
   }
 }
