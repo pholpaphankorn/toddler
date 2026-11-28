@@ -3296,7 +3296,10 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
     );
     assert.ok(
       !commands.some(
-        ({ cmd, options }) => !options && !cmd.includes("toddler-agent.pid"),
+        ({ cmd, options }) =>
+          !options &&
+          !cmd.includes("toddler-agent.pid") &&
+          cmd !== 'printf %s "$TMPDIR"',
       ),
       "no verify command runs when verify is empty",
     );

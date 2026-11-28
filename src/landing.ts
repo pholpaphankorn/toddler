@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripSignalListeners, sweepSandbox } from "./agents.ts";
 import { closeIssueFile, type Delivered, type Polled } from "./forge.ts";
 import { logTail } from "./logtail.ts";
 import type { Issue } from "./policy.ts";
@@ -369,6 +370,7 @@ export class Landing {
       baseBranch: sha,
       sandbox: sandboxProvider!,
     });
+    stripSignalListeners();
     try {
       if (
         config.install.trim() &&
@@ -388,6 +390,7 @@ export class Landing {
           ),
         });
     } finally {
+      await sweepSandbox(sandbox, job.number);
       await sandbox.close();
       // Best effort: a preserved worktree keeps its branch.
       await this.runner.git(["branch", "-D", branch]).catch(() => {});
