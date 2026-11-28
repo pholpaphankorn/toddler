@@ -84,14 +84,8 @@ export class Scheduler {
       this.quotas.available(name, model(name));
     let provider: Provider | undefined;
     const sticky = job?.implementer;
-    if (sticky && role === "review") {
-      const opposite = sticky === "codex" ? "claude" : "codex";
-      provider = usable(opposite)
-        ? opposite
-        : usable(sticky)
-          ? sticky
-          : undefined;
-    } else if (sticky && usable(sticky)) provider = sticky;
+    if (sticky && role === "implementation" && usable(sticky))
+      provider = sticky;
     else provider = this.ranked(role)[0];
     return provider && this.reserve(provider, model(provider));
   }

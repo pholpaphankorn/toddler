@@ -106,12 +106,13 @@ test("picks follow quota: single provider, fallback, none, and review pairing", 
   );
   const { scheduler: s, quotas } = await scheduler();
   const job = { implementer: "codex" as Provider };
-  assert.equal(s.pick("review", issue(1), job)!.provider, "claude");
-  quotas.disable("claude", "test");
+  // Review is the ranker's pick, so the implementer may review its own work.
   assert.equal(s.pick("review", issue(1), job)!.provider, "codex");
-  // A sticky implementer stays while it is usable, and moves for good once stopped.
+  // A sticky implementer stays while it is usable, and the ranker takes over once stopped.
   assert.equal(s.pick("implementation", issue(1), job)!.provider, "codex");
   quotas.disable("codex", "test");
+  assert.equal(s.pick("implementation", issue(1), job)!.provider, "claude");
+  quotas.disable("claude", "test");
   assert.equal(s.pick("implementation", issue(1), job), undefined);
 });
 
@@ -344,9 +345,13 @@ test("a job without an implementer yet takes the ranker's pick for any role", as
   assert.equal(s.pick("review", issue(1), {})!.provider, "codex");
 });
 
-test("review is re-picked each round from current quota", async () => {
+test("review is re-picked each round by the ranker, even when it picks the implementer", async () => {
   const { scheduler: s, quotas } = await scheduler();
   const job = { implementer: "codex" as Provider };
+  assert.equal(s.pick("review", issue(1), job)!.provider, "codex");
+  // A ranker that puts claude first moves the review off the implementer.
+  s.ranker = ({ candidates }) =>
+    [...candidates].reverse().map((c) => c.provider);
   assert.equal(s.pick("review", issue(1), job)!.provider, "claude");
   quotas.disableModel("claude", defaults.roles.review.models.claude, "stop");
   assert.equal(s.pick("review", issue(1), job)!.provider, "codex");

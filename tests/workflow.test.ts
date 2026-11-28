@@ -1166,6 +1166,14 @@ test("review approval requires exactly one valid verdict without findings", () =
   );
 });
 
+// First ask keeps configured order, the next reverses it: implementation on one provider, review on the other.
+const alternating = () => {
+  let asks = 0;
+  return ({ candidates }: { candidates: { provider: Provider }[] }) => {
+    const order = candidates.map((c) => c.provider);
+    return asks++ % 2 ? order.reverse() : order;
+  };
+};
 function fixture(
   overrides: Partial<Config> = {},
   root = fileURLToPath(new URL("../../", import.meta.url)),
@@ -1256,6 +1264,7 @@ test("stage prompts assemble role instructions, rules, notes, skills, and issue 
     mkdirSync(join(root, ".sandcastle"));
     writeFileSync(join(root, ".sandcastle/project.md"), "Project note marker");
     const { runner } = fixture({ forge: "none" }, root);
+    runner.scheduler.ranker = alternating();
     const prompts: string[] = [];
     runner.stage = async (_job, _provider, role, prompt) => {
       prompts.push(prompt);
@@ -1355,6 +1364,9 @@ test("stage prompts explicitly load each role's skills for the selected provider
         },
       },
     });
+    // Review goes to the other provider.
+    runner.scheduler.ranker = ({ candidates }) =>
+      candidates.map((c) => c.provider).sort((a) => (a === initial ? 1 : -1));
     const prompts: string[] = [];
     runner.stage = async (_job, _provider, role, prompt) => {
       prompts.push(prompt);
@@ -1419,8 +1431,9 @@ test("stage prompts explicitly load each role's skills for the selected provider
   );
   assert.ok(!prompts[1].includes("For code-review:"));
 });
-test("implementation -> opposite-provider review -> push exact SHA -> PR without auto-merge by default", async () => {
+test("implementation -> ranker-picked review -> push exact SHA -> PR without auto-merge by default", async () => {
   const { runner, events, state } = fixture();
+  runner.scheduler.ranker = alternating();
   await runner.work(issue(1), "main");
   await runner.landing.land(issue(1));
   assert.deepEqual(
@@ -2867,6 +2880,19 @@ test("review selection uses the review model while implementation remains availa
     !(
       name === "claude" && model === config.roles.review.models.claude
     )) as typeof quotas.available;
+  await runner.work(issue(1), "main");
+  assert.deepEqual(
+    events.filter((event) => event[0] === "stage"),
+    [
+      ["stage", "codex", "implementation"],
+      ["stage", "codex", "review"],
+    ],
+  );
+});
+test("a ranker that puts the implementer first has it review its own work", async () => {
+  const { runner, events } = fixture();
+  runner.scheduler.ranker = ({ candidates }) =>
+    candidates.map((c) => c.provider);
   await runner.work(issue(1), "main");
   assert.deepEqual(
     events.filter((event) => event[0] === "stage"),
