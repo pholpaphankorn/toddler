@@ -12,6 +12,7 @@ const reading = (
   models: Record<string, number> = {},
 ): Reading => ({
   observedAt: Date.now(),
+  allowed: null,
   weekly: { remainingPercent: weekly, resetsAt: null },
   fiveHour:
     fiveHour === null ? null : { remainingPercent: fiveHour, resetsAt: null },
