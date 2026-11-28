@@ -212,7 +212,10 @@ test("a job with no reviewer waits and frees its slot, then resumes when a revie
     };
   };
   const run = summary(() => runner.run("main"));
-  await until(() => stages.includes("2-implementation") && !!gate);
+  await until(
+    () =>
+      stages.includes("2-implementation") && !!gate && !runner.working.has(1),
+  );
   // Issue 1 is waiting at review: not running, not needing attention.
   assert.equal(state.jobs[1].status, "review");
   assert.equal(state.jobs[1].attention, undefined);
@@ -323,6 +326,19 @@ test("still stopped on wake: logged once and the run sleeps again", async () => 
     1,
   );
   assert.ok(lines.includes("Slept: 22 min in total"));
+});
+
+test("no work left with one provider stopped: the run ends instead of sleeping", async () => {
+  const { runner } = fixture();
+  runner.tracker.issues = async () => [];
+  runner.scheduler.quotas = new Quotas(config, async (provider) =>
+    usage(provider === "claude" ? 0 : 50),
+  );
+  const waits: number[] = [];
+  runner.scheduler.clock.wait = async (ms) => void waits.push(ms);
+  const { lines } = await summary(() => runner.run("main"));
+  assert.deepEqual(waits, []);
+  assert.ok(lines.includes("Stopped: no available issues."));
 });
 
 test("an interrupt during a sleep ends the run at once and the summary says so", async () => {

@@ -175,6 +175,8 @@ export class Runner {
   landedThisRun = new Set<number>();
   stageLogs = new Map<number, string>();
   // Aborted on interrupt, so waits end at once.
+  // Set by fill() when a ready issue or waiting job got no provider; only then is a sleep worth it.
+  heldByQuota = false;
   stopping = new AbortController();
   get interrupted(): boolean {
     return this.stopping.signal.aborted;
@@ -817,6 +819,7 @@ export class Runner {
   ): Promise<void> {
     const base = await this.forge.base(baseBranch);
     await this.scheduler.refresh();
+    this.heldByQuota = false;
     const land = (issue: Issue) =>
       track(this.landing.land(issue).then(() => {}));
     // Merge fixes, then waiting jobs, then fresh issues (a stable sort keeps the rest in order).
@@ -847,7 +850,10 @@ export class Runner {
         issue,
         job,
       );
-      if (!reservation) continue;
+      if (!reservation) {
+        this.heldByQuota = true;
+        continue;
+      }
       const provider = reservation.provider;
       this.working.set(issue.number, { issue, provider });
       track(
@@ -887,7 +893,7 @@ export class Runner {
         if (failure) throw failure.error;
         if (!this.working.size && !this.landing.jobs.size) {
           if (this.interrupted) return;
-          const plan = this.scheduler.wakePlan();
+          const plan = this.heldByQuota ? this.scheduler.wakePlan() : undefined;
           if (!plan) {
             stop = this.scheduler.anyAvailable()
               ? "Stopped: no available issues."
