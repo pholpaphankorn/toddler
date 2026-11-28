@@ -1,6 +1,6 @@
 ---
 title: What happens to Codex's setsid() children when a stage is cancelled
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 10
 status: closed

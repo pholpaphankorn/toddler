@@ -1,6 +1,6 @@
 ---
 title: Blocking and labels on a GitLab tracker
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [42]
 parent: 3
 assignee: phol (with claude)

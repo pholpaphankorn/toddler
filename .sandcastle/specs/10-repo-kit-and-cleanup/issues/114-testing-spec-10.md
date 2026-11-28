@@ -1,6 +1,6 @@
 ---
 title: How spec 10's setup, kit and doctor row are tested
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 10
 status: closed

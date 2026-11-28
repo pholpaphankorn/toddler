@@ -1,6 +1,6 @@
 ---
 title: How plan and doctor explain a ranking or a stop
-labels: [wayfinder:prototype, on-hold]
+labels: [wayfinder:prototype, adult]
 blocked_by: [91, 94]
 parent: 9
 status: closed

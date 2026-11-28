@@ -1,6 +1,6 @@
 ---
 title: Where toddler keeps its provider logins
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [30, 31]
 parent: 6
 status: open

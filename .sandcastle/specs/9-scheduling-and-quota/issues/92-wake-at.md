@@ -1,6 +1,6 @@
 ---
 title: "Sleeping until the next reset: what wakeAt returns"
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [91]
 parent: 9
 status: closed

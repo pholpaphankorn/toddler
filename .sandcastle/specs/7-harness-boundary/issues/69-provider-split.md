@@ -1,6 +1,6 @@
 ---
 title: How work is split across providers by quota left
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [62]
 parent: 7
 status: closed

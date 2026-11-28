@@ -1,6 +1,6 @@
 ---
 title: The shape of a quota reading
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [18]
 parent: 4
 assignee: claude (with user)

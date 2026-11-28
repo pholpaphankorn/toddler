@@ -1,6 +1,6 @@
 ---
 title: What sandcastle offers for trackers and forges
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 3
 status: closed

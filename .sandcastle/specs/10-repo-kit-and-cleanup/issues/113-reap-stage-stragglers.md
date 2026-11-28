@@ -1,6 +1,6 @@
 ---
 title: How toddler reaps a stage's leftover processes
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [111]
 parent: 10
 status: closed

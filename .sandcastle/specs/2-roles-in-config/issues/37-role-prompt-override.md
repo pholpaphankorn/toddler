@@ -1,6 +1,6 @@
 ---
 title: Role prompt override
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [36]
 parent: 2
 assignee: phol (with claude)

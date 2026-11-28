@@ -1,6 +1,6 @@
 ---
 title: What Sandcastle already does that toddler duplicates
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 7
 status: closed

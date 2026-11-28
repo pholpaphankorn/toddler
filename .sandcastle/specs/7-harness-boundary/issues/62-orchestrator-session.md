@@ -1,6 +1,6 @@
 ---
 title: One orchestrator session per batch or one session per issue
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [58, 59, 61]
 parent: 7
 status: closed

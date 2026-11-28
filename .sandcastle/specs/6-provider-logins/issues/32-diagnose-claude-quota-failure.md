@@ -1,6 +1,6 @@
 ---
 title: Why Claude quota reads fail after the first issue
-labels: [wayfinder:task, on-hold]
+labels: [wayfinder:task, adult]
 blocked_by: []
 parent: 6
 status: open
