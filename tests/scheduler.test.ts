@@ -366,3 +366,44 @@ test("a per-model stop gives none for one role while another stage can start", a
   assert.equal(s.pick("review", issue(1), { implementer: "codex" }), undefined);
   assert.ok(s.pick("implementation", issue(2)));
 });
+
+test("wakeAt is the earliest stopped reset plus a minute, capped at 30 minutes; none with no stops", async () => {
+  const T = Date.now();
+  const at = (seconds: number) => Math.floor(T / 1000) + seconds;
+  const stopped = (resetsAt: number) => reading({ fiveHour: 0, resetsAt });
+  const make = async (queues: Parameters<typeof scripted>[0]) => {
+    const { scheduler: s } = await scheduler({}, queues);
+    s.clock = { now: () => T, wait: async () => {} };
+    return s;
+  };
+  const near = await make({
+    claude: [stopped(at(600))],
+    codex: [stopped(at(1200))],
+  });
+  assert.equal(near.wakeAt(), at(600) * 1000 + 60_000);
+  assert.match(
+    near.wakePlan()!.detail,
+    /^sleeping until \d\d:\d\d \(codex: reset \d\d:\d\d; claude: reset /,
+  );
+  const far = await make({
+    claude: [stopped(at(7200))],
+    codex: [stopped(at(9000))],
+  });
+  assert.equal(far.wakeAt(), T + 30 * 60_000);
+  const failed = await make({
+    claude: [new Error("down")],
+    codex: [stopped(at(7200))],
+  });
+  assert.equal(failed.wakeAt(), T + 30 * 60_000);
+  assert.match(
+    failed.wakePlan()!.detail,
+    /claude: usage could not be verified, recheck/,
+  );
+  // A failed read must not borrow the old reading's reset.
+  const mixed = await make({
+    claude: [new Error("down")],
+    codex: [stopped(at(300))],
+  });
+  assert.equal(mixed.wakeAt(), at(300) * 1000 + 60_000);
+  assert.equal((await make({})).wakeAt(), undefined);
+});

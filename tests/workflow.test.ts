@@ -212,7 +212,10 @@ test("a job with no reviewer waits and frees its slot, then resumes when a revie
     };
   };
   const run = summary(() => runner.run("main"));
-  await until(() => stages.includes("2-implementation") && !!gate);
+  await until(
+    () =>
+      stages.includes("2-implementation") && !!gate && !runner.working.has(1),
+  );
   // Issue 1 is waiting at review: not running, not needing attention.
   assert.equal(state.jobs[1].status, "review");
   assert.equal(state.jobs[1].attention, undefined);
@@ -254,8 +257,8 @@ test("with nothing able to start, the run sleeps until wakeAt through the inject
   runner.tracker.issues = async () => [issue(1)];
   quotas.available = () => false;
   const waits: number[] = [];
-  runner.scheduler.wakeAt = () =>
-    waits.length ? undefined : Date.now() + 60_000;
+  runner.scheduler.wakePlan = () =>
+    waits.length ? undefined : { at: Date.now() + 60_000, detail: "test" };
   runner.clock.wait = async (ms) => {
     waits.push(ms);
     quotas.available = () => true;
@@ -265,6 +268,87 @@ test("with nothing able to start, the run sleeps until wakeAt through the inject
   assert.ok(waits[0] > 0 && waits[0] <= 60_000);
   assert.equal(state.jobs[1].pr, "https://github.com/example/repo/pull/1");
   assert.ok(lines.includes("Stopped: no available issues."));
+});
+
+// Both providers read as stopped (resetting 10 minutes out) until `stoppedFor` waits have happened.
+function sleepingRun(stoppedFor: number, onWait?: (runner: Runner) => void) {
+  const { runner, state } = fixture();
+  runner.tracker.issues = async () => [issue(1)];
+  let now = Math.floor(Date.now() / 1000) * 1000;
+  const waits: number[] = [];
+  runner.scheduler.clock = {
+    now: () => now,
+    wait: async (ms) => {
+      waits.push(ms);
+      now += ms;
+      onWait?.(runner);
+    },
+  };
+  runner.scheduler.quotas = new Quotas(config, async () => ({
+    ...usage(waits.length < stoppedFor ? 0 : 50),
+    fiveHour: {
+      remainingPercent: waits.length < stoppedFor ? 0 : 50,
+      resetsAt: Math.floor(now / 1000) + 600,
+    },
+  }));
+  return { runner, state, waits };
+}
+
+test("every provider stopped: the run sleeps until the reset plus a minute, wakes and carries on", async () => {
+  const { runner, state, waits } = sleepingRun(1);
+  const { lines, exitCode } = await summary(() => runner.run("main"));
+  assert.deepEqual(waits, [660_000]);
+  assert.equal(state.jobs[1].status, "approved");
+  assert.equal(exitCode, undefined);
+  assert.equal(lines.filter((l) => l === "[run] woke").length, 1);
+  assert.equal(
+    lines.filter((l) =>
+      /^\[run\] sleeping until \d\d:\d\d \(codex: reset \d\d:\d\d; claude: reset \d\d:\d\d\)$/.test(
+        l,
+      ),
+    ).length,
+    1,
+  );
+  assert.ok(lines.includes("Slept: 11 min in total"));
+  assert.ok(lines.includes("Stopped: no available issues."));
+});
+
+test("still stopped on wake: logged once and the run sleeps again", async () => {
+  const { runner, state, waits } = sleepingRun(2);
+  const { lines, exitCode } = await summary(() => runner.run("main"));
+  assert.deepEqual(waits, [660_000, 660_000]);
+  assert.equal(state.jobs[1].status, "approved");
+  assert.equal(exitCode, undefined);
+  assert.equal(lines.filter((l) => l === "[run] woke").length, 2);
+  assert.equal(
+    lines.filter((l) => l.startsWith("[run] still stopped, sleeping until"))
+      .length,
+    1,
+  );
+  assert.ok(lines.includes("Slept: 22 min in total"));
+});
+
+test("no work left with one provider stopped: the run ends instead of sleeping", async () => {
+  const { runner } = fixture();
+  runner.tracker.issues = async () => [];
+  runner.scheduler.quotas = new Quotas(config, async (provider) =>
+    usage(provider === "claude" ? 0 : 50),
+  );
+  const waits: number[] = [];
+  runner.scheduler.clock.wait = async (ms) => void waits.push(ms);
+  const { lines } = await summary(() => runner.run("main"));
+  assert.deepEqual(waits, []);
+  assert.ok(lines.includes("Stopped: no available issues."));
+});
+
+test("an interrupt during a sleep ends the run at once and the summary says so", async () => {
+  const { runner, state, waits } = sleepingRun(99, (r) => {
+    r.interrupted = true;
+  });
+  const { lines } = await summary(() => runner.run("main"));
+  assert.equal(waits.length, 1);
+  assert.equal(state.jobs[1], undefined);
+  assert.ok(lines.includes("Stopped: run interrupted while sleeping."));
 });
 
 test("after a host fault, a slot that approves later is not delivered", async () => {
@@ -1185,6 +1269,10 @@ function fixture(
     available: (_name: Provider) => true,
     refresh: async () => {},
     stop: () => {},
+    disabled: new Map(),
+    disabledModels: new Map(),
+    unverified: new Set(),
+    permanent: new Set(),
     values: new Map(providers.map((provider) => [provider, usage(50)])),
   };
   const runner = new Runner({
@@ -2969,8 +3057,12 @@ test("each round refreshes the base", async () => {
   await offline.runner.run("main");
   assert.deepEqual(offline.events, [["base", "main"]]);
 });
-test("run ends when every configured model is stopped by scoped weekly readings", async () => {
+test("every configured model stopped by scoped weekly readings: nothing starts and the run sleeps", async () => {
   const { runner, events } = fixture();
+  // Interrupt at the first sleep so the run ends.
+  runner.scheduler.clock.wait = async () => {
+    runner.interrupted = true;
+  };
   const scopedConfig = {
     ...config,
     roles: {

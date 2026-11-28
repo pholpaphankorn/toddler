@@ -174,6 +174,8 @@ export class Runner {
   }
   landedThisRun = new Set<number>();
   stageLogs = new Map<number, string>();
+  // Set by fill() when a ready issue or waiting job got no provider; only then is a sleep worth it.
+  heldByQuota = false;
   // Aborted on interrupt, so waits end at once.
   stopping = new AbortController();
   get interrupted(): boolean {
@@ -817,6 +819,7 @@ export class Runner {
   ): Promise<void> {
     const base = await this.forge.base(baseBranch);
     await this.scheduler.refresh();
+    this.heldByQuota = false;
     const land = (issue: Issue) =>
       track(this.landing.land(issue).then(() => {}));
     // Merge fixes, then waiting jobs, then fresh issues (a stable sort keeps the rest in order).
@@ -847,7 +850,10 @@ export class Runner {
         issue,
         job,
       );
-      if (!reservation) continue;
+      if (!reservation) {
+        this.heldByQuota = true;
+        continue;
+      }
       const provider = reservation.provider;
       this.working.set(issue.number, { issue, provider });
       track(
@@ -867,6 +873,7 @@ export class Runner {
   }
   async run(baseBranch: string): Promise<void> {
     let stop = "Stopped: run interrupted.";
+    let slept = 0;
     this.started = new Date().toISOString();
     let failure: { error: unknown } | undefined;
     const inflight = new Set<Promise<void>>();
@@ -886,17 +893,25 @@ export class Runner {
         if (failure) throw failure.error;
         if (!this.working.size && !this.landing.jobs.size) {
           if (this.interrupted) return;
-          const wake = this.scheduler.wakeAt();
-          if (wake === undefined) {
+          const plan = this.heldByQuota ? this.scheduler.wakePlan() : undefined;
+          if (!plan) {
             stop = this.scheduler.anyAvailable()
               ? "Stopped: no available issues."
               : "Stopped: no provider has verified quota above its stop thresholds.";
             return;
           }
+          console.log(`[run] ${slept ? "still stopped, " : ""}${plan.detail}`);
+          const from = this.clock.now();
           await this.clock.wait(
-            Math.max(0, wake - this.clock.now()),
+            Math.max(0, plan.at - from),
             this.stopping.signal,
           );
+          slept += this.clock.now() - from;
+          console.log("[run] woke");
+          if (this.interrupted) {
+            stop = "Stopped: run interrupted while sleeping.";
+            return;
+          }
           continue;
         }
         await Promise.race(inflight);
@@ -912,6 +927,8 @@ export class Runner {
       throw error;
     } finally {
       console.log(stop);
+      if (slept)
+        console.log(`Slept: ${Math.round(slept / 60_000)} min in total`);
       const jobs = Object.values(this.state.jobs);
       console.log(
         `Landed this run: ${[...this.landedThisRun].map((n) => `#${n}`).join(", ") || "none"}`,

@@ -3,7 +3,7 @@ title: Sleep until the next reset
 labels: []
 blocked_by: [102]
 parent: 9
-status: open
+status: closed
 ---
 When every provider is stopped the run sleeps until quota should be back instead of ending, then carries on by itself.
 
