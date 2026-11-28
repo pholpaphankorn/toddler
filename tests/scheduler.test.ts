@@ -244,3 +244,19 @@ test("an interrupt starts nothing new and is not a quota stop", async () => {
   await quotas.refresh();
   assert.equal(s.pick("implementation", issue(1)), undefined);
 });
+
+test("a failed read does not mask a following quota stop", async () => {
+  const { scheduler: s, quotas } = await scheduler(
+    {},
+    {
+      codex: [reading(), new Error("down"), reading({ fiveHour: 1 })],
+    },
+  );
+  const held = s.pick("implementation", issue(1))!;
+  assert.equal(held.provider, "codex");
+  await quotas.refresh();
+  assert.equal(held.signal.aborted, false);
+  await quotas.refresh();
+  assert.equal(held.signal.aborted, true);
+  assert.match(quotas.disabled.get("codex")!, /fiveHour remaining/);
+});

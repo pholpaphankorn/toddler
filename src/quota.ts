@@ -352,6 +352,8 @@ export class Quotas {
   disabledModels = new Map<Provider, Map<string, string>>();
   // Providers stopped for good (no login); never re-read or lifted.
   permanent = new Set<Provider>();
+  // Providers whose current provider-wide stop is a failed read; a good read replaces it.
+  unverified = new Set<Provider>();
   // Run-level interrupt: starts nothing new, outside the stop map, never lifts.
   interrupted = false;
   // Told of every stop; the scheduler aborts the reservations it covers.
@@ -410,6 +412,7 @@ export class Quotas {
           usage = validateUsage(await this.read(provider, this.config));
         } catch (error) {
           // Lifts on the next good read; live sessions carry on.
+          if (!this.disabled.has(provider)) this.unverified.add(provider);
           this.disable(
             provider,
             `subscription usage could not be verified: ${error instanceof Error ? error.message : error} (run doctor for details)`,
@@ -429,10 +432,16 @@ export class Quotas {
           for (const stop of condition(input))
             if (!stops.has(stop.model)) stops.set(stop.model, stop.reason);
         const wide = this.disabled.get(provider);
-        if (wide !== undefined && !stops.has(undefined)) {
+        // A failed-read stop is replaced by whatever the checks say now, so a real stop fires onStop.
+        if (
+          wide !== undefined &&
+          (!stops.has(undefined) || this.unverified.has(provider))
+        ) {
           this.disabled.delete(provider);
-          console.log(`[quota] ${provider} stop lifted (was: ${wide})`);
+          if (!stops.has(undefined))
+            console.log(`[quota] ${provider} stop lifted (was: ${wide})`);
         }
+        this.unverified.delete(provider);
         const models = this.disabledModels.get(provider);
         for (const [model, was] of models ?? [])
           if (!stops.has(model)) {
