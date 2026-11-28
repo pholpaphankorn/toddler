@@ -75,8 +75,10 @@ export function labels(issue: Issue): string[] {
   return issue.labels;
 }
 export function ready(issue: Issue, config: Defaults): boolean {
-  return !labels(issue).some((label) =>
-    config.blockedLabels.includes(label.toLowerCase()),
+  return !labels(issue).some(
+    (label) =>
+      config.blockedLabels.includes(label.toLowerCase()) ||
+      label.toLowerCase() === config.adultLabel.toLowerCase(),
   );
 }
 export function reviewReport(text: string): ReviewReport {

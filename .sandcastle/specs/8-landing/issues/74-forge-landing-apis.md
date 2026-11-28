@@ -1,6 +1,6 @@
 ---
 title: What GitHub and GitLab expose for mergeability, CI logs and auto-merge
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 8
 status: closed

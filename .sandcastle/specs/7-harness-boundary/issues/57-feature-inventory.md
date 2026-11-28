@@ -1,6 +1,6 @@
 ---
 title: Inventory of toddler's features
-labels: [wayfinder:task, on-hold]
+labels: [wayfinder:task, adult]
 blocked_by: []
 parent: 7
 status: closed

@@ -1,6 +1,6 @@
 ---
 title: pick and the new ranker contract
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 9
 status: closed

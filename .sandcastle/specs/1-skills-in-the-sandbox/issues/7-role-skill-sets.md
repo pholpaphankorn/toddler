@@ -1,6 +1,6 @@
 ---
 title: Per-role skill sets
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [5]
 parent: 1
 assignee: phol (with claude)

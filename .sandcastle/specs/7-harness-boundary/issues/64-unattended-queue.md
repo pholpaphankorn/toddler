@@ -1,6 +1,6 @@
 ---
 title: "Unattended runs from a queue: keep, delegate, or drop"
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 7
 status: closed

@@ -1,6 +1,6 @@
 ---
 title: GitHub facts for specs on a GitHub tracker
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 3
 status: closed

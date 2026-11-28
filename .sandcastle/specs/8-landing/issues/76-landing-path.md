@@ -1,6 +1,6 @@
 ---
 title: "The one landing path: host merge, verify, exact push"
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 8
 status: closed

@@ -1,6 +1,6 @@
 ---
 title: Tracker and forge interface
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [41, 44, 45, 46]
 parent: 3
 assignee: phol (with claude)

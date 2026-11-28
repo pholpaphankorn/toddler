@@ -1,9 +1,9 @@
 ---
 title: Harness boundary
-labels: [wayfinder:map, on-hold]
+labels: [wayfinder:map, adult]
 status: closed
 ---
-<!-- Wayfinder map. Tickets are files in issues/ with `parent: 7`. All carry `on-hold` so `toddler` never tries to implement them. -->
+<!-- Wayfinder map. Tickets are files in issues/ with `parent: 7`. All carry `adult` so `toddler` never tries to implement them. -->
 
 ## Destination
 

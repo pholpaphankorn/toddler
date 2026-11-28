@@ -1,6 +1,6 @@
 ---
 title: Check the kit's gh and glab commands against real forges
-labels: [on-hold]
+labels: [adult]
 blocked_by: [120]
 parent: 10
 status: open

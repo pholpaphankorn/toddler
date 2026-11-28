@@ -1,6 +1,6 @@
 ---
 title: Issue-tracker setup for code-review in the sandbox
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 1
 assignee: phol (with claude)

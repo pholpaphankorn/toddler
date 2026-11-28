@@ -1,6 +1,6 @@
 ---
 title: doctor row for spec children missing issueLabel
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 10
 status: closed

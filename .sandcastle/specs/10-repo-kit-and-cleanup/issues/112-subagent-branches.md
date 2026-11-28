@@ -1,6 +1,6 @@
 ---
 title: Do subagents inside one issue need their own branches?
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 10
 status: closed

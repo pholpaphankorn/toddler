@@ -1,6 +1,6 @@
 ---
 title: GitLab facts for tracker and forge parity
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 3
 status: closed

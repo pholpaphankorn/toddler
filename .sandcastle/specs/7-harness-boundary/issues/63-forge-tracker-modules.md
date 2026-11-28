@@ -1,6 +1,6 @@
 ---
 title: Forge and tracker modules: keep, slim, or delegate
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [60, 61, 68]
 parent: 7
 status: closed

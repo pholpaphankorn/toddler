@@ -1,6 +1,6 @@
 ---
 title: Which scheduling choices the ranking drives
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [20]
 parent: 4
 assignee: claude (with user)
