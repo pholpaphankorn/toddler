@@ -16,6 +16,8 @@ export interface Reading {
   fiveHour: Window | null;
   weekly: Window | null;
   weeklyByModel: Record<string, Window>;
+  // The provider's own yes/no on ordinary usage; null when it gives none.
+  allowed: boolean | null;
 }
 interface CodexWindow {
   usedPercent: number;
@@ -29,6 +31,7 @@ interface CodexBucket {
   secondary?: CodexWindow | null;
 }
 export interface CodexRateLimits {
+  ordinaryUsageAllowed?: boolean | null;
   rateLimits?: CodexBucket;
   rateLimitsByLimitId?: Record<string, CodexBucket>;
 }
@@ -130,6 +133,13 @@ export function thresholdCondition(stopAt: Defaults["stopAt"]): StopCondition {
   };
 }
 
+export function allowedCondition(): StopCondition {
+  return ({ provider, reading }) =>
+    provider === "codex" && reading.allowed === false
+      ? [{ reason: "provider reports ordinary usage not allowed" }]
+      : [];
+}
+
 export function validateUsage(value: Reading, now = Date.now()): Reading {
   if (
     !value ||
@@ -164,6 +174,7 @@ export function validateUsage(value: Reading, now = Date.now()): Reading {
   };
   return {
     observedAt: value.observedAt,
+    allowed: typeof value.allowed === "boolean" ? value.allowed : null,
     fiveHour: window(value.fiveHour),
     weekly: window(value.weekly),
     weeklyByModel: Object.fromEntries(
@@ -226,6 +237,10 @@ export function codexUsage(result: CodexRateLimits, now = Date.now()): Reading {
   return validateUsage(
     {
       observedAt: now,
+      allowed:
+        typeof result.ordinaryUsageAllowed === "boolean"
+          ? result.ordinaryUsageAllowed
+          : null,
       fiveHour: find(bucket, 300),
       weekly: find(bucket, 10080),
       weeklyByModel,
@@ -262,7 +277,7 @@ export function claudeUsage(result: ClaudeUsage, now = Date.now()): Reading {
   }
   if (!weekly) throw new Error("Claude did not return weekly usage");
   return validateUsage(
-    { observedAt: now, fiveHour, weekly, weeklyByModel },
+    { observedAt: now, allowed: null, fiveHour, weekly, weeklyByModel },
     now,
   );
 }
@@ -372,7 +387,11 @@ export class Quotas {
   ) {
     this.config = config;
     this.read = read;
-    this.conditions = [thresholdCondition(config.stopAt), ...conditions];
+    this.conditions = [
+      allowedCondition(),
+      thresholdCondition(config.stopAt),
+      ...conditions,
+    ];
   }
   available(provider: Provider, model?: string): boolean {
     return (

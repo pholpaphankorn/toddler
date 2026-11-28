@@ -857,6 +857,7 @@ const usage = (remainingPercent: number): Reading => ({
   weekly: null,
   weeklyByModel: {},
   observedAt: Date.now(),
+  allowed: null,
 });
 const issue = (number: number, labels: string[] = []) => ({
   number,
@@ -1002,6 +1003,23 @@ test("Codex identifies windows and per-model weekly buckets", () => {
     null,
   );
   assert.throws(() => codexUsage({}, now));
+});
+test("codexUsage reads ordinaryUsageAllowed; missing and Claude give null", () => {
+  const bucket = {
+    codex: {
+      primary: { windowDurationMins: 300, usedPercent: 1, resetsAt: null },
+    },
+  };
+  const read = (extra: object) =>
+    codexUsage({ rateLimitsByLimitId: bucket, ...extra }, now).allowed;
+  assert.equal(read({ ordinaryUsageAllowed: true }), true);
+  assert.equal(read({ ordinaryUsageAllowed: false }), false);
+  assert.equal(read({ ordinaryUsageAllowed: null }), null);
+  assert.equal(read({}), null);
+  assert.equal(
+    claudeUsage({ limits: [{ kind: "weekly_all", percent: 5 }] }, now).allowed,
+    null,
+  );
 });
 test("quota validation rejects stale and invalid data and resets past windows", () => {
   assert.throws(() =>

@@ -257,7 +257,7 @@ export default ({ provider, reading, models }) =>
     : [];
 ```
 
-Each default export receives the provider, its valid quota reading, and the distinct models its roles use. Return an array of stops: omit `model` to stop the provider, or name a model from `models` to stop only that model. The built-in thresholds run first, followed by project conditions in config order on every refresh. The first reason for each stop is kept. Invalid results or errors are fatal and identify the module; `toddler doctor` checks that modules load.
+Each default export receives the provider, its valid quota reading, and the distinct models its roles use. Return an array of stops: omit `model` to stop the provider, or name a model from `models` to stop only that model. The built-in conditions (Codex reporting ordinary usage not allowed, then the thresholds) run first, followed by project conditions in config order on every refresh. The first reason for each stop is kept. Invalid results or errors count as a failed read for that provider and name the module; `toddler doctor` checks that modules load.
 
 Codex usage is read through the documented `account/rateLimits/read` app-server API,
 selecting five-hour and weekly windows in the `codex` bucket. Claude's usage
@@ -279,7 +279,7 @@ must fetch current subscription usage and print only JSON:
 }
 ```
 
-`resetsAt` is Unix **seconds** or null; `observedAt` is the actual measurement time in Unix **milliseconds**, at most 60 seconds old. Use null for an absent five-hour or weekly window and an empty object for no per-model buckets. Percentages must be finite and between 0 and 100. The example illustrates the shape, not usable quota data. Never use a static percentage to bypass the stop thresholds. Alternatively,
+`resetsAt` is Unix **seconds** or null; `observedAt` is the actual measurement time in Unix **milliseconds**, at most 60 seconds old. Use null for an absent five-hour or weekly window and an empty object for no per-model buckets. Percentages must be finite and between 0 and 100. An optional `allowed` (boolean or null, Codex's `ordinaryUsageAllowed`) stops the provider when `false`; missing means null. The example illustrates the shape, not usable quota data. Never use a static percentage to bypass the stop thresholds. Alternatively,
 `CLAUDE_USAGE_TOKEN_COMMAND` can return a profile-scoped OAuth token for the default
 Claude usage reader; model calls continue to use the native Claude login.
 

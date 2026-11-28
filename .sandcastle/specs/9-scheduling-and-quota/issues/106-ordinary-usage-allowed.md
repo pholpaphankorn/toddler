@@ -3,7 +3,7 @@ title: Codex ordinaryUsageAllowed as a built-in stop
 labels: [parallel-safe]
 blocked_by: [102, 104]
 parent: 9
-status: open
+status: closed
 ---
 When Codex's backend says ordinary usage is not allowed, toddler stops Codex even if the percentages still show quota left, so it never loops on refusals or spends paid credits.
 
