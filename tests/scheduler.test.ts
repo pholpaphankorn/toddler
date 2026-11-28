@@ -106,12 +106,13 @@ test("picks follow quota: single provider, fallback, none, and review pairing", 
   );
   const { scheduler: s, quotas } = await scheduler();
   const job = { implementer: "codex" as Provider };
-  assert.equal(s.pick("review", issue(1), job)!.provider, "claude");
-  quotas.disable("claude", "test");
+  // Review is the ranker's pick, so the implementer may review its own work.
   assert.equal(s.pick("review", issue(1), job)!.provider, "codex");
-  // A sticky implementer stays while it is usable, and moves for good once stopped.
+  // A sticky implementer stays while it is usable, and the ranker takes over once stopped.
   assert.equal(s.pick("implementation", issue(1), job)!.provider, "codex");
   quotas.disable("codex", "test");
+  assert.equal(s.pick("implementation", issue(1), job)!.provider, "claude");
+  quotas.disable("claude", "test");
   assert.equal(s.pick("implementation", issue(1), job), undefined);
 });
 
@@ -321,4 +322,47 @@ test("a failed read does not mask a following quota stop", async () => {
   await quotas.refresh();
   assert.equal(held.signal.aborted, true);
   assert.match(quotas.disabled.get("codex")!, /fiveHour remaining/);
+});
+
+test("sticky implementer moves at once when stopped and never moves back after the lift", async () => {
+  const { scheduler: s, quotas } = await scheduler(
+    {},
+    { codex: [reading({ fiveHour: 50 }), reading({ fiveHour: 3 }), reading()] },
+  );
+  const job: { implementer?: Provider } = { implementer: "codex" };
+  assert.equal(s.pick("implementation", issue(1), job)!.provider, "codex");
+  await quotas.refresh(); // codex stopped
+  const moved = s.pick("implementation", issue(1), job)!;
+  assert.equal(moved.provider, "claude");
+  job.implementer = moved.provider; // the stage succeeded
+  await quotas.refresh(); // codex lifted
+  assert.equal(quotas.available("codex"), true);
+  assert.equal(s.pick("implementation", issue(1), job)!.provider, "claude");
+});
+
+test("a job without an implementer yet takes the ranker's pick for any role", async () => {
+  const { scheduler: s } = await scheduler();
+  assert.equal(s.pick("review", issue(1), {})!.provider, "codex");
+});
+
+test("review is re-picked each round by the ranker, even when it picks the implementer", async () => {
+  const { scheduler: s, quotas } = await scheduler();
+  const job = { implementer: "codex" as Provider };
+  assert.equal(s.pick("review", issue(1), job)!.provider, "codex");
+  // A ranker that puts claude first moves the review off the implementer.
+  s.ranker = ({ candidates }) =>
+    [...candidates].reverse().map((c) => c.provider);
+  assert.equal(s.pick("review", issue(1), job)!.provider, "claude");
+  quotas.disableModel("claude", defaults.roles.review.models.claude, "stop");
+  assert.equal(s.pick("review", issue(1), job)!.provider, "codex");
+  quotas.disableModel("codex", defaults.roles.review.models.codex, "stop");
+  assert.equal(s.pick("review", issue(1), job), undefined);
+});
+
+test("a per-model stop gives none for one role while another stage can start", async () => {
+  const { scheduler: s, quotas } = await scheduler();
+  for (const provider of ["codex", "claude"] as const)
+    quotas.disableModel(provider, defaults.roles.review.models[provider], "x");
+  assert.equal(s.pick("review", issue(1), { implementer: "codex" }), undefined);
+  assert.ok(s.pick("implementation", issue(2)));
 });

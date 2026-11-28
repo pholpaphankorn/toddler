@@ -3,7 +3,7 @@ title: Sticky implementer, re-picked reviewer, waiting jobs
 labels: []
 blocked_by: [99]
 parent: 9
-status: open
+status: closed
 ---
 An issue keeps the provider that started building it while that provider has quota, review is re-picked every round, and a job whose role has no provider waits instead of holding a slot or failing.
 

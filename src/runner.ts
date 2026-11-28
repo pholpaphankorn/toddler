@@ -56,7 +56,8 @@ export interface Job {
     log?: string;
     at: string;
   };
-  implementer: Provider;
+  // The provider whose implementation stage last succeeded; sticky while it has quota.
+  implementer?: Provider;
   implementationSha?: string;
   verification?: string;
   feedback?: string[];
@@ -593,7 +594,6 @@ export class Runner {
   }
   async work(
     issue: Issue,
-    initialProvider: Provider,
     baseBranch: string,
     baseRef?: string,
     // The reservation fill made for the first stage; released when unused.
@@ -612,7 +612,6 @@ export class Runner {
         status: "implementation",
         reviewRounds: 0,
         mergeFixRounds: 0,
-        implementer: initialProvider,
       };
       this.state.jobs[issue.number] = job;
       this.save();
@@ -820,10 +819,12 @@ export class Runner {
     await this.scheduler.refresh();
     const land = (issue: Issue) =>
       track(this.landing.land(issue).then(() => {}));
-    // Merge fixes take free slots ahead of fresh issues (a stable sort keeps the rest in order).
+    // Merge fixes, then waiting jobs, then fresh issues (a stable sort keeps the rest in order).
     const jobs = this.state.jobs;
+    const order = (issue: Issue) =>
+      jobs[issue.number]?.mergeFix ? 0 : jobs[issue.number] ? 1 : 2;
     const issues = (await this.candidates()).sort(
-      (a, b) => +!!jobs[b.number]?.mergeFix - +!!jobs[a.number]?.mergeFix,
+      (a, b) => order(a) - order(b),
     );
     for (const issue of issues) {
       const job = this.state.jobs[issue.number];
@@ -850,7 +851,7 @@ export class Runner {
       const provider = reservation.provider;
       this.working.set(issue.number, { issue, provider });
       track(
-        this.work(issue, provider, base.branch, base.ref, reservation)
+        this.work(issue, base.branch, base.ref, reservation)
           .then(() => {
             // After an interrupt or fault, nothing new starts, landing included.
             if (
