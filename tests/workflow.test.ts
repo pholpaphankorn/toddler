@@ -695,7 +695,7 @@ test("project ranker is not called with one available candidate", async () => {
   );
 });
 
-test("doctor reports the configured ranking module", () => {
+const doctorRanking = (ranking?: string) => {
   const root = mkdtempSync(join(tmpdir(), "ranking-doctor-"));
   try {
     mkdirSync(join(root, ".sandcastle"));
@@ -706,8 +706,12 @@ test("doctor reports the configured ranking module", () => {
         forge: "none",
         providers: ["codex"],
         roles: { implementation: { skills: [] }, review: { skills: [] } },
-        ranking: "missing.js",
+        ...(ranking && { ranking }),
       }),
+    );
+    writeFileSync(
+      join(root, "ranker.mjs"),
+      "export default (i) => i.candidates.map((c) => c.provider);\n",
     );
     const git = join(root, "bin/git");
     writeFileSync(git, '#!/bin/sh\nif [ "$1" = rev-parse ]; then pwd; fi\n');
@@ -722,38 +726,27 @@ test("doctor reports the configured ranking module", () => {
         env: { PATH: join(root, "bin"), HOME: root, TMPDIR: root },
       },
     );
-    assert.equal(result.status, 1);
-    assert.match(result.stdout, /FAIL Ranking: Ranking module missing\.js/);
+    return result.stdout;
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-});
+};
 
-test("quota ranking compares weekly, five-hour, and random ties", async () => {
-  const { makeRanker } = await import("../src/policy.ts");
-  const reading = (weekly: number, fiveHour: number | null): Reading => ({
-    observedAt: Date.now(),
-    weeklyByModel: {},
-    weekly: { remainingPercent: weekly, resetsAt: null },
-    fiveHour:
-      fiveHour === null ? null : { remainingPercent: fiveHour, resetsAt: null },
-  });
-  const candidates = [
-    { provider: "codex" as const, model: "codex", reading: reading(61.2, 90) },
-    { provider: "claude" as const, model: "claude", reading: reading(62, 10) },
-  ];
-  const input = {
-    role: "implementation" as const,
-    issue: { number: 1, title: "test", labels: [] },
-    candidates,
-  };
-  const rank = makeRanker(defaults, () => 0);
-  assert.deepEqual(rank(input), ["claude", "codex"]);
-  candidates[1].reading = reading(61.8, null);
-  assert.deepEqual(rank(input), ["claude", "codex"]);
-  candidates[0].reading = reading(61.2, 100);
-  assert.deepEqual(rank(input), ["codex", "claude"]);
-  assert.deepEqual(makeRanker(defaults, () => 0.9)(input), ["claude", "codex"]);
+test("doctor's ranking row is a load check: built-in, project path, failure", () => {
+  assert.match(doctorRanking(), /OK   Ranking: balanced \(built-in\)/);
+  assert.match(
+    doctorRanking("most-quota"),
+    /OK   Ranking: most-quota \(built-in\)/,
+  );
+  assert.match(
+    doctorRanking("./ranker.mjs"),
+    /OK   Ranking: \.\/ranker\.mjs\n/,
+  );
+  assert.match(doctorRanking("quota"), /FAIL Ranking: Ranking module quota:/);
+  assert.match(
+    doctorRanking("missing.js"),
+    /FAIL Ranking: Ranking module missing\.js/,
+  );
 });
 
 // Test doubles implement only what each test exercises.
@@ -806,7 +799,6 @@ test("a single provider is the only one read", async () => {
 test("single provider reviews itself and resumed implementer remains sticky", async () => {
   const { runner, events, state } = fixture({
     providers: ["claude"],
-    ranking: "order",
     forge: "none",
   });
   await runner.work(issue(1), "claude", "main");
@@ -820,7 +812,6 @@ test("single provider reviews itself and resumed implementer remains sticky", as
     ],
   );
   const resumed = fixture({
-    ranking: "order",
     providers: ["codex", "claude"],
     forge: "none",
   });
@@ -2864,8 +2855,9 @@ test("a ranking failure while filling stops the run and releases every reservati
   const throwingRanker = await loadRanker(process.cwd(), configured);
   const { runner, state } = fixture(configured);
   // Issue 1 gets its provider; ranking then fails for issue 2 in the same fill.
+  let calls = 0;
   runner.scheduler.ranker = (input) =>
-    input.issue.number === 2
+    ++calls === 2
       ? throwingRanker(input)
       : input.candidates.map(({ provider }) => provider);
   runner.candidates = async () => [

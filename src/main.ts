@@ -17,7 +17,7 @@ import {
   type Window,
 } from "./quota.ts";
 import { Runner, loadState, saveState } from "./runner.ts";
-import { loadRanker, ready, type Issue } from "./policy.ts";
+import { builtinRankers, loadRanker, ready, type Issue } from "./policy.ts";
 import { bundledSkillsPath } from "./skills.ts";
 import { skillDoctorChecks } from "./skill-doctor.ts";
 import { connect, validatePushRemote } from "./forge.ts";
@@ -115,7 +115,9 @@ async function doctor(config: Config, root: string) {
   };
   await check("Ranking", async () => {
     await loadRanker(root, config);
-    return config.ranking;
+    return builtinRankers.includes(config.ranking)
+      ? `${config.ranking} (built-in)`
+      : config.ranking;
   });
   for (const name of config.stopConditions)
     await check(`Stop condition ${name}`, async () => {
