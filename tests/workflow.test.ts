@@ -636,6 +636,28 @@ test("the poll repeats while one stage holds the slot, also after a wait that en
   assert.ok(polls.length >= 4);
 });
 
+test("an interrupt during a stage drains the run without spinning on an aborted poll wait", async () => {
+  const { runner } = fixture();
+  runner.tracker.issues = async () => [issue(1)];
+  let waits = 0;
+  runner.scheduler.clock = {
+    now: () => Date.now(),
+    // Like realClock: an aborted signal ends the wait at once.
+    wait: async (_ms, signal) => {
+      waits++;
+      if (!runner.working.size) return;
+      await parked(signal);
+    },
+  };
+  runner.stage = async () => {
+    runner.interrupted = true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    return { sha: "reviewed", stdout: "done", verification: "" };
+  };
+  await summary(() => runner.run("main"));
+  assert.ok(waits < 10, `waits: ${waits}`);
+});
+
 test("built-in stops run before custom conditions, which still run", async () => {
   let calls = 0;
   const quotas = new Quotas(config, async () => usage(5), [
@@ -1209,9 +1231,10 @@ const alternating = () => {
 };
 // A wait that only an abort ends: the poll wait while a stage holds the slot.
 const parked = (signal?: AbortSignal) =>
-  new Promise<void>((resolve) =>
-    signal ? signal.addEventListener("abort", () => resolve()) : undefined,
-  );
+  new Promise<void>((resolve) => {
+    if (signal?.aborted) resolve();
+    else signal?.addEventListener("abort", () => resolve());
+  });
 
 function fixture(
   overrides: Partial<Config> = {},

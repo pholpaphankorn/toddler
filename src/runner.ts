@@ -908,7 +908,8 @@ export class Runner {
         const cancel = new AbortController();
         const waits: Promise<unknown>[] = [...inflight];
         // Re-armed every pass for the time left, so a wait that ends early still polls.
-        if (due !== undefined)
+        // After an interrupt only in-flight work is awaited; an aborted wait would return at once and spin.
+        if (due !== undefined && !this.interrupted)
           waits.push(
             this.clock
               .wait(
