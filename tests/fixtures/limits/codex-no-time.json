@@ -1,0 +1,17 @@
+{
+  "note": "Hand-written from source reading (spec 9 #90), not captured live.",
+  "provider": "codex",
+  "lines": [
+    {
+      "type": "error",
+      "message": "You’ve hit your usage limit. Try again later."
+    },
+    {
+      "type": "turn.failed",
+      "error": {
+        "message": "You’ve hit your usage limit. Try again later."
+      }
+    }
+  ],
+  "expect": {}
+}

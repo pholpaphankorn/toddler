@@ -482,3 +482,75 @@ test("a throwing stop module is a failed read naming the module, lifted by the n
   await s.poll();
   assert.equal(quotas.available("codex"), true);
 });
+
+test("a provider-limit stop holds until its reset (30 min with none), feeds wakeAt, then follows the normal rule", async () => {
+  const { scheduler: s, quotas } = await scheduler();
+  const clock = testClock();
+  s.clock = clock;
+  const T = clock.now();
+  const model = defaults.roles.implementation.models.claude;
+  s.limitStop("claude", model, { type: "five_hour", resetsAt: T + 600_000 });
+  assert.equal(quotas.available("claude", model), false);
+  // The fresh reading shows plenty of quota, yet the hold stays.
+  await s.refresh();
+  assert.equal(quotas.available("claude", model), false);
+  assert.equal(s.wakeAt(), T + 600_000 + 60_000);
+  await clock.wait(600_001);
+  await s.refresh();
+  assert.equal(quotas.available("claude", model), true);
+  assert.equal(s.wakeAt(), undefined);
+  // No reset given: 30 minutes.
+  s.limitStop("codex", defaults.roles.implementation.models.codex, {});
+  assert.equal(s.wakeAt(), clock.now() + 30 * 60_000);
+  await clock.wait(29 * 60_000);
+  await s.refresh();
+  assert.equal(quotas.available("codex"), false);
+  await clock.wait(60_001);
+  await s.refresh();
+  assert.equal(quotas.available("codex"), true);
+});
+
+test("a provider-limit stop cancels only same-key sessions; a Claude per-model bucket stops that model", async () => {
+  const { scheduler: s, quotas } = await scheduler({
+    roles: {
+      ...defaults.roles,
+      review: {
+        ...defaults.roles.review,
+        models: { ...defaults.roles.review.models, claude: "claude-sonnet-x" },
+      },
+      implementation: {
+        ...defaults.roles.implementation,
+        models: {
+          ...defaults.roles.implementation.models,
+          claude: "claude-opus-x",
+        },
+      },
+    },
+  });
+  const opus = s.reserve("claude", "claude-opus-x");
+  const sonnet = s.reserve("claude", "claude-sonnet-x");
+  const codex = s.reserve("codex", "gpt");
+  s.limitStop("claude", "claude-opus-x", { type: "seven_day_opus" });
+  assert.equal(opus.signal.aborted, true);
+  assert.equal(sonnet.signal.aborted, false);
+  assert.equal(codex.signal.aborted, false);
+  assert.equal(quotas.available("claude", "claude-sonnet-x"), true);
+  assert.equal(quotas.available("claude", "claude-opus-x"), false);
+  s.limitStop("claude", "claude-sonnet-x", { type: "five_hour" });
+  assert.equal(sonnet.signal.aborted, true);
+  assert.equal(codex.signal.aborted, false);
+});
+
+test("an ambiguous failure is a quota stop only when a fresh reading stops the provider", async () => {
+  const quotas = new Quotas(
+    defaults,
+    scripted({ codex: [reading(), reading({ fiveHour: 2 })] }),
+  );
+  await quotas.refresh();
+  const s = new Scheduler({ config: defaults, quotas });
+  assert.equal(quotas.available("codex"), true);
+  await s.refresh();
+  assert.equal(quotas.available("codex"), false);
+  await s.refresh();
+  assert.equal(quotas.available("claude"), true);
+});

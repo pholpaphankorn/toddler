@@ -1,0 +1,47 @@
+{
+  "note": "Hand-written from source reading (spec 9 #90), not captured live.",
+  "provider": "claude",
+  "lines": [
+    {
+      "type": "system",
+      "subtype": "init",
+      "session_id": "s"
+    },
+    {
+      "type": "assistant",
+      "parent_tool_use_id": null,
+      "error": "rate_limit",
+      "is_api_error_message": true,
+      "api_error_status": 429,
+      "api_error": "usage_limit_reached",
+      "api_error_params": {
+        "rate_limit_info": {
+          "status": "rejected",
+          "rateLimitType": "seven_day_opus",
+          "resetsAt": 1893456000,
+          "isUsingOverage": false
+        }
+      },
+      "message": {
+        "content": [
+          {
+            "type": "text",
+            "text": "You've hit your Opus limit · resets Jan 1, 12am"
+          }
+        ]
+      }
+    },
+    {
+      "type": "result",
+      "subtype": "success",
+      "is_error": true,
+      "api_error_status": 429,
+      "api_error": "usage_limit_reached",
+      "result": "You've hit your Opus limit · resets Jan 1, 12am"
+    }
+  ],
+  "expect": {
+    "type": "seven_day_opus",
+    "resetsAt": 1893456000000
+  }
+}

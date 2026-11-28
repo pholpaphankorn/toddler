@@ -1,0 +1,24 @@
+{
+  "note": "Hand-written from source reading (spec 9 #90), not captured live.",
+  "provider": "codex",
+  "lines": [
+    {
+      "type": "thread.started",
+      "thread_id": "t"
+    },
+    {
+      "type": "error",
+      "message": "You’ve hit your usage limit. Upgrade to Pro or try again at 3:04 PM."
+    },
+    {
+      "type": "turn.failed",
+      "error": {
+        "message": "You’ve hit your usage limit. Upgrade to Pro or try again at 3:04 PM."
+      }
+    }
+  ],
+  "expect": {
+    "resetsLocal": [2026, 11, 26, 15, 4]
+  },
+  "now": [2026, 11, 26, 10, 0]
+}
