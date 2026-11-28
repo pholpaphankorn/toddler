@@ -58,10 +58,22 @@ async function init(root: string) {
   }
   let repository: string | undefined;
   let forge = "none";
+  // Name the push remote: with no argument gh prefers an `upstream` remote, so a fork got its parent.
+  let pushUrl: string[] = [];
+  try {
+    pushUrl = [
+      await command("git", ["remote", "get-url", defaults.remote], {
+        cwd: root,
+      }),
+    ];
+  } catch {
+    /* No such remote: let the CLI pick. */
+  }
   try {
     repository = await command("gh", [
       "repo",
       "view",
+      ...pushUrl,
       "--json",
       "nameWithOwner",
       "--jq",
@@ -76,6 +88,7 @@ async function init(root: string) {
       repository = await command("glab", [
         "repo",
         "view",
+        ...pushUrl,
         "--output",
         "json",
         "--jq",
