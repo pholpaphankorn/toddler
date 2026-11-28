@@ -164,7 +164,8 @@ function kitFiles(config: Config, read: (path: string) => string | null) {
       "CLAUDE.md",
       agents !== null &&
         /^@AGENTS\.md$/m.test(claude) &&
-        !claude.includes(start)
+        !claude.includes(start) &&
+        !claude.includes(end)
         ? claude
         : spliceBlock("CLAUDE.md", claude),
     );
