@@ -11,7 +11,7 @@ import { modelMatches, type Quotas, type StopCondition } from "./quota.ts";
 
 const SLACK_MS = 60_000;
 const RECHECK_MS = 30 * 60_000;
-const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
+export const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
 
 // Time as the run loop sees it; tests swap it for one that moves only when waited on.
 export interface Clock {

@@ -17,8 +17,9 @@ import {
   type Window,
 } from "./quota.ts";
 import { Runner, loadState, saveState } from "./runner.ts";
-import { builtinRankers, loadRanker, ready, type Issue } from "./policy.ts";
+import { builtinRankers, loadRanker } from "./policy.ts";
 import { bundledSkillsPath } from "./skills.ts";
+import { planJson, planPass, planText } from "./plan.ts";
 import { skillDoctorChecks } from "./skill-doctor.ts";
 import { connect, validatePushRemote } from "./forge.ts";
 import { smokeForge } from "./smoke-forge.ts";
@@ -229,38 +230,15 @@ async function main() {
   });
   if (mode === "plan") {
     await quotas.refresh();
-    const issues = await runner.candidates();
-    // What the first fill would start: admitted issues with a provider reserved for each.
-    const started: Issue[] = [];
-    const next = issues.flatMap((issue) => {
-      if (!ready(issue, config) || !runner.scheduler.admit(issue, started))
-        return [];
-      const reservation = runner.scheduler.pick("implementation", issue);
-      if (!reservation) return [];
-      started.push(issue);
-      return [{ issue, provider: reservation.provider }];
-    });
+    const pass = planPass(
+      runner.scheduler,
+      await runner.candidates(),
+      state.jobs,
+    );
     console.log(
-      JSON.stringify(
-        {
-          quotas: Object.fromEntries(quotas.values),
-          unavailable: Object.fromEntries(quotas.disabled),
-          unavailableModels: Object.fromEntries(
-            [...quotas.disabledModels].map(([provider, models]) => [
-              provider,
-              Object.fromEntries(models),
-            ]),
-          ),
-          next: next.map(({ issue, provider }) => ({
-            issue: issue.number,
-            title: issue.title,
-            provider,
-            implementation: config.roles.implementation.models[provider],
-          })),
-        },
-        null,
-        2,
-      ),
+      process.argv.includes("--json")
+        ? JSON.stringify(planJson(runner.scheduler, pass), null, 2)
+        : planText(runner.scheduler, pass),
     );
     return;
   }
