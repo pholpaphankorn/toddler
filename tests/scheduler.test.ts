@@ -15,13 +15,16 @@ const reading = ({
   weekly = 50,
   resetsAt = Math.floor(Date.now() / 1000) + 1000,
   models = {},
+  allowed = null,
 }: {
+  allowed?: boolean | null;
   fiveHour?: number;
   weekly?: number;
   resetsAt?: number;
   models?: Record<string, number>;
 } = {}): Reading => ({
   observedAt: Date.now(),
+  allowed,
   fiveHour: { remainingPercent: fiveHour, resetsAt },
   weekly: { remainingPercent: weekly, resetsAt },
   weeklyByModel: Object.fromEntries(
@@ -252,6 +255,37 @@ test("a stop lifts on a reading above threshold", async () => {
     { codex: [reading({ fiveHour: 3 }), reading({ fiveHour: 50 })] },
   );
   assert.equal(quotas.available("codex"), false);
+  await quotas.refresh();
+  assert.equal(quotas.available("codex"), true);
+});
+
+test("allowed: false stops Codex only; true and null lift it; a poll finding false aborts Codex signals", async () => {
+  const { scheduler: s, quotas } = await scheduler(
+    {},
+    {
+      codex: [
+        reading({ allowed: false }),
+        reading({ allowed: true }),
+        reading({ allowed: false }),
+        reading({ allowed: null }),
+      ],
+      claude: [reading({ allowed: false })],
+    },
+  );
+  assert.equal(quotas.available("codex"), false);
+  assert.equal(
+    quotas.disabled.get("codex"),
+    "provider reports ordinary usage not allowed",
+  );
+  assert.equal(quotas.available("claude"), true);
+  await quotas.refresh();
+  assert.equal(quotas.available("codex"), true);
+  const codex = s.reserve("codex", "m");
+  const claude = s.reserve("claude", "m");
+  await quotas.refresh();
+  assert.equal(quotas.available("codex"), false);
+  assert.equal(codex.signal.aborted, true);
+  assert.equal(claude.signal.aborted, false);
   await quotas.refresh();
   assert.equal(quotas.available("codex"), true);
 });
