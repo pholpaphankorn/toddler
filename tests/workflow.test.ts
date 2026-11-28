@@ -1022,6 +1022,8 @@ test("codexUsage reads ordinaryUsageAllowed; missing and Claude give null", () =
   );
 });
 test("quota validation rejects stale and invalid data and resets past windows", () => {
+  // usage() stamps Date.now(), so compare with the time now, not at module load.
+  const now = Date.now();
   assert.throws(() =>
     validateUsage({ ...usage(50), observedAt: now - 61000 }, now),
   );

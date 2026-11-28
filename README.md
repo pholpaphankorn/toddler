@@ -43,7 +43,7 @@ Keep it linked rather than packed: Node does not strip types from files under
 cd ~/some/project
 toddler init      # writes .sandcastle/config.json and .sandcastle/.gitignore
 # edit .sandcastle/config.json, commit .sandcastle/
-toddler setup     # sign in to GitHub, Codex and Claude Code, then run doctor
+toddler setup     # write and commit the planning kit, sign in to GitHub, Codex and Claude Code, then run doctor
 toddler doctor    # check sandbox, logins, quota and models
 toddler plan      # show the next stages and stops without starting agents (--json for scripts)
 toddler           # run (same as `toddler run`)
@@ -152,6 +152,25 @@ Shared workflow rules live in `prompts/rules.md`, with role-specific rules in
 The project's `.sandcastle/` also holds the ignored runtime files: `.env`, `state.json`,
 `logs/`, `worktrees/` and `runner.lock`. The repo must have the `Sandcastle`,
 `parallel-safe` and `blocked` labels (`gh label create <name>`).
+
+## Planning kit
+
+`toddler setup` writes the planning kit, so planning sessions run outside toddler
+(by hand, or with the to-spec / to-tickets skills) write specs and issues toddler picks up:
+
+- `.sandcastle/templates/spec.md` and `issue.md` for the configured tracker only
+  (files, GitHub or GitLab): where each goes, the frontmatter or `gh` / `glab`
+  commands, and the configured `issueLabel`, `parallelLabel`, `blockedLabels` and
+  `adultLabel` names written in. Rewritten on every run.
+- A short toddler block between `<!-- toddler:start -->` and `<!-- toddler:end -->`
+  in `AGENTS.md` and/or `CLAUDE.md`, whichever exist. With neither, `AGENTS.md` gets
+  the block and `CLAUDE.md` holds `@AGENTS.md`. Only the text between the markers is
+  replaced; a missing or duplicated marker stops `setup` before anything is written.
+
+Files are written only when they change, then committed on the current branch as
+`toddler: set up planning kit` (`git commit --only`, so other staged changes stay out).
+A kit file you had already edited is written but left for you to commit; on a detached
+HEAD nothing is committed.
 
 ## Authentication
 
