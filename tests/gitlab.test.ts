@@ -96,6 +96,67 @@ test("GitLab doctor requires Developer access and checks the issue label", async
   await assert.rejects(checks[0][1](), /glab: access denied/);
 });
 
+test("GitLab doctor fails on open spec children missing the issue label", async () => {
+  const issue = (iid: number, labels: string[], description = "") => ({
+    iid,
+    labels,
+    description,
+  });
+  const states: Record<string, string> = {
+    1: "opened",
+    2: "opened",
+    9: "closed",
+  };
+  let pages: unknown[][] | Error = [];
+  const gets: string[] = [];
+  const forge = new GitLabForge(
+    ".",
+    config,
+    async () => "",
+    async (_, args = []) => {
+      if (pages instanceof Error) throw pages;
+      if (args.includes("--paginate"))
+        return pages.map((page) => JSON.stringify(page)).join("\n");
+      gets.push(args[1]);
+      return JSON.stringify({ state: states[args[1].split("/").pop()!] });
+    },
+  );
+  const [name, check] = forge.doctorChecks(config)[2];
+  assert.equal(name, "Spec children");
+  pages = [
+    [
+      issue(2, [], "Spec: #1"), // nested: its spec is a child of #1
+      issue(3, [], "Text\nSpec: #2"),
+      issue(4, ["workflow::ready"], "Spec: #1"),
+      issue(5, [], "Spec: #9"), // closed spec
+      issue(6, [], "No spec"),
+      issue(7, ["adult"], "Spec: #1"),
+    ],
+    [issue(8, ["on-hold"], "Spec: #2"), issue(10, [], "Spec: #1")],
+  ];
+  await assert.rejects(check(), {
+    message: "3 missing workflow::ready: #2, #3, #10",
+  });
+  assert.deepEqual(gets.sort(), [
+    "projects/group%2Fsub%2Fproject/issues/1",
+    "projects/group%2Fsub%2Fproject/issues/2",
+    "projects/group%2Fsub%2Fproject/issues/9",
+  ]);
+  pages = [
+    Array.from({ length: 11 }, (_, index) => issue(20 + index, [], "Spec: #1")),
+  ];
+  await assert.rejects(check(), {
+    message:
+      "11 missing workflow::ready: #20, #21, #22, #23, #24, #25, #26, #27, #28, #29 (+1 more)",
+  });
+  pages = [
+    [issue(4, ["workflow::ready"], "Spec: #1"), issue(5, [], "Spec: #9")],
+  ];
+  assert.equal(await check(), "1 open, all labelled workflow::ready");
+  pages = new Error("glab: 401 Unauthorized");
+  await assert.rejects(check(), /401 Unauthorized/);
+});
+
 test("GitLab tracker lists iids and checks native and body blockers", async () => {
   const calls: string[] = [];
   const glab = async (_: string, args: string[] = []) => {

@@ -152,6 +152,11 @@ Shared workflow rules live in `prompts/rules.md`, with role-specific rules in
 The project's `.sandcastle/` also holds the ignored runtime files: `.env`, `state.json`,
 `logs/`, `worktrees/` and `runner.lock`. The repo must have the `Sandcastle`,
 `parallel-safe` and `blocked` labels (`gh label create <name>`).
+With forge issues, `toddler doctor` checks that label exists (the `Issue label` row) and
+fails the `Spec children` row when an open spec's open children lack it, naming them
+(at most 10, then `(+N more)`): `Spec children: 3 missing Sandcastle: #41, #42, #57`.
+A spec child is an open issue whose GitHub parent (sub-issue, any nesting) or GitLab
+`Spec: #N` issue is open; children labelled `adultLabel` or a `blockedLabels` label are skipped.
 
 ## Authentication
 
