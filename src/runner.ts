@@ -18,7 +18,12 @@ import { command, type Command } from "./process.ts";
 import { claudeToken, codexAuth, type Quotas } from "./quota.ts";
 import { limitSignal, type LimitSignal } from "./limits.ts";
 import { Scheduler, type Clock, type Reservation } from "./scheduler.ts";
-import { privateHomeAgent, stopAgent } from "./agents.ts";
+import {
+  privateHomeAgent,
+  stopAgent,
+  stripSignalListeners,
+  sweepSandbox,
+} from "./agents.ts";
 import { skillLinks, skillLoadLine } from "./skills.ts";
 import { connect, type Tracker, type Forge } from "./forge.ts";
 import { AttentionError, Landing } from "./landing.ts";
@@ -328,6 +333,7 @@ export class Runner {
         baseBranch: job.baseSha,
         sandbox: this.sandboxProvider!,
       });
+      stripSignalListeners();
       try {
         signal.throwIfAborted();
         // Each stage gets a fresh worktree without ignored files such as node_modules, so install from the committed lockfile.
@@ -535,6 +541,7 @@ export class Runner {
       } finally {
         // A no-op unless the agent is still running (cancel, timeout, failure).
         await stopAgent(sandbox, provider);
+        await sweepSandbox(sandbox, job.number);
         const closed = await sandbox.close();
         if (closed.preservedWorktreePath)
           console.log(

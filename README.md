@@ -287,14 +287,17 @@ Claude usage reader; model calls continue to use the native Claude login.
 
 ## Resume and inspect
 
-Press Ctrl-C to cancel active sessions. Run the command again to continue unfinished
-branches. `.sandcastle/state.json` records the stage, base SHA, implementer, review,
+Press Ctrl-C (or send SIGTERM) to cancel active sessions; each stage stops its agent
+and kills any process left running in its worktree before closing. A second Ctrl-C
+exits at once. Run the command again to continue unfinished branches. `.sandcastle/state.json` records the stage, base SHA, implementer, review,
 PR URL and last error. Dirty worktrees are preserved under `.sandcastle/worktrees/`;
 clean worktrees can be removed by Sandcastle while their named branches remain.
 Logs are in `.sandcastle/logs/`. Inspect preserved changes before retrying a task.
 
 Only one coordinator may run in this checkout. A crash can leave
 `.sandcastle/runner.lock`; check its PID is no longer running before removing it.
+A crash (or a second Ctrl-C) can also leave a stage's processes running;
+`lsof +D .sandcastle/worktrees` lists them.
 To retry a deliberately closed PR, stop the runner and remove only that issue's job
 entry from `state.json`, then inspect/reuse its existing branch before restarting.
 
