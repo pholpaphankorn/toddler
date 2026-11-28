@@ -42,7 +42,7 @@ Keep it linked rather than packed: Node does not strip types from files under
 ```sh
 cd ~/some/project
 toddler init      # writes .sandcastle/config.json and .sandcastle/.gitignore
-# edit .sandcastle/config.json, optionally add .sandcastle/project.md, commit .sandcastle/
+# edit .sandcastle/config.json, commit .sandcastle/
 toddler setup     # sign in to GitHub, Codex and Claude Code, then run doctor
 toddler doctor    # check sandbox, logins, quota and models
 toddler plan      # show the next stages and stops without starting agents (--json for scripts)
@@ -137,13 +137,14 @@ For GitLab, set `"forge": "gitlab"` and `"repository": "group/subgroup/project"`
 
 Set `"autoMerge": true` to ask GitHub or GitLab to merge approved requests after required checks and approvals pass. GitHub uses the repository default merge method and must allow auto-merge on the repository; `toddler doctor` checks this setting. If the forge refuses, the request remains open and the issue needs attention. With auto-merge on, the run waits until the request merges; only then do issues that depend on it start. While it waits toddler polls the pull or merge request every `landingPollSeconds`: when the base moved (GitHub `BEHIND`, GitLab `need_rebase`) or conflicts, it merges the base in itself and pushes again; finished, failing CI goes back to the agents as a merge fix round with the failing check names and, for GitHub Actions and GitLab jobs, the tail of each failing log (GitLab jobs allowed to fail are left out; other CI gives a name and link); a required human review, a closed request, auto-merge turned off, or a rejected push (toddler never forces) needs attention. GitLab cancels auto-merge on every push to the source branch, so toddler turns it on again after each of its own pushes, tied to the commit it just pushed; a project that refuses the merge (for example a fast-forward-only project that will not take toddler's merge commit) needs attention. Without auto-merge, an approved pull request is polled once per run so one you merged by hand counts as landed. The default is `false`, so toddler leaves merging to you. With `forge: "none"`, approved work lands one issue at a time: when the base branch moved, toddler merges it into the issue branch in a throwaway worktree and runs `verify` in a sandbox with no agent, then moves the base branch to that exact commit (fast-forwarding it when it is checked out and clean). A conflict or a failing `verify` goes back to the agents as a merge fix round (see `maxMergeFixRounds`); a checked-out base with uncommitted changes needs attention instead.
 
-`.sandcastle/project.md` (optional) is appended to the implementation and review
-prompts as "Project notes": stack, how to check changes, what not to do.
+Put stack-specific agent notes (stack, how to check changes, what not to do) in
+the project's own `AGENTS.md` or `CLAUDE.md`; Claude Code and Codex read them from
+the worktree. Toddler's workflow rules in the prompt take precedence over them.
 Set `roles.<role>.prompt` to a non-empty Markdown file path relative to the
 project root (for example, `".sandcastle/prompts/review.md"`) to replace that
 role's instructions. Unset roles use the bundled prompts. To customize one,
 copy [implementation.md](prompts/implementation.md) or [review.md](prompts/review.md)
-and edit it. Workflow rules and project notes are still appended.
+and edit it. Workflow rules are still appended.
 Shared workflow rules live in `prompts/rules.md`, with role-specific rules in
 `prompts/rules/implementation.md` and `prompts/rules/review.md`.
 
