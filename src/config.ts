@@ -18,6 +18,7 @@ export const defaults = {
   parallelLabel: "parallel-safe",
   maxParallelIssues: 2,
   blockedLabels: ["blocked", "on-hold"],
+  adultLabel: "adult",
   stopAt: {
     codex: { fiveHour: 5, weekly: 10 },
     claude: { fiveHour: 5, weekly: 10 },
@@ -141,6 +142,8 @@ export function loadConfig(
     throw new Error(`${path}: invalid issues`);
   if (typeof config.autoMerge !== "boolean")
     throw new Error(`${path}: invalid autoMerge`);
+  if (typeof config.adultLabel !== "string")
+    throw new Error(`${path}: invalid adultLabel`);
   if (
     config.forge !== "none" &&
     !(

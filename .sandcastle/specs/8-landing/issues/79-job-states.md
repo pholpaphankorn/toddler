@@ -1,6 +1,6 @@
 ---
 title: Job states, state.json fields and the run summary
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [75, 77]
 parent: 8
 status: closed

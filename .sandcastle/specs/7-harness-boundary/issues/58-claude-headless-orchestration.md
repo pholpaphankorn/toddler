@@ -1,6 +1,6 @@
 ---
 title: What Claude Code can orchestrate headless in Seatbelt
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 7
 status: closed

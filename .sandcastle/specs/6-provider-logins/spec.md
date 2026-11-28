@@ -1,9 +1,9 @@
 ---
 title: Provider logins
-labels: [wayfinder:map, on-hold]
+labels: [wayfinder:map, adult]
 status: open
 ---
-<!-- Wayfinder map. Tickets are files in issues/ with `parent: 6`. All carry `on-hold` so `toddler` never tries to implement them. -->
+<!-- Wayfinder map. Tickets are files in issues/ with `parent: 6`. All carry `adult` so `toddler` never tries to implement them. -->
 
 ## Destination
 

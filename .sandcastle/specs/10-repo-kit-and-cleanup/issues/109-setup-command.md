@@ -1,6 +1,6 @@
 ---
 title: setup as a toddler command: kit step, login steps and glab
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 10
 status: closed

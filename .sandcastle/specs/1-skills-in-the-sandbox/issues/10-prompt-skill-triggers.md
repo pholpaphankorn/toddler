@@ -1,6 +1,6 @@
 ---
 title: How toddler's prompts trigger skills
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 1
 assignee: phol (with claude)

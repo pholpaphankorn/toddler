@@ -1,6 +1,6 @@
 ---
 title: Where specs live on each tracker
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [42, 43]
 parent: 3
 status: closed

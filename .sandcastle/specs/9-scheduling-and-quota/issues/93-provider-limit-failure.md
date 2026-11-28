@@ -1,6 +1,6 @@
 ---
 title: A provider-limit failure counted as a quota stop
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [90]
 parent: 9
 status: closed

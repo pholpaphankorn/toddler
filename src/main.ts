@@ -20,7 +20,6 @@ import { Runner, loadState, saveState } from "./runner.ts";
 import { builtinRankers, loadRanker } from "./policy.ts";
 import { bundledSkillsPath } from "./skills.ts";
 import { planJson, planPass, planText } from "./plan.ts";
-import { skillDoctorChecks } from "./skill-doctor.ts";
 import { connect, validatePushRemote } from "./forge.ts";
 import { smokeForge } from "./smoke-forge.ts";
 
@@ -125,16 +124,6 @@ async function doctor(config: Config, root: string) {
       await loadStopConditions(root, { ...config, stopConditions: [name] });
       return name;
     });
-  for (const [name, action] of skillDoctorChecks(
-    root,
-    Object.fromEntries(
-      Object.entries(config.roles).map(([role, settings]) => [
-        role,
-        settings.skills,
-      ]),
-    ) as Record<import("./config.ts").Role, string[]>,
-  ))
-    await check(name, action);
   await check("Sandcastle", async () => {
     await import("@ai-hero/sandcastle");
     return "installed";

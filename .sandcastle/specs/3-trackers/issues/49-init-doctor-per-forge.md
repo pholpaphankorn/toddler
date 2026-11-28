@@ -1,6 +1,6 @@
 ---
 title: Init and doctor for each forge
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [44, 47, 48]
 parent: 3
 status: closed

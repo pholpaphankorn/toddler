@@ -1,9 +1,9 @@
 ---
 title: Trackers
-labels: [wayfinder:map, on-hold]
+labels: [wayfinder:map, adult]
 status: closed
 ---
-<!-- Wayfinder map. Tickets are files with `parent: 3`. All carry `on-hold` so `toddler` never tries to implement them. -->
+<!-- Wayfinder map. Tickets are files with `parent: 3`. All carry `adult` so `toddler` never tries to implement them. -->
 
 ## Destination
 

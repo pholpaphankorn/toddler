@@ -1,6 +1,6 @@
 ---
 title: Planning kit templates and the toddler block
-labels: [wayfinder:prototype, on-hold]
+labels: [wayfinder:prototype, adult]
 blocked_by: []
 parent: 10
 status: closed

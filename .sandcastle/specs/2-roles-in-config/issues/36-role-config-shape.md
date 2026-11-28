@@ -1,6 +1,6 @@
 ---
 title: Role config shape
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 2
 assignee: phol (with claude)

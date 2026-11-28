@@ -1,6 +1,6 @@
 ---
 title: How scheduling is tested
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [92, 93, 94]
 parent: 9
 status: closed

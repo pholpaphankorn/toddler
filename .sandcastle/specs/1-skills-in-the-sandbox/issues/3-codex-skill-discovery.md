@@ -1,6 +1,6 @@
 ---
 title: How Codex finds skills in exec mode
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 1
 assignee: claude (research subagent)

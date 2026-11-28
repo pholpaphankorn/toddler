@@ -3433,6 +3433,9 @@ test("project config overrides defaults, must name a repository, and verify is o
       defaults.roles.review.models.codex,
     );
     assert.equal(loaded.issueLabel, defaults.issueLabel);
+    assert.equal(loaded.adultLabel, "adult");
+    write({ repository: "owner/repo", adultLabel: 1 });
+    assert.throws(() => loadConfig(root), /invalid adultLabel/);
     assert.equal(loaded.issues, "forge");
     assert.equal(loaded.forge, "github");
     write({ forge: "none" });

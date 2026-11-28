@@ -1,6 +1,6 @@
 ---
 title: What each CLI reports when a session hits the provider's own limit
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 9
 status: closed

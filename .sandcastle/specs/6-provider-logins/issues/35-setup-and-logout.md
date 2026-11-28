@@ -1,6 +1,6 @@
 ---
 title: How toddler setup signs in and toddler logout revokes
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [30, 31, 33]
 parent: 6
 status: open

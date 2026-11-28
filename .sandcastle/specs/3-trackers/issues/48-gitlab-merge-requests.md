@@ -1,6 +1,6 @@
 ---
 title: Publishing to a GitLab forge
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [44]
 parent: 3
 assignee: phol (with claude)

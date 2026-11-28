@@ -1,6 +1,6 @@
 ---
 title: Tracker and forge config shape
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [41, 42]
 parent: 3
 status: closed

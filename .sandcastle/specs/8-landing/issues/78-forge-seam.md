@@ -1,6 +1,6 @@
 ---
 title: The Forge seam's new methods and their local-mode equivalents
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [74, 76]
 parent: 8
 status: closed
