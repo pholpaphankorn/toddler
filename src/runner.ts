@@ -867,6 +867,7 @@ export class Runner {
   }
   async run(baseBranch: string): Promise<void> {
     let stop = "Stopped: run interrupted.";
+    let slept = 0;
     this.started = new Date().toISOString();
     let failure: { error: unknown } | undefined;
     const inflight = new Set<Promise<void>>();
@@ -886,17 +887,25 @@ export class Runner {
         if (failure) throw failure.error;
         if (!this.working.size && !this.landing.jobs.size) {
           if (this.interrupted) return;
-          const wake = this.scheduler.wakeAt();
-          if (wake === undefined) {
+          const plan = this.scheduler.wakePlan();
+          if (!plan) {
             stop = this.scheduler.anyAvailable()
               ? "Stopped: no available issues."
               : "Stopped: no provider has verified quota above its stop thresholds.";
             return;
           }
+          console.log(`[run] ${slept ? "still stopped, " : ""}${plan.detail}`);
+          const from = this.clock.now();
           await this.clock.wait(
-            Math.max(0, wake - this.clock.now()),
+            Math.max(0, plan.at - from),
             this.stopping.signal,
           );
+          slept += this.clock.now() - from;
+          console.log("[run] woke");
+          if (this.interrupted) {
+            stop = "Stopped: run interrupted while sleeping.";
+            return;
+          }
           continue;
         }
         await Promise.race(inflight);
@@ -912,6 +921,8 @@ export class Runner {
       throw error;
     } finally {
       console.log(stop);
+      if (slept)
+        console.log(`Slept: ${Math.round(slept / 60_000)} min in total`);
       const jobs = Object.values(this.state.jobs);
       console.log(
         `Landed this run: ${[...this.landedThisRun].map((n) => `#${n}`).join(", ") || "none"}`,

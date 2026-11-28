@@ -226,7 +226,7 @@ that model. Unfinished work remains on disk, and other available models can cont
 Stops last for the rest of the invocation, even if a window resets. `toddler plan`
 lists per-model stops under `unavailableModels`.
 
-The runner exits when no provider has any usable model or no actionable issues remain.
+The runner exits when no actionable issues remain. When every provider is stopped it sleeps until the earliest reset (plus a minute, rechecking at least every 30 minutes) and carries on; an interrupt ends the sleep.
 Blocked issues, issues with workflow PRs, and tasks already attempted unsuccessfully
 in the current invocation are not repeatedly scheduled. Authentication errors,
 unreadable quota, invalid review output, and failed verification also pause work;

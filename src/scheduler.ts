@@ -6,7 +6,11 @@ import {
   type Role,
 } from "./config.ts";
 import { labels, type Issue, type Ranker } from "./policy.ts";
-import type { Quotas } from "./quota.ts";
+import { modelMatches, type Quotas } from "./quota.ts";
+
+const SLACK_MS = 60_000;
+const RECHECK_MS = 30 * 60_000;
+const clock = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
 
 // Time as the run loop sees it; tests swap it for one that moves only when waited on.
 export interface Clock {
@@ -100,9 +104,57 @@ export class Scheduler {
     this.held.set(reservation, controller);
     return reservation;
   }
-  // When to try again once nothing can start (ms epoch), or none to stop; spec 9 fills it in.
+  // When to try again once nothing can start (ms epoch), or none when nothing is stopped.
   wakeAt(): number | undefined {
-    return undefined;
+    return this.wakePlan()?.at;
+  }
+  // The earliest reset of any stopped window plus slack, capped at a fixed recheck; `detail` is for the log.
+  wakePlan(): { at: number; detail: string } | undefined {
+    const now = this.clock.now();
+    const recheck = now + RECHECK_MS;
+    const q = this.quotas;
+    const parts: string[] = [];
+    let earliest = Infinity;
+    const note = (provider: Provider, model: string | undefined) => {
+      const reading = q.unverified.has(provider)
+        ? undefined
+        : q.values.get(provider);
+      const windows = [
+        reading?.fiveHour,
+        reading?.weekly,
+        ...Object.entries(reading?.weeklyByModel ?? {})
+          .filter(
+            ([label]) =>
+              model === undefined || modelMatches(provider, label, model),
+          )
+          .map(([, window]) => window),
+      ];
+      const resets = windows.flatMap((w) =>
+        w?.resetsAt && w.resetsAt * 1000 > now ? [w.resetsAt * 1000] : [],
+      );
+      const reset = Math.min(...resets);
+      earliest = Math.min(earliest, reset);
+      const reason = q.unverified.has(provider)
+        ? "usage could not be verified"
+        : model === undefined
+          ? q.disabled.get(provider)
+          : q.disabledModels.get(provider)?.get(model);
+      parts.push(
+        `${provider}${model ? ` (${model})` : ""}: ` +
+          (resets.length
+            ? `reset ${clock(reset)}`
+            : `${reason}, recheck ${clock(recheck)}`),
+      );
+    };
+    for (const provider of this.config.providers) {
+      if (q.permanent.has(provider)) continue;
+      if (q.disabled.has(provider)) note(provider, undefined);
+      for (const model of q.disabledModels.get(provider)?.keys() ?? [])
+        note(provider, model);
+    }
+    if (!parts.length) return undefined;
+    const at = Math.min(earliest + SLACK_MS, recheck);
+    return { at, detail: `sleeping until ${clock(at)} (${parts.join("; ")})` };
   }
   refresh(): Promise<void[]> {
     return this.quotas.refresh();
