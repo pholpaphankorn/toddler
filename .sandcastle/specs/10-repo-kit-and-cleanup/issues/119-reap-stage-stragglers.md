@@ -3,7 +3,7 @@ title: Reap a stage's leftover processes
 labels: []
 blocked_by: []
 parent: 10
-status: open
+status: closed
 ---
 Ctrl+C or SIGTERM on toddler cancels running stages cleanly, and no stage or landing sandbox leaves processes behind when it closes. Settled in [How toddler reaps a stage's leftover processes](113-reap-stage-stragglers.md) (research: [111](111-codex-setsid-children.md)).
 

@@ -994,6 +994,8 @@ test("codexUsage reads ordinaryUsageAllowed; missing and Claude give null", () =
   );
 });
 test("quota validation rejects stale and invalid data and resets past windows", () => {
+  // usage() stamps Date.now(); the module-level now goes stale once the suite runs past 60s
+  const now = Date.now();
   assert.throws(() =>
     validateUsage({ ...usage(50), observedAt: now - 61000 }, now),
   );
@@ -3268,7 +3270,10 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
     );
     assert.ok(
       !commands.some(
-        ({ cmd, options }) => !options && !cmd.includes("toddler-agent.pid"),
+        ({ cmd, options }) =>
+          !options &&
+          !cmd.includes("toddler-agent.pid") &&
+          cmd !== 'printf %s "$TMPDIR"',
       ),
       "no verify command runs when verify is empty",
     );
