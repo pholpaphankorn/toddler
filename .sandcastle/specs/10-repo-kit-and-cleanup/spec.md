@@ -24,6 +24,7 @@ A spec, ready to break into toddler issues, for the third reshape area: `setup` 
 ## Decisions so far
 
 - [What happens to Codex's setsid() children when a stage is cancelled](issues/111-codex-setsid-children.md): Codex kills its `setsid()`'d commands only on SIGINT; toddler's `stopAgent` sends SIGINT, but Ctrl+C/SIGTERM on toddler (sandcastle SIGKILLs and exits first), a slow shutdown, a crash, or self-detached commands leave orphans; reaping works only from the host (descendant list, `lsof` cwd), not from inside the sandbox.
+- [Planning kit templates and the toddler block](issues/108-planning-kit-templates.md): templates follow to-spec (spec sections) and to-tickets (issue template), with toddler's label (`Sandcastle` for `ready-for-agent`), paths/numbering and blocker format replacing the skills' tracker steps; labels baked in from config and re-rendered each `setup`; usage notes in a top comment; a ~3-line block pointing agents (and those skills) at the templates.
 
 ## Not yet specified
 
