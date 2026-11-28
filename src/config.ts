@@ -16,6 +16,7 @@ export const defaults = {
   autoMerge: false,
   issueLabel: "Sandcastle",
   parallelLabel: "parallel-safe",
+  maxParallelIssues: 2,
   blockedLabels: ["blocked", "on-hold"],
   stopAt: {
     codex: { fiveHour: 5, weekly: 10 },
@@ -161,6 +162,13 @@ export function loadConfig(
   )
     throw new Error(
       `${path}: landingPollSeconds must be a number, at least 10`,
+    );
+  if (
+    !Number.isInteger(config.maxParallelIssues) ||
+    config.maxParallelIssues < 1
+  )
+    throw new Error(
+      `${path}: maxParallelIssues must be a whole number, at least 1`,
     );
   if (config.forge === "none" && config.issues === "forge")
     throw new Error(`${path}: issues: forge requires a forge other than none`);

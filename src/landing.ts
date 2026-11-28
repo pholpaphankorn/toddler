@@ -168,7 +168,7 @@ export class Landing {
             checks: polled.checks,
           });
       }
-      await this.runner.wait(
+      await this.runner.clock.wait(
         config.landingPollSeconds * 1000,
         this.runner.stopping.signal,
       );

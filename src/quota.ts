@@ -349,7 +349,12 @@ export class Quotas {
   read: ReadUsage;
   disabled = new Map<Provider, string>();
   disabledModels = new Map<Provider, Map<string, string>>();
-  active = new Map<Provider, Map<AbortController, string>>();
+  // Told of every stop; the scheduler aborts the reservations it covers.
+  onStop?: (
+    provider: Provider,
+    model: string | undefined,
+    reason: string,
+  ) => void;
   values = new Map<Provider, Reading>();
   refreshing: Promise<void[]> | null = null;
   conditions: StopCondition[];
@@ -374,8 +379,7 @@ export class Quotas {
     if (this.disabled.has(provider)) return;
     this.disabled.set(provider, reason);
     console.log(`[quota] ${provider} stopped: ${reason}`);
-    for (const controller of this.active.get(provider)?.keys() ?? [])
-      controller.abort(new Error(reason));
+    this.onStop?.(provider, undefined, reason);
   }
   disableModel(provider: Provider, model: string, reason: string): void {
     const models = this.disabledModels.get(provider) ?? new Map();
@@ -383,8 +387,7 @@ export class Quotas {
     models.set(model, reason);
     this.disabledModels.set(provider, models);
     console.log(`[quota] ${provider} (${model}) stopped: ${reason}`);
-    for (const [controller, activeModel] of this.active.get(provider) ?? [])
-      if (activeModel === model) controller.abort(new Error(reason));
+    this.onStop?.(provider, model, reason);
   }
   async refresh(): Promise<void[]> {
     if (this.refreshing) return this.refreshing;
@@ -416,55 +419,6 @@ export class Quotas {
       this.refreshing = null;
     });
     return this.refreshing;
-  }
-  async run<T>(
-    provider: Provider,
-    model: string,
-    action: (signal: AbortSignal) => Promise<T>,
-  ): Promise<T> {
-    await this.refresh();
-    if (!this.available(provider, model))
-      throw new Error(`${provider} is unavailable`);
-    const controller = new AbortController();
-    const active = this.active.get(provider) ?? new Map();
-    this.active.set(provider, active);
-    active.set(controller, model);
-    let rejectPoll!: (error: unknown) => void;
-    const pollFailure = new Promise<never>((_, reject) => {
-      rejectPoll = reject;
-    });
-    let poll: Promise<void> | undefined;
-    let pollError: unknown;
-    let pollFailed = false;
-    const timer = setInterval(() => {
-      poll = this.refresh().then(
-        () => {},
-        (error) => {
-          pollFailed = true;
-          pollError = error;
-          rejectPoll(error);
-          this.stop();
-        },
-      );
-    }, this.config.pollIntervalMs);
-    const running = action(controller.signal);
-    try {
-      try {
-        return await Promise.race([running, pollFailure]);
-      } finally {
-        // A poll can abort the action before its own failure reaches the race.
-        clearInterval(timer);
-        await poll;
-        if (pollFailed) {
-          // stop() already aborted the action; wait for its cleanup so the lock outlives it.
-          await running.catch(() => {});
-          throw pollError;
-        }
-      }
-    } finally {
-      clearInterval(timer);
-      active.delete(controller);
-    }
   }
   stop(): void {
     for (const provider of providers)

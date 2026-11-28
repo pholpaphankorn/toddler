@@ -17,7 +17,7 @@ import {
   type Window,
 } from "./quota.ts";
 import { Runner, loadState, saveState } from "./runner.ts";
-import { assignments, loadRanker } from "./policy.ts";
+import { loadRanker, ready, type Issue } from "./policy.ts";
 import { bundledSkillsPath } from "./skills.ts";
 import { skillDoctorChecks } from "./skill-doctor.ts";
 import { connect, validatePushRemote } from "./forge.ts";
@@ -228,6 +228,16 @@ async function main() {
   if (mode === "plan") {
     await quotas.refresh();
     const issues = await runner.candidates();
+    // What the first fill would start: admitted issues with a provider reserved for each.
+    const started: Issue[] = [];
+    const next = issues.flatMap((issue) => {
+      if (!ready(issue, config) || !runner.scheduler.admit(issue, started))
+        return [];
+      const reservation = runner.scheduler.pick("implementation", issue);
+      if (!reservation) return [];
+      started.push(issue);
+      return [{ issue, provider: reservation.provider }];
+    });
     console.log(
       JSON.stringify(
         {
@@ -239,14 +249,7 @@ async function main() {
               Object.fromEntries(models),
             ]),
           ),
-          next: assignments(
-            issues,
-            (name) =>
-              quotas.available(name, config.roles.implementation.models[name]),
-            config,
-            quotas,
-            ranker,
-          ).map(({ issue, provider }) => ({
+          next: next.map(({ issue, provider }) => ({
             issue: issue.number,
             title: issue.title,
             provider,

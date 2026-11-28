@@ -236,7 +236,7 @@ test("GitLab delivery enables auto-merge, lands once merged, and is refused when
       git,
       forge,
       tracker: forge.tracker,
-      wait: async () => {},
+      clock: { now: () => Date.now(), wait: async () => {} },
     });
     const original = console.error;
     console.error = () => {};
