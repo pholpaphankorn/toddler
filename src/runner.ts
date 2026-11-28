@@ -174,9 +174,9 @@ export class Runner {
   }
   landedThisRun = new Set<number>();
   stageLogs = new Map<number, string>();
-  // Aborted on interrupt, so waits end at once.
   // Set by fill() when a ready issue or waiting job got no provider; only then is a sleep worth it.
   heldByQuota = false;
+  // Aborted on interrupt, so waits end at once.
   stopping = new AbortController();
   get interrupted(): boolean {
     return this.stopping.signal.aborted;
