@@ -866,7 +866,6 @@ export class Runner {
     this.started = new Date().toISOString();
     let failure: { error: unknown } | undefined;
     const inflight = new Set<Promise<void>>();
-    let earlyWake = false;
     const track = (promise: Promise<void>) => {
       const tracked = promise
         .catch((error) => {
@@ -908,8 +907,8 @@ export class Runner {
         const due = this.scheduler.nextPollAt();
         const cancel = new AbortController();
         const waits: Promise<unknown>[] = [...inflight];
-        // A wait that ends early is not re-armed, so a clock that returns at once cannot spin the loop.
-        if (due !== undefined && !earlyWake)
+        // Re-armed every pass for the time left, so a wait that ends early still polls.
+        if (due !== undefined)
           waits.push(
             this.clock
               .wait(
@@ -920,11 +919,9 @@ export class Runner {
           );
         const woke = await Promise.race(waits);
         cancel.abort();
-        earlyWake = false;
         if (woke === "poll") {
           if (this.interrupted) continue;
           if (this.clock.now() >= due!) await this.scheduler.poll();
-          else earlyWake = true;
         }
       }
     } catch (error) {

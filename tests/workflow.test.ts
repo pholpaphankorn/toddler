@@ -259,9 +259,9 @@ test("with nothing able to start, the run sleeps until wakeAt through the inject
   const waits: number[] = [];
   runner.scheduler.wakePlan = () =>
     waits.length ? undefined : { at: Date.now() + 60_000, detail: "test" };
-  runner.clock.wait = async (ms) => {
+  runner.clock.wait = async (ms, signal) => {
     // Only the sleep counts; the poll wait is armed while a stage runs.
-    if (runner.working.size) return;
+    if (runner.working.size) return parked(signal);
     waits.push(ms);
     quotas.available = () => true;
   };
@@ -280,9 +280,9 @@ function sleepingRun(stoppedFor: number, onWait?: (runner: Runner) => void) {
   const waits: number[] = [];
   runner.scheduler.clock = {
     now: () => now,
-    wait: async (ms) => {
+    wait: async (ms, signal) => {
       // The poll wait is armed while a stage runs; only sleeps move the clock.
-      if (runner.working.size) return;
+      if (runner.working.size) return parked(signal);
       waits.push(ms);
       now += ms;
       onWait?.(runner);
@@ -594,6 +594,46 @@ test("slot busy: the poll falls due, its stop cancels the stage, and the job is 
   assert.equal(state.jobs[1].status, "implementation");
   assert.equal(state.jobs[1].reviewRounds, 0);
   assert.equal(state.jobs[1].attention, undefined);
+});
+
+test("the poll repeats while one stage holds the slot, also after a wait that ends early", async () => {
+  const { runner } = fixture();
+  runner.tracker.issues = async () => [issue(1)];
+  let now = 1_000_000;
+  let finish: (() => void) | undefined;
+  const waits: number[] = [];
+  let early = true;
+  runner.scheduler.clock = {
+    now: () => now,
+    wait: async (ms, signal) => {
+      if (!runner.working.size) return;
+      // Let the stage start (and its re-reads finish) before the first wake.
+      while (!finish) await new Promise((resolve) => setImmediate(resolve));
+      waits.push(ms);
+      // The first wake lands 2 ms short of due, like a timer firing early.
+      now += early ? ms - 2 : ms;
+      early = false;
+      await new Promise((resolve) => setImmediate(resolve));
+      if (waits.length >= 4) finish?.();
+    },
+  };
+  const polls: number[] = [];
+  const refresh = runner.scheduler.quotas.refresh.bind(runner.scheduler.quotas);
+  runner.scheduler.quotas.refresh = async () => {
+    polls.push(now);
+    return refresh();
+  };
+  runner.stage = (_job, _provider, role) =>
+    role === "review"
+      ? Promise.resolve({ sha: "reviewed", stdout: report(), verification: "" })
+      : new Promise((resolve) => {
+          finish = () =>
+            resolve({ sha: "reviewed", stdout: "done", verification: "" });
+        });
+  await summary(() => runner.run("main"));
+  // The wait is re-armed after every wake, early or not.
+  assert.ok(waits.length >= 4);
+  assert.ok(polls.length >= 4);
 });
 
 test("built-in stops run before custom conditions, which still run", async () => {
@@ -1167,6 +1207,12 @@ const alternating = () => {
     return asks++ % 2 ? order.reverse() : order;
   };
 };
+// A wait that only an abort ends: the poll wait while a stage holds the slot.
+const parked = (signal?: AbortSignal) =>
+  new Promise<void>((resolve) =>
+    signal ? signal.addEventListener("abort", () => resolve()) : undefined,
+  );
+
 function fixture(
   overrides: Partial<Config> = {},
   root = fileURLToPath(new URL("../../", import.meta.url)),
@@ -1184,6 +1230,7 @@ function fixture(
     permanent: new Set(),
     values: new Map(providers.map((provider) => [provider, usage(50)])),
   };
+  let skew = 0;
   const runner = new Runner({
     root,
     config: { ...config, ...overrides },
@@ -1208,7 +1255,14 @@ function fixture(
           ? { ref: `local issue ${item.number}`, closes: "" }
           : { ref: `#${item.number}`, closes: `Closes #${item.number}\n\n` },
     },
-    clock: { now: () => Date.now(), wait: async () => {} },
+    // Waiting moves time on and yields a turn, so a due poll never starves the stage.
+    clock: {
+      now: () => Date.now() + skew,
+      wait: async (ms) => {
+        skew += ms;
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+    },
     forge: {
       base: async (branch = "main") => {
         events.push(["base", branch]);
@@ -1914,9 +1968,10 @@ test("fake forge: deliver, waiting until auto-merge lands it, and only then do d
     return result;
   };
   const waits: number[] = [];
-  runner.clock.wait = async (ms) => {
+  runner.clock.wait = async (ms, signal) => {
     // Only landing waits count, not the poll wait armed while a stage runs.
-    if (!runner.working.size) waits.push(ms);
+    if (runner.working.size) return parked(signal);
+    waits.push(ms);
   };
   const { lines } = await summary(() => runner.run("main"));
   assert.deepEqual(delivered, ["reviewed", "reviewed"]);
