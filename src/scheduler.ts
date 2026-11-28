@@ -156,8 +156,24 @@ export class Scheduler {
     const at = Math.min(earliest + SLACK_MS, recheck);
     return { at, detail: `sleeping until ${clock(at)} (${parts.join("; ")})` };
   }
-  refresh(): Promise<void[]> {
-    return this.quotas.refresh();
+  // Any refresh (poll, pick-time or wake re-read) restarts the poll interval.
+  private refreshedAt?: number;
+  async refresh(): Promise<void[]> {
+    try {
+      return await this.quotas.refresh();
+    } finally {
+      this.refreshedAt = this.clock.now();
+    }
+  }
+  // When the run loop should poll next while anything is reserved; none at 0 running.
+  nextPollAt(): number | undefined {
+    return this.held.size
+      ? (this.refreshedAt ?? this.clock.now()) + this.config.pollIntervalMs
+      : undefined;
+  }
+  // A stop the read finds cancels the reservations it covers (Quotas.onStop); a failed read cancels nothing.
+  async poll(): Promise<void> {
+    await this.refresh();
   }
   stop(): void {
     this.quotas.stop();
@@ -175,44 +191,14 @@ export class Scheduler {
       ),
     );
   }
-  // Runs one stage under its reservation, polling quota while it runs; a failed poll stops every provider.
+  // Runs one stage under its reservation, after a fresh read; the run loop polls while it runs.
   async run<T>(
     reservation: Reservation,
     action: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     await this.refresh();
     reservation.signal.throwIfAborted();
-    let rejectPoll!: (error: unknown) => void;
-    const pollFailure = new Promise<never>((_, reject) => {
-      rejectPoll = reject;
-    });
-    let poll: Promise<void> | undefined;
-    let pollError: unknown;
-    let pollFailed = false;
-    const timer = setInterval(() => {
-      poll = this.refresh().then(
-        () => {},
-        (error) => {
-          pollFailed = true;
-          pollError = error;
-          rejectPoll(error);
-          this.stop();
-        },
-      );
-    }, this.config.pollIntervalMs);
-    const running = action(reservation.signal);
-    try {
-      return await Promise.race([running, pollFailure]);
-    } finally {
-      // A poll can abort the action before its own failure reaches the race.
-      clearInterval(timer);
-      await poll;
-      if (pollFailed) {
-        // stop() already aborted the action; wait for its cleanup so the lock outlives it.
-        await running.catch(() => {});
-        throw pollError;
-      }
-    }
+    return action(reservation.signal);
   }
   private ranked(role: Role): Provider[] {
     const candidates = this.config.providers.flatMap((provider) => {
