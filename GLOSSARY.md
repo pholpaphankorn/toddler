@@ -45,6 +45,9 @@ _Avoid_: map, epic
 
 **Blocker**: an open issue that must close before another issue can be picked. On every tracker it counts while open, whatever its labels.
 
+**Adult issue**: an issue only a grown-up person works. Toddler never picks it on any tracker, whatever its other labels. Unlike an issue on hold, it never becomes toddler's work.
+_Avoid_: human issue, HITL issue, on-hold issue
+
 **Tracker**: where a project's specs and issues live: files in the project, or the forge's own issues (GitHub or GitLab). A remote tracker is always the project's forge.
 _Avoid_: issue source, backend
 
