@@ -3524,3 +3524,65 @@ test("new jobs start from the ref returned by the forge", async () => {
   );
   assert.equal(state.jobs[1].baseSha, "reviewed");
 });
+
+test("limit lines on a failed stage stop the provider and put the job back to ready without a round or attention", async () => {
+  const configured = { ...config, providers: ["codex"] as Provider[] };
+  const { runner, state } = fixture(configured);
+  runner.tracker.issues = async () => [issue(1)];
+  const quotas = new Quotas(configured, async () => usage(50));
+  runner.scheduler.quotas = quotas;
+  const waits: number[] = [];
+  runner.scheduler.clock = {
+    now: () => 1_000_000,
+    wait: async (ms) => {
+      // A stage in flight only yields; the sleep once it is back to ready ends the run.
+      if (runner.working.size) {
+        await turn();
+        return;
+      }
+      waits.push(ms);
+      runner.interrupted = true;
+    },
+  };
+  runner.stage = Runner.prototype.stage;
+  const agent = (model: string) => ({
+    model,
+    buildPrintCommand: () => ({ command: "cli", stdin: "" }),
+  });
+  Object.assign(runner, {
+    authentication: { codex: async () => "", claude: async () => "" },
+    sandcastle: fake({
+      codex: agent,
+      claudeCode: agent,
+      createSandbox: async () => ({
+        worktreePath: "/fixture",
+        close: async () => ({}),
+        exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        run: async (options: {
+          logging: { onAgentStreamEvent: (event: unknown) => void };
+        }) => {
+          const message = "You’ve hit your usage limit. Try again later.";
+          for (const line of [
+            { type: "error", message },
+            { type: "turn.failed", error: { message } },
+          ])
+            options.logging.onAgentStreamEvent({
+              type: "raw",
+              line: JSON.stringify(line),
+            });
+          throw new Error(`codex exited with code 1:\n${message}`);
+        },
+      }),
+    }),
+  });
+  const git = runner.gitCommand;
+  runner.gitCommand = async (file, args = [], options) =>
+    args[0] === "branch" ? runner.branch(1) : git(file, args, options);
+  await summary(() => runner.run("main"));
+  assert.equal(state.jobs[1].status, "implementation");
+  assert.equal(state.jobs[1].reviewRounds, 0);
+  assert.equal(state.jobs[1].mergeFixRounds, 0);
+  assert.equal(state.jobs[1].attention, undefined);
+  assert.equal(quotas.available("codex"), false);
+  assert.deepEqual(waits, [30 * 60_000]);
+});

@@ -3,7 +3,7 @@ title: A provider-limit failure becomes a quota stop
 labels: [parallel-safe]
 blocked_by: [103, 104]
 parent: 9
-status: open
+status: closed
 ---
 When Claude or Codex refuses a session because its own usage limit is hit, toddler treats it as a quota stop: the job goes back to ready instead of needing attention, and the run sleeps until the limit resets.
 

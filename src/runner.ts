@@ -16,6 +16,7 @@ import {
 import { fence, logTail } from "./logtail.ts";
 import { command, type Command } from "./process.ts";
 import { claudeToken, codexAuth, type Quotas } from "./quota.ts";
+import { limitSignal, type LimitSignal } from "./limits.ts";
 import { Scheduler, type Clock, type Reservation } from "./scheduler.ts";
 import { privateHomeAgent, stopAgent } from "./agents.ts";
 import { skillLinks, skillLoadLine } from "./skills.ts";
@@ -141,9 +142,12 @@ export function saveState(path: string, state: State): void {
 class HostError extends Error {}
 class StageFailure extends Error {
   log?: string;
-  constructor(message: string, log?: string) {
+  // Set when the provider refused the session for its own usage limit.
+  limit?: LimitSignal;
+  constructor(message: string, log?: string, limit?: LimitSignal) {
     super(message);
     this.log = log;
+    this.limit = limit;
   }
 }
 
@@ -314,9 +318,15 @@ export class Runner {
       );
     } catch (error) {
       if (error instanceof HostError) throw error;
+      const { limit, log } = error as StageFailure;
+      const mine = reservation ?? own!;
+      // A limit refusal stops the provider; with no signal a fresh reading decides. The callers then see it unavailable and put the job back to ready.
+      if (limit) this.scheduler.limitStop(provider, mine.model, limit);
+      else if (!mine.signal.aborted) await this.scheduler.refresh();
       throw new StageFailure(
         (error as Error).message,
-        (error as StageFailure).log ?? this.stageLogs.get(job.number),
+        log ?? this.stageLogs.get(job.number),
+        limit,
       );
     } finally {
       own?.release();
@@ -423,6 +433,7 @@ export class Runner {
         );
         this.stageLogs.set(job.number, log);
         let result;
+        let limit: LimitSignal | undefined;
         try {
           result = await sandbox.run({
             agent,
@@ -433,10 +444,18 @@ export class Runner {
             logging: {
               type: "file",
               path: log,
+              onAgentStreamEvent: (event) => {
+                const found =
+                  event.type === "raw"
+                    ? limitSignal(provider, event.line, this.clock.now())
+                    : undefined;
+                if (found && (!limit || (!limit.resetsAt && found.resetsAt)))
+                  limit = found;
+              },
             },
           });
         } catch (error) {
-          throw new StageFailure((error as Error).message, log);
+          throw new StageFailure((error as Error).message, log, limit);
         }
         signal.throwIfAborted();
         let after = await this.git(["rev-parse", "HEAD"], sandbox.worktreePath);

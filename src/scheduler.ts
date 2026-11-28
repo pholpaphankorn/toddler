@@ -6,7 +6,8 @@ import {
   type Role,
 } from "./config.ts";
 import { labels, type Issue, type Ranker } from "./policy.ts";
-import { modelMatches, type Quotas } from "./quota.ts";
+import { limitModel, type LimitSignal } from "./limits.ts";
+import { modelMatches, type Quotas, type StopCondition } from "./quota.ts";
 
 const SLACK_MS = 60_000;
 const RECHECK_MS = 30 * 60_000;
@@ -43,6 +44,22 @@ export class Scheduler {
   ranker?: Ranker;
   clock: Clock;
   private held = new Map<Reservation, AbortController>();
+  // Stops from a provider refusing a session, kept until its reset; fed to the quotas as a stop condition.
+  private limits: {
+    provider: Provider;
+    model?: string;
+    until: number;
+    reason: string;
+  }[] = [];
+  private limitCondition: StopCondition = ({ provider, models }) => {
+    const now = this.clock.now();
+    this.limits = this.limits.filter((l) => l.until > now);
+    return this.limits.flatMap((l) =>
+      l.provider !== provider || (l.model && !models.includes(l.model))
+        ? []
+        : [{ model: l.model, reason: l.reason }],
+    );
+  };
   private current!: Quotas;
   constructor({ config, quotas, ranker, clock }: SchedulerOptions) {
     this.config = config;
@@ -63,6 +80,21 @@ export class Scheduler {
         )
           controller.abort(new Error(reason));
     };
+  }
+  // A provider refused a stage for its own usage limit: stop it (or the model) until the reset, 30 min when none given.
+  limitStop(provider: Provider, model: string, signal: LimitSignal): void {
+    const now = this.clock.now();
+    const until =
+      signal.resetsAt && signal.resetsAt > now
+        ? signal.resetsAt
+        : now + RECHECK_MS;
+    const scope = limitModel(provider, signal.type, model);
+    const reason = `${provider} usage limit reached${signal.type ? ` (${signal.type})` : ""}, held until ${clock(until)}`;
+    this.limits.push({ provider, model: scope, until, reason });
+    if (!this.quotas.conditions.includes(this.limitCondition))
+      this.quotas.conditions.push(this.limitCondition);
+    if (scope) this.quotas.disableModel(provider, scope, reason);
+    else this.quotas.disable(provider, reason);
   }
   // Reservations of a provider, across roles.
   running(provider: Provider): number {
@@ -129,9 +161,14 @@ export class Scheduler {
           )
           .map(([, window]) => window),
       ];
-      const resets = windows.flatMap((w) =>
-        w?.resetsAt && w.resetsAt * 1000 > now ? [w.resetsAt * 1000] : [],
+      const held = this.limits.filter(
+        (l) => l.provider === provider && l.model === model && l.until > now,
       );
+      const resets = held.length
+        ? held.map((l) => l.until)
+        : windows.flatMap((w) =>
+            w?.resetsAt && w.resetsAt * 1000 > now ? [w.resetsAt * 1000] : [],
+          );
       const reset = Math.min(...resets);
       earliest = Math.min(earliest, reset);
       const reason = q.unverified.has(provider)
