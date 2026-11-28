@@ -259,7 +259,9 @@ test("with nothing able to start, the run sleeps until wakeAt through the inject
   const waits: number[] = [];
   runner.scheduler.wakePlan = () =>
     waits.length ? undefined : { at: Date.now() + 60_000, detail: "test" };
-  runner.clock.wait = async (ms) => {
+  runner.clock.wait = async (ms, signal) => {
+    // Only the sleep counts; the poll wait is armed while a stage runs.
+    if (runner.working.size) return parked(signal);
     waits.push(ms);
     quotas.available = () => true;
   };
@@ -278,7 +280,9 @@ function sleepingRun(stoppedFor: number, onWait?: (runner: Runner) => void) {
   const waits: number[] = [];
   runner.scheduler.clock = {
     now: () => now,
-    wait: async (ms) => {
+    wait: async (ms, signal) => {
+      // The poll wait is armed while a stage runs; only sleeps move the clock.
+      if (runner.working.size) return parked(signal);
       waits.push(ms);
       now += ms;
       onWait?.(runner);
@@ -512,10 +516,15 @@ test("invalid stop modules and results fail with the module name", async () => {
         );
       else {
         const conditions = await loadStopConditions(root, configured);
-        await assert.rejects(
-          new Quotas(configured, async () => usage(50), conditions).refresh(),
-          new RegExp(file),
+        // A bad module is a failed read for the provider, not a thrown error.
+        const quotas = new Quotas(
+          configured,
+          async () => usage(50),
+          conditions,
         );
+        await quotas.refresh();
+        assert.equal(quotas.available("codex"), false);
+        assert.match(quotas.disabled.get("codex")!, new RegExp(file));
       }
     }
     await assert.rejects(
@@ -540,153 +549,113 @@ test("zero thresholds are disabled even at zero remaining", async () => {
   assert.equal(quotas.available("codex"), true);
 });
 
-test("a stop condition failure during polling aborts the session and rejects with its module", async () => {
-  const root = mkdtempSync(join(tmpdir(), "stop-poll-"));
-  try {
-    writeFileSync(
-      join(root, "poll.mjs"),
-      'let calls = 0; export default () => { if (++calls > 1) throw new Error("broken poll"); return []; }',
-    );
-    const configured = {
-      ...config,
-      providers: ["codex"] as Provider[],
-      pollIntervalMs: 5,
-      stopConditions: ["poll.mjs"],
-    };
-    const conditions = await loadStopConditions(root, configured);
-    const quotas = new Quotas(configured, async () => usage(50), conditions);
-    const scheduler = new Scheduler({ config: configured, quotas });
-    let signal!: AbortSignal;
-    let cleanedUp = false;
-    await assert.rejects(
-      scheduler.run(
-        scheduler.reserve("codex", config.roles.implementation.models.codex),
-        async (current) => {
-          signal = current;
-          try {
-            await new Promise<void>((_, reject) =>
-              current.addEventListener("abort", () => reject(current.reason)),
-            );
-          } finally {
-            // Slow cleanup, like sandbox.close(): run() must not settle before it.
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            cleanedUp = true;
-          }
-        },
+test("slot busy: the poll falls due, its stop cancels the stage, and the job is back to ready without a round", async () => {
+  const configured = { ...config, providers: ["codex"] as Provider[] };
+  const { runner, state } = fixture(configured);
+  runner.tracker.issues = async () => [issue(1)];
+  let remaining = 50;
+  runner.scheduler.quotas = new Quotas(configured, async () =>
+    usage(remaining),
+  );
+  const polls: number[] = [];
+  let aborted = false;
+  let entered = false;
+  let now = 1_000_000;
+  runner.scheduler.clock = {
+    now: () => now,
+    wait: async (ms) => {
+      now += ms;
+      if (runner.working.size) {
+        // The poll wait while the stage holds the slot: the next read finds a stop.
+        while (!entered) await new Promise((resolve) => setImmediate(resolve));
+        polls.push(ms);
+        remaining = 4;
+      } else runner.interrupted = true;
+    },
+  };
+  runner.stage = async (_job, provider, role) =>
+    runner.scheduler.run(
+      runner.scheduler.reserve(
+        provider,
+        configured.roles[role].models[provider],
       ),
-      /Stop condition module poll.mjs: broken poll/,
+      (signal) =>
+        new Promise<never>((_, reject) => {
+          entered = true;
+          signal.addEventListener("abort", () => {
+            aborted = true;
+            reject(signal.reason);
+          });
+        }),
     );
-    assert.equal(signal.aborted, true);
-    assert.equal(cleanedUp, true);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  await summary(() => runner.run("main"));
+  assert.deepEqual(polls, [config.pollIntervalMs]);
+  assert.equal(aborted, true);
+  assert.equal(state.jobs[1].status, "implementation");
+  assert.equal(state.jobs[1].reviewRounds, 0);
+  assert.equal(state.jobs[1].attention, undefined);
 });
 
-test("runner propagates stop condition polling failures during implementation and review", async (t) => {
-  for (const role of ["implementation", "review"] as const) {
-    await t.test(role, async () => {
-      const root = mkdtempSync(join(tmpdir(), "runner-stop-poll-"));
-      try {
-        writeFileSync(
-          join(root, "poll.mjs"),
-          'export default () => { if (globalThis.__stopPollFail) throw new Error("broken poll"); return []; }',
-        );
-        const configured = {
-          ...config,
-          pollIntervalMs: 5,
-          stopConditions: ["poll.mjs"],
-        };
-        const conditions = await loadStopConditions(root, configured);
-        const { runner } = fixture(configured);
-        runner.scheduler.quotas = new Quotas(
-          configured,
-          async () => usage(50),
-          conditions,
-        );
-        runner.stage = async (_job, provider, currentRole) => {
-          if (currentRole !== role)
-            return {
-              sha: "reviewed",
-              stdout: "Implementation done",
-              verification: "",
-            };
-          return runner.scheduler.run(
-            runner.scheduler.reserve(
-              provider,
-              configured.roles[currentRole].models[provider],
-            ),
-            (signal) => {
-              (globalThis as any).__stopPollFail = true;
-              return new Promise<never>((_, reject) =>
-                signal.addEventListener("abort", () => reject(signal.reason)),
-              );
-            },
-          );
-        };
-        await assert.rejects(
-          runner.work(issue(1), "main"),
-          /Stop condition module poll.mjs: broken poll/,
-        );
-      } finally {
-        delete (globalThis as any).__stopPollFail;
-        rmSync(root, { recursive: true, force: true });
-      }
-    });
-  }
+test("the poll repeats while one stage holds the slot, also after a wait that ends early", async () => {
+  const { runner } = fixture();
+  runner.tracker.issues = async () => [issue(1)];
+  let now = 1_000_000;
+  let finish: (() => void) | undefined;
+  const waits: number[] = [];
+  let early = true;
+  runner.scheduler.clock = {
+    now: () => now,
+    wait: async (ms, signal) => {
+      if (!runner.working.size) return;
+      // Let the stage start (and its re-reads finish) before the first wake.
+      while (!finish) await new Promise((resolve) => setImmediate(resolve));
+      waits.push(ms);
+      // The first wake lands 2 ms short of due, like a timer firing early.
+      now += early ? ms - 2 : ms;
+      early = false;
+      await new Promise((resolve) => setImmediate(resolve));
+      if (waits.length >= 4) finish?.();
+    },
+  };
+  const polls: number[] = [];
+  const refresh = runner.scheduler.quotas.refresh.bind(runner.scheduler.quotas);
+  runner.scheduler.quotas.refresh = async () => {
+    polls.push(now);
+    return refresh();
+  };
+  runner.stage = (_job, _provider, role) =>
+    role === "review"
+      ? Promise.resolve({ sha: "reviewed", stdout: report(), verification: "" })
+      : new Promise((resolve) => {
+          finish = () =>
+            resolve({ sha: "reviewed", stdout: "done", verification: "" });
+        });
+  await summary(() => runner.run("main"));
+  // The wait is re-armed after every wake, early or not.
+  assert.ok(waits.length >= 4);
+  assert.ok(polls.length >= 4);
 });
 
-test("runner reports a fatal stop condition when the same poll cancels a stage", async () => {
-  const root = mkdtempSync(join(tmpdir(), "runner-stop-race-"));
-  try {
-    writeFileSync(
-      join(root, "poll.mjs"),
-      'export default ({ reading }) => { if (reading.fiveHour.remainingPercent === 4) throw new Error("broken poll"); return []; }',
-    );
-    const configured = {
-      ...config,
-      providers: ["codex"] as Provider[],
-      pollIntervalMs: 5,
-      stopConditions: ["poll.mjs"],
-    };
-    const conditions = await loadStopConditions(root, configured);
-    let running = false;
-    const { runner } = fixture(configured);
-    runner.scheduler.quotas = new Quotas(
-      configured,
-      async () => usage(running ? 4 : 50),
-      conditions,
-    );
-    runner.stage = Runner.prototype.stage;
-    runner.git = async (args) =>
-      args[0] === "branch" ? "toddler/issue-1" : "base";
-    runner.authentication = {
-      codex: async () => "fake",
-      claude: async () => "fake",
-    };
-    runner.sandcastle = fake({
-      codex: () => ({ buildPrintCommand: () => ({ command: "fake" }) }),
-      createSandbox: async () => ({
-        worktreePath: "/fixture",
-        exec: async () => ({ exitCode: 0 }),
-        close: async () => ({}),
-        run: async ({ signal }: { signal: AbortSignal }) => {
-          running = true;
-          return new Promise((_, reject) =>
-            signal.addEventListener("abort", () =>
-              reject(new Error("stage aborted")),
-            ),
-          );
-        },
-      }),
-    });
-    await assert.rejects(
-      runner.work(issue(1), "main"),
-      /Stop condition module poll.mjs: broken poll/,
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+test("an interrupt during a stage drains the run without spinning on an aborted poll wait", async () => {
+  const { runner } = fixture();
+  runner.tracker.issues = async () => [issue(1)];
+  let waits = 0;
+  runner.scheduler.clock = {
+    now: () => Date.now(),
+    // Like realClock: an aborted signal ends the wait at once.
+    wait: async (_ms, signal) => {
+      waits++;
+      if (!runner.working.size) return;
+      await parked(signal);
+    },
+  };
+  runner.stage = async () => {
+    runner.interrupted = true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    return { sha: "reviewed", stdout: "done", verification: "" };
+  };
+  await summary(() => runner.run("main"));
+  assert.ok(waits < 10, `waits: ${waits}`);
 });
 
 test("built-in stops run before custom conditions, which still run", async () => {
@@ -1187,13 +1156,12 @@ test("at 5% both providers stop, and lift once a reading shows quota again", asy
   await quotas.refresh();
   assert.equal(quotas.available("codex"), true);
 });
-test("live quota drop aborts every active role of that provider, leaving the other usable", async () => {
+test("a poll's quota drop aborts every active role of that provider, leaving the other usable", async () => {
   let codexRemaining = 50;
-  const polling = { ...config, pollIntervalMs: 10 };
-  const quotas = new Quotas(polling, async (provider) =>
+  const quotas = new Quotas(config, async (provider) =>
     usage(provider === "codex" ? codexRemaining : 50),
   );
-  const scheduler = new Scheduler({ config: polling, quotas });
+  const scheduler = new Scheduler({ config, quotas });
   let entered = 0;
   const action = (signal: AbortSignal) =>
     new Promise((resolve, reject) => {
@@ -1201,9 +1169,8 @@ test("live quota drop aborts every active role of that provider, leaving the oth
       signal.addEventListener("abort", () => reject(signal.reason), {
         once: true,
       });
-      if (entered === 2) codexRemaining = 4;
     });
-  const results = await Promise.allSettled([
+  const runs = [
     scheduler.run(
       scheduler.reserve("codex", config.roles.implementation.models.codex),
       action,
@@ -1212,7 +1179,11 @@ test("live quota drop aborts every active role of that provider, leaving the oth
       scheduler.reserve("codex", config.roles.review.models.codex),
       action,
     ),
-  ]);
+  ];
+  while (entered < 2) await new Promise((resolve) => setImmediate(resolve));
+  codexRemaining = 4;
+  await scheduler.poll();
+  const results = await Promise.allSettled(runs);
   assert.equal(
     results.every((result) => result.status === "rejected"),
     true,
@@ -1258,6 +1229,13 @@ const alternating = () => {
     return asks++ % 2 ? order.reverse() : order;
   };
 };
+// A wait that only an abort ends: the poll wait while a stage holds the slot.
+const parked = (signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal?.aborted) resolve();
+    else signal?.addEventListener("abort", () => resolve());
+  });
+
 function fixture(
   overrides: Partial<Config> = {},
   root = fileURLToPath(new URL("../../", import.meta.url)),
@@ -1275,6 +1253,7 @@ function fixture(
     permanent: new Set(),
     values: new Map(providers.map((provider) => [provider, usage(50)])),
   };
+  let skew = 0;
   const runner = new Runner({
     root,
     config: { ...config, ...overrides },
@@ -1299,7 +1278,14 @@ function fixture(
           ? { ref: `local issue ${item.number}`, closes: "" }
           : { ref: `#${item.number}`, closes: `Closes #${item.number}\n\n` },
     },
-    clock: { now: () => Date.now(), wait: async () => {} },
+    // Waiting moves time on and yields a turn, so a due poll never starves the stage.
+    clock: {
+      now: () => Date.now() + skew,
+      wait: async (ms) => {
+        skew += ms;
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+    },
     forge: {
       base: async (branch = "main") => {
         events.push(["base", branch]);
@@ -2005,7 +1991,9 @@ test("fake forge: deliver, waiting until auto-merge lands it, and only then do d
     return result;
   };
   const waits: number[] = [];
-  runner.clock.wait = async (ms) => {
+  runner.clock.wait = async (ms, signal) => {
+    // Only landing waits count, not the poll wait armed while a stage runs.
+    if (runner.working.size) return parked(signal);
     waits.push(ms);
   };
   const { lines } = await summary(() => runner.run("main"));

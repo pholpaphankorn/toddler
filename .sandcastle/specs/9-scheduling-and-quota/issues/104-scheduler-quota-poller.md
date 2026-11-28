@@ -3,7 +3,7 @@ title: One quota poller owned by the scheduler
 labels: []
 blocked_by: [102]
 parent: 9
-status: open
+status: closed
 ---
 While anything runs, quota is re-read on one schedule however many sessions share a provider, and a stop found by that read cancels exactly the sessions it covers.
 

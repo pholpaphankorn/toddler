@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { defaults, type Provider } from "../src/config.ts";
-import { Quotas, type ReadUsage, type Reading } from "../src/quota.ts";
+import {
+  Quotas,
+  StopConditionError,
+  type ReadUsage,
+  type Reading,
+} from "../src/quota.ts";
 import type { Ranker } from "../src/policy.ts";
 import { Scheduler, type Clock } from "../src/scheduler.ts";
 
@@ -406,4 +411,74 @@ test("wakeAt is the earliest stopped reset plus a minute, capped at 30 minutes; 
   });
   assert.equal(mixed.wakeAt(), at(300) * 1000 + 60_000);
   assert.equal((await make({})).wakeAt(), undefined);
+});
+
+test("nextPollAt is none at 0 running, else the last refresh plus the interval, pushed back by a re-read", async () => {
+  const clock = testClock();
+  const config = { ...defaults, pollIntervalMs: 60_000 };
+  const quotas = new Quotas(config, scripted({}));
+  const s = new Scheduler({ config, quotas, clock });
+  await s.refresh();
+  assert.equal(s.nextPollAt(), undefined);
+  const held = s.pick("implementation", issue(1))!;
+  assert.equal(s.nextPollAt(), 1_000_000 + 60_000);
+  await clock.wait(30_000);
+  // A pick-time or wake re-read counts as a refresh.
+  await s.refresh();
+  assert.equal(s.nextPollAt(), 1_030_000 + 60_000);
+  held.release();
+  assert.equal(s.nextPollAt(), undefined);
+});
+
+test("poll() with a model stop aborts only same-key signals", async () => {
+  const model = defaults.roles.implementation.models.claude;
+  const { scheduler: s } = await scheduler(
+    {},
+    { claude: [reading(), reading({ models: { [model]: 3 } })] },
+  );
+  const same = s.reserve("claude", model);
+  const otherModel = s.reserve("claude", "some-other-model");
+  const otherProvider = s.reserve(
+    "codex",
+    defaults.roles.implementation.models.codex,
+  );
+  await s.poll();
+  assert.equal(same.signal.aborted, true);
+  assert.equal(otherModel.signal.aborted, false);
+  assert.equal(otherProvider.signal.aborted, false);
+});
+
+test("poll() with a failed read leaves signals alone", async () => {
+  const { scheduler: s } = await scheduler(
+    {},
+    { codex: [reading(), new Error("down")] },
+  );
+  const held = s.reserve("codex", defaults.roles.implementation.models.codex);
+  await s.poll();
+  assert.equal(held.signal.aborted, false);
+  assert.equal(s.quotas.available("codex"), false);
+});
+
+test("a throwing stop module is a failed read naming the module, lifted by the next good pass", async () => {
+  let broken = false;
+  const config = { ...defaults, providers: ["codex" as Provider] };
+  const quotas = new Quotas(config, scripted({}), [
+    () => {
+      if (broken)
+        throw new StopConditionError("Stop condition module x.mjs: boom");
+      return [];
+    },
+  ]);
+  const s = new Scheduler({ config, quotas });
+  await s.refresh();
+  const held = s.reserve("codex", defaults.roles.implementation.models.codex);
+  broken = true;
+  await s.poll();
+  assert.equal(quotas.available("codex"), false);
+  assert.match(quotas.disabled.get("codex")!, /x\.mjs: boom/);
+  assert.equal(held.signal.aborted, false);
+  assert.equal(quotas.interrupted, false);
+  broken = false;
+  await s.poll();
+  assert.equal(quotas.available("codex"), true);
 });

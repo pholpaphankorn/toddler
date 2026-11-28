@@ -402,6 +402,15 @@ export class Quotas {
     console.log(`[quota] ${provider} (${model}) stopped: ${reason}`);
     this.onStop?.(provider, model, reason);
   }
+  // Lifts on the next good read; live sessions carry on.
+  private failRead(provider: Provider, error: unknown): void {
+    if (!this.disabled.has(provider)) this.unverified.add(provider);
+    this.disable(
+      provider,
+      `subscription usage could not be verified: ${error instanceof Error ? error.message : error} (run doctor for details)`,
+      false,
+    );
+  }
   async refresh(): Promise<void[]> {
     if (this.refreshing) return this.refreshing;
     this.refreshing = Promise.all(
@@ -411,26 +420,26 @@ export class Quotas {
         try {
           usage = validateUsage(await this.read(provider, this.config));
         } catch (error) {
-          // Lifts on the next good read; live sessions carry on.
-          if (!this.disabled.has(provider)) this.unverified.add(provider);
-          this.disable(
+          this.failRead(provider, error);
+          return;
+        }
+        // The first condition to name a stop keeps its reason.
+        const stops = new Map<string | undefined, string>();
+        try {
+          const input = {
             provider,
-            `subscription usage could not be verified: ${error instanceof Error ? error.message : error} (run doctor for details)`,
-            false,
-          );
+            reading: usage,
+            models: modelsForProvider(this.config, provider),
+          };
+          for (const condition of this.conditions)
+            for (const stop of condition(input))
+              if (!stops.has(stop.model)) stops.set(stop.model, stop.reason);
+        } catch (error) {
+          // A throwing or invalid stop module (its name is in the message) is a failed read.
+          this.failRead(provider, error);
           return;
         }
         this.values.set(provider, usage);
-        const input = {
-          provider,
-          reading: usage,
-          models: modelsForProvider(this.config, provider),
-        };
-        // The first condition to name a stop keeps its reason.
-        const stops = new Map<string | undefined, string>();
-        for (const condition of this.conditions)
-          for (const stop of condition(input))
-            if (!stops.has(stop.model)) stops.set(stop.model, stop.reason);
         const wide = this.disabled.get(provider);
         // A failed-read stop is replaced by whatever the checks say now, so a real stop fires onStop.
         if (

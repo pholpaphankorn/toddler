@@ -15,12 +15,7 @@ import {
 } from "./policy.ts";
 import { fence, logTail } from "./logtail.ts";
 import { command, type Command } from "./process.ts";
-import {
-  claudeToken,
-  codexAuth,
-  StopConditionError,
-  type Quotas,
-} from "./quota.ts";
+import { claudeToken, codexAuth, type Quotas } from "./quota.ts";
 import { Scheduler, type Clock, type Reservation } from "./scheduler.ts";
 import { privateHomeAgent, stopAgent } from "./agents.ts";
 import { skillLinks, skillLoadLine } from "./skills.ts";
@@ -318,8 +313,7 @@ export class Runner {
         reservation ?? own!,
       );
     } catch (error) {
-      if (error instanceof HostError || error instanceof StopConditionError)
-        throw error;
+      if (error instanceof HostError) throw error;
       throw new StageFailure(
         (error as Error).message,
         (error as StageFailure).log ?? this.stageLogs.get(job.number),
@@ -661,7 +655,6 @@ export class Runner {
                 verification: result.verification,
               });
             } catch (error) {
-              if (error instanceof StopConditionError) throw error;
               if (!this.scheduler.available(provider, "implementation"))
                 continue; // Resume with the remaining provider.
               throw error;
@@ -691,7 +684,6 @@ export class Runner {
                 reservation,
               );
             } catch (error) {
-              if (error instanceof StopConditionError) throw error;
               if (!this.scheduler.available(provider, "review")) continue;
               throw error;
             } finally {
@@ -750,10 +742,7 @@ export class Runner {
       }
       await action();
     } catch (error) {
-      if (
-        error instanceof RankingError ||
-        error instanceof StopConditionError
-      ) {
+      if (error instanceof RankingError) {
         this.interrupted = true;
         this.scheduler.stop();
         throw error;
@@ -914,14 +903,33 @@ export class Runner {
           }
           continue;
         }
-        await Promise.race(inflight);
+        // The one wait: a slot or landing finishing, or the quota poll falling due.
+        const due = this.scheduler.nextPollAt();
+        const cancel = new AbortController();
+        const waits: Promise<unknown>[] = [...inflight];
+        // Re-armed every pass for the time left, so a wait that ends early still polls.
+        // After an interrupt only in-flight work is awaited; an aborted wait would return at once and spin.
+        if (due !== undefined && !this.interrupted)
+          waits.push(
+            this.clock
+              .wait(
+                Math.max(0, due - this.clock.now()),
+                AbortSignal.any([this.stopping.signal, cancel.signal]),
+              )
+              .then(() => "poll"),
+          );
+        const woke = await Promise.race(waits);
+        cancel.abort();
+        if (woke === "poll") {
+          if (this.interrupted) continue;
+          if (this.clock.now() >= due!) await this.scheduler.poll();
+        }
       }
     } catch (error) {
       stop = `Stopped: ${(error as Error).message}`;
-      // Only host faults (and ranking or stop module failures) end the run; let in-flight stages end first.
+      // Only host faults (and ranking failures) end the run; let in-flight stages end first.
       this.interrupted = true;
-      if (error instanceof RankingError || error instanceof StopConditionError)
-        this.scheduler.stop();
+      if (error instanceof RankingError) this.scheduler.stop();
       // A promise settling here can still add another; wait until none is left.
       while (inflight.size) await Promise.all(inflight);
       throw error;
