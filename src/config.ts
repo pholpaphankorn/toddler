@@ -8,7 +8,7 @@ export const providers: Provider[] = ["codex", "claude"];
 
 export const defaults = {
   providers: [...providers],
-  ranking: "quota" as string,
+  ranking: "balanced" as string,
   stopConditions: [] as string[],
   remote: "origin",
   forge: "github" as "github" | "gitlab" | "none",

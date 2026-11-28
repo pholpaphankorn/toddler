@@ -5,7 +5,7 @@ import {
   type Provider,
   type Role,
 } from "./config.ts";
-import { labels, makeRanker, type Issue, type Ranker } from "./policy.ts";
+import { labels, type Issue, type Ranker } from "./policy.ts";
 import type { Quotas } from "./quota.ts";
 
 // Time as the run loop sees it; tests swap it for one that moves only when waited on.
@@ -92,7 +92,7 @@ export class Scheduler {
           : undefined;
     } else if (job && usable(job.implementer)) provider = job.implementer;
     else {
-      const order = this.ranked(issue, role);
+      const order = this.ranked(role);
       // A new issue prefers a provider nothing is running on.
       provider = job
         ? order[0]
@@ -173,16 +173,17 @@ export class Scheduler {
       }
     }
   }
-  private ranked(issue: Issue, role: Role): Provider[] {
+  private ranked(role: Role): Provider[] {
     const candidates = this.config.providers.flatMap((provider) => {
       const model = this.config.roles[role].models[provider];
       const reading = this.quotas.values.get(provider);
       return reading && this.quotas.available(provider, model)
-        ? [{ provider, model, reading }]
+        ? [{ provider, model, reading, running: this.running(provider) }]
         : [];
     });
     return candidates.length < 2
       ? candidates.map((c) => c.provider)
-      : (this.ranker ?? makeRanker(this.config))({ role, issue, candidates });
+      : // Without a ranker, configured provider order stands.
+        (this.ranker?.({ candidates }) ?? candidates.map((c) => c.provider));
   }
 }

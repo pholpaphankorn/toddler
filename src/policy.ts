@@ -1,13 +1,18 @@
-import { type Defaults, type Provider, type Role } from "./config.ts";
-import { weeklyLeft, type Reading } from "./quota.ts";
+import { type Defaults, type Provider } from "./config.ts";
+import type { Reading } from "./quota.ts";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export type Ranker = (input: {
-  role: Role;
-  issue: Issue;
-  candidates: { provider: Provider; model: string; reading: Reading }[];
+  candidates: {
+    provider: Provider;
+    model: string;
+    reading: Reading;
+    running: number;
+  }[];
 }) => Provider[];
+
+export const builtinRankers = ["balanced", "most-quota"];
 
 export class RankingError extends Error {}
 
@@ -15,12 +20,13 @@ export async function loadRanker(
   root: string,
   config: Defaults,
 ): Promise<Ranker> {
-  if (config.ranking === "quota" || config.ranking === "order")
-    return makeRanker(config);
   const name = config.ranking;
   let ranker: Ranker;
   try {
-    const module = await import(pathToFileURL(resolve(root, name)).href);
+    const url = builtinRankers.includes(name)
+      ? new URL(`./rankers/${name}.ts`, import.meta.url)
+      : pathToFileURL(resolve(root, name));
+    const module = await import(url.href);
     if (typeof module.default !== "function")
       throw new Error("default export must be a function");
     ranker = module.default;
@@ -49,29 +55,6 @@ export async function loadRanker(
         `Ranking module ${name}: ${String((error as Error)?.message ?? error)}`,
       );
     }
-  };
-}
-
-export function makeRanker(
-  config: Defaults,
-  random: () => number = Math.random,
-): Ranker {
-  return ({ candidates }) => {
-    if (config.ranking === "order")
-      return config.providers.filter((provider) =>
-        candidates.some((c) => c.provider === provider),
-      );
-    const [a, b] = candidates;
-    const weekly =
-      Math.floor(weeklyLeft(b.reading, b.model, b.provider)) -
-      Math.floor(weeklyLeft(a.reading, a.model, a.provider));
-    const fiveHour =
-      Math.floor(b.reading.fiveHour?.remainingPercent ?? 100) -
-      Math.floor(a.reading.fiveHour?.remainingPercent ?? 100);
-    return weekly > 0 ||
-      (weekly === 0 && (fiveHour > 0 || (fiveHour === 0 && random() >= 0.5)))
-      ? [b.provider, a.provider]
-      : [a.provider, b.provider];
   };
 }
 
