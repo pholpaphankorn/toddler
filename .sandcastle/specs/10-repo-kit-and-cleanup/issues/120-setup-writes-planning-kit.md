@@ -3,7 +3,7 @@ title: setup writes and commits the planning kit
 labels: []
 blocked_by: [118]
 parent: 10
-status: open
+status: closed
 ---
 `toddler setup` makes a repo ready for planning sessions outside toddler: it writes the configured tracker's templates and a toddler block in `AGENTS.md`/`CLAUDE.md`, and commits only what changed. Settled in [Planning kit templates and the toddler block](108-planning-kit-templates.md), [setup as a toddler command](109-setup-command.md) (steps 5–7) and [How spec 10's setup, kit and doctor row are tested](114-testing-spec-10.md). Drafts to start from: `prototype-108-kit/` on local branch `prototype/planning-kit-templates` (commit `59e747d`, unverified).
 

@@ -23,6 +23,7 @@ import { bundledSkillsPath } from "./skills.ts";
 import { planJson, planPass, planText } from "./plan.ts";
 import { connect, validatePushRemote } from "./forge.ts";
 import { smokeForge } from "./smoke-forge.ts";
+import { writeKit } from "./kit.ts";
 
 const usage =
   "Usage: toddler [init|setup|doctor|plan|run|smoke [codex|claude]|smoke forge <github|gitlab> <scratch-repository>]";
@@ -202,7 +203,17 @@ async function main() {
   if (existsSync(join(root, ".sandcastle/.env")))
     process.loadEnvFile(join(root, ".sandcastle/.env"));
   if (mode === "init") return init(root);
-  if (mode === "setup") return script("setup.sh");
+  if (mode === "setup") {
+    if (!existsSync(configPath(root)))
+      throw new Error("No .sandcastle/config.json: run `toddler init` first");
+    for (const line of writeKit(
+      root,
+      loadConfig(root, { checkSkillNames: false }),
+    ))
+      console.log(line);
+    // shortcut: logins and doctor stay in setup.sh until they move to TypeScript (local issue 121).
+    return script("setup.sh");
+  }
   const config = loadConfig(root, { checkSkillNames: mode !== "doctor" });
   if (mode === "doctor") return doctor(config, root);
   const ranker = await loadRanker(root, config);
