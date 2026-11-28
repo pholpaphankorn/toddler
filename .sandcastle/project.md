@@ -1,1 +1,0 @@
-- Format with the project formatter: run `npm run format` before committing. Do not use other formatters or editor defaults.

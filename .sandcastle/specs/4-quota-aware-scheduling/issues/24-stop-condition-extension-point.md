@@ -1,6 +1,6 @@
 ---
 title: How a project plugs in its own stop conditions
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [22, 23]
 parent: 4
 status: closed

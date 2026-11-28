@@ -15,7 +15,13 @@ test("none forge doctor reports auto-merge setting", async () => {
   }
 });
 import { join } from "node:path";
-import { GitHubForge, FilesTracker, NoneForge } from "../src/forge.ts";
+import {
+  GitHubForge,
+  GitLabForge,
+  FilesTracker,
+  NoneForge,
+} from "../src/forge.ts";
+import { ready } from "../src/policy.ts";
 import { defaults, type Config } from "../src/config.ts";
 
 const config = {
@@ -695,3 +701,73 @@ for (const row of deliverRows)
     );
     assert.deepEqual(calls, row.calls);
   });
+
+test("an adult issue is never picked on any tracker, even with the issue label", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tracker-adult-"));
+  try {
+    const dir = join(root, ".sandcastle/specs/1-a/issues");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "1-person.md"), "---\nlabels: [adult]\n---\n");
+    await writeFile(join(dir, "2-toddler.md"), "Body");
+    const files = await new FilesTracker(root).issues();
+    assert.deepEqual(
+      files.filter((issue) => ready(issue, config)).map((i) => i.number),
+      [2],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+  const github = await new GitHubForge(
+    ".",
+    config,
+    async () => "",
+    async () =>
+      JSON.stringify([
+        [
+          {
+            number: 1,
+            title: "Person",
+            labels: [{ name: config.issueLabel }, { name: "adult" }],
+          },
+          {
+            number: 2,
+            title: "Toddler",
+            labels: [{ name: config.issueLabel }],
+          },
+        ],
+      ]),
+  ).tracker.issues();
+  assert.deepEqual(
+    github.filter((issue) => ready(issue, config)).map((i) => i.number),
+    [2],
+  );
+  const gitlabConfig = {
+    ...config,
+    forge: "gitlab",
+    repository: "group/project",
+  } as Config;
+  const gitlab = await new GitLabForge(
+    ".",
+    gitlabConfig,
+    async () => "",
+    async () =>
+      JSON.stringify([
+        {
+          iid: 1,
+          title: "Person",
+          description: "",
+          labels: [config.issueLabel, "adult"],
+        },
+        {
+          iid: 2,
+          title: "Toddler",
+          description: "",
+          labels: [config.issueLabel],
+        },
+      ]),
+  ).tracker.issues();
+  assert.deepEqual(
+    gitlab.filter((issue) => ready(issue, gitlabConfig)).map((i) => i.number),
+    [2],
+  );
+});

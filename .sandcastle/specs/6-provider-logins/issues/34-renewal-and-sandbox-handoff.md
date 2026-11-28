@@ -1,6 +1,6 @@
 ---
 title: How provider logins stay fresh and what a sandbox receives
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [30, 31, 32]
 parent: 6
 status: open

@@ -1,6 +1,6 @@
 ---
 title: How quota polling works with several sessions per provider
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 9
 status: closed

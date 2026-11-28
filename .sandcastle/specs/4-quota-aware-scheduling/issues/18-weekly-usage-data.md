@@ -1,6 +1,6 @@
 ---
 title: What weekly usage each provider reports
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 4
 status: closed

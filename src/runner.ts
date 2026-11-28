@@ -576,9 +576,8 @@ export class Runner {
       }
     });
   }
-  // Role prompt and workflow rules, followed by optional project notes.
+  // Role prompt followed by the workflow rules.
   async prompt(role: Role): Promise<string> {
-    const notes = join(this.root, ".sandcastle/project.md");
     const override = this.config.roles[role].prompt;
     return (
       (await readFile(
@@ -588,10 +587,7 @@ export class Runner {
       "\n" +
       (await readFile(own("rules.md"), "utf8")) +
       "\n" +
-      (await readFile(own(`rules/${role}.md`), "utf8")) +
-      (existsSync(notes)
-        ? `\nProject notes:\n${await readFile(notes, "utf8")}`
-        : "")
+      (await readFile(own(`rules/${role}.md`), "utf8"))
     );
   }
   skillInstructions(provider: Provider, role: Role, job: Job): string {

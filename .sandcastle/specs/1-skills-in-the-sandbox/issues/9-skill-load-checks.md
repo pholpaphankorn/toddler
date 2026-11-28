@@ -1,6 +1,6 @@
 ---
 title: How doctor and smoke check that skills load
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 1
 assignee: phol (with claude)

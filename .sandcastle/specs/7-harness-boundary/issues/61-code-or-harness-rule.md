@@ -1,6 +1,6 @@
 ---
 title: Rule for code, harness or cut
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [57]
 parent: 7
 status: closed

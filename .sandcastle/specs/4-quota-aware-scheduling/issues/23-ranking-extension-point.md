@@ -1,6 +1,6 @@
 ---
 title: How a project plugs in its own ranking
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [19, 20, 21]
 parent: 4
 assignee: claude (with user)

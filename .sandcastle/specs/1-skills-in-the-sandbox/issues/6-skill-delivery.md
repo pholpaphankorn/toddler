@@ -1,6 +1,6 @@
 ---
 title: How skills get into the sandbox
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [2, 3, 4]
 parent: 1
 assignee: phol (with claude)

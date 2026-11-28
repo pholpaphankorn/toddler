@@ -1,6 +1,6 @@
 ---
 title: What Claude subscription credentials can do
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 6
 status: closed

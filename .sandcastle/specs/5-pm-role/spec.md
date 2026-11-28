@@ -1,6 +1,6 @@
 ---
 title: PM role
-labels: [wayfinder:map, on-hold]
+labels: [wayfinder:map, adult]
 status: open
 ---
 <!-- Wayfinder map. Charted as a skeleton only; tickets come once Roles in config and Trackers settle. -->
@@ -18,7 +18,7 @@ A spec for a pm role that reads a spec from the project's tracker and turns it i
 - Waits on [Roles in config](../2-roles-in-config/spec.md) (pm is a role) and [Trackers](../3-trackers/spec.md) (it reads specs from and writes issues to the tracker).
 - Check overlap with spec 1's out-of-scope "async planning mode" and "tracker doc" entries ([spec 1](../1-skills-in-the-sandbox/spec.md)) before charting.
 - Today no forge token enters the sandbox (`src/agents.ts` unsets them), so who writes the issues is an open question.
-- Tracker: these files, same conventions as [spec 1](../1-skills-in-the-sandbox/spec.md). Tickets are files with `parent: 5` and carry `on-hold`. Claim = `assignee:`; resolve = `## Answer` + `status: closed`; blocking = `blocked_by` (works across specs).
+- Tracker: these files, same conventions as [spec 1](../1-skills-in-the-sandbox/spec.md). Tickets are files with `parent: 5` and carry `adult`. Claim = `assignee:`; resolve = `## Answer` + `status: closed`; blocking = `blocked_by` (works across specs).
 - Vocabulary: [GLOSSARY.md](../../../GLOSSARY.md) (**Role**, **Tracker**, **Skill set**).
 - Implementation issues from this spec are `blocked_by` [spec 1](../1-skills-in-the-sandbox/spec.md)'s open issues (13–17) where they touch the same code.
 

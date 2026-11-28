@@ -1,6 +1,6 @@
 ---
 title: How sandcastle can put files into the sandbox's private home
-labels: [wayfinder:research, on-hold]
+labels: [wayfinder:research, adult]
 blocked_by: []
 parent: 1
 assignee: claude (research subagent)

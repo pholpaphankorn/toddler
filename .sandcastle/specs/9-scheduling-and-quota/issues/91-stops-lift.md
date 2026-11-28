@@ -1,6 +1,6 @@
 ---
 title: When a stop lifts, and what reads quota while a provider is stopped
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 9
 status: closed

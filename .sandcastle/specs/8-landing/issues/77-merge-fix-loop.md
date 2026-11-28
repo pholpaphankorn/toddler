@@ -1,6 +1,6 @@
 ---
 title: "The merge fix loop: triggers, rounds and what each agent sees"
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: [75, 76]
 parent: 8
 status: closed

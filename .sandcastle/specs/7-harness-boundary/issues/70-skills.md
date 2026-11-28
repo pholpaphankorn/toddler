@@ -1,6 +1,6 @@
 ---
 title: "Bundled skills, vendoring and skill doctor: keep, delegate, or cut"
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 7
 status: closed

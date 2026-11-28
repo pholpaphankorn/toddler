@@ -1,6 +1,6 @@
 ---
 title: "Role prompts, workflow rules and prompt assembly: what stays toddler's"
-labels: [wayfinder:grilling, on-hold]
+labels: [wayfinder:grilling, adult]
 blocked_by: []
 parent: 7
 status: closed
