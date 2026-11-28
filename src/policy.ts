@@ -1,5 +1,5 @@
 import { type Defaults, type Provider, type Role } from "./config.ts";
-import { weeklyLeft, type Reading, type Quotas } from "./quota.ts";
+import { weeklyLeft, type Reading } from "./quota.ts";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -75,25 +75,6 @@ export function makeRanker(
   };
 }
 
-export function ranked(
-  issue: Issue,
-  role: Role,
-  config: Defaults,
-  quotas: Quotas,
-  ranker: Ranker = makeRanker(config),
-): Provider[] {
-  const candidates = config.providers.flatMap((provider) => {
-    const model = config.roles[role].models[provider];
-    const reading = quotas.values.get(provider);
-    return reading && quotas.available(provider, model)
-      ? [{ provider, model, reading }]
-      : [];
-  });
-  return candidates.length < 2
-    ? candidates.map((c) => c.provider)
-    : ranker({ role, issue, candidates });
-}
-
 export interface Issue {
   number: number;
   title: string;
@@ -106,11 +87,6 @@ export interface ReviewReport {
   summary: string;
   validation: string;
 }
-export type Available = (provider: Provider) => boolean;
-export interface Assignment {
-  issue: Issue;
-  provider: Provider;
-}
 
 export function labels(issue: Issue): string[] {
   return issue.labels;
@@ -119,42 +95,6 @@ export function ready(issue: Issue, config: Defaults): boolean {
   return !labels(issue).some((label) =>
     config.blockedLabels.includes(label.toLowerCase()),
   );
-}
-export function assignments(
-  issues: Issue[],
-  available: Available,
-  config: Defaults,
-  quotas?: Quotas,
-  ranker?: Ranker,
-): Assignment[] {
-  const candidates = issues.filter((issue) => ready(issue, config));
-  const usable =
-    quotas && candidates.length
-      ? ranked(candidates[0], "implementation", config, quotas, ranker)
-      : config.providers.filter((provider) => available(provider));
-  if (!candidates.length || !usable.length) return [];
-  const result = [{ issue: candidates[0], provider: usable[0] }];
-  if (
-    usable.length === 2 &&
-    labels(candidates[0]).includes(config.parallelLabel)
-  ) {
-    const next = candidates
-      .slice(1)
-      .find((issue) => labels(issue).includes(config.parallelLabel));
-    if (next) result.push({ issue: next, provider: usable[1] });
-  }
-  return result;
-}
-export function reviewer(
-  implementer: Provider,
-  available: Available,
-): Provider | undefined {
-  const opposite = implementer === "codex" ? "claude" : "codex";
-  return available(opposite)
-    ? opposite
-    : available(implementer)
-      ? implementer
-      : undefined;
 }
 export function reviewReport(text: string): ReviewReport {
   const matches = [

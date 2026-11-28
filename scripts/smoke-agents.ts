@@ -13,6 +13,7 @@ import {
 import { seatbelt } from "@ai-hero/sandcastle/sandboxes/seatbelt";
 import { command } from "../src/process.ts";
 import { codexAuth, claudeToken, Quotas } from "../src/quota.ts";
+import { Scheduler } from "../src/scheduler.ts";
 import { skillLinks, skillLoadLine } from "../src/skills.ts";
 import { privateHomeAgent } from "../src/agents.ts";
 import {
@@ -43,6 +44,7 @@ const canary = join(skills, "canary");
 const index = new Map([["canary", canary]]);
 const code = randomBytes(16).toString("hex");
 const quotas = new Quotas(config);
+const scheduler = new Scheduler({ config, quotas });
 let sandbox: Sandbox | undefined;
 try {
   await mkdir(join(root, ".sandcastle/logs"), { recursive: true });
@@ -94,7 +96,8 @@ try {
                 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
               },
             });
-      await quotas.run(provider, model, async (signal) => {
+      const reservation = scheduler.reserve(provider, model);
+      await scheduler.run(reservation, async (signal) => {
         const result = await sandbox!.run({
           agent: privateHomeAgent(base, provider),
           maxIterations: 1,
@@ -116,6 +119,7 @@ try {
           `PASS: ${provider} ${role}, ${model}, subscription auth inside Seatbelt`,
         );
       });
+      reservation.release();
     }
   }
 } finally {

@@ -7,7 +7,7 @@ import {
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { assignments, reviewer, reviewReport } from "../src/policy.ts";
+import { reviewReport } from "../src/policy.ts";
 import {
   Quotas,
   codexUsage,
@@ -18,6 +18,7 @@ import {
   loadStopConditions,
   type Reading,
 } from "../src/quota.ts";
+import { Scheduler } from "../src/scheduler.ts";
 import { Runner, type Job, type RunnerOptions } from "../src/runner.ts";
 import { command } from "../src/process.ts";
 import {
@@ -217,8 +218,9 @@ test("with nothing able to start, the run sleeps until wakeAt through the inject
   runner.tracker.issues = async () => [issue(1)];
   quotas.available = () => false;
   const waits: number[] = [];
-  runner.wakeAt = () => (waits.length ? undefined : Date.now() + 60_000);
-  runner.wait = async (ms) => {
+  runner.scheduler.wakeAt = () =>
+    waits.length ? undefined : Date.now() + 60_000;
+  runner.clock.wait = async (ms) => {
     waits.push(ms);
     quotas.available = () => true;
   };
@@ -433,12 +435,12 @@ test("a stop condition failure during polling aborts the session and rejects wit
     };
     const conditions = await loadStopConditions(root, configured);
     const quotas = new Quotas(configured, async () => usage(50), conditions);
+    const scheduler = new Scheduler({ config: configured, quotas });
     let signal!: AbortSignal;
     let cleanedUp = false;
     await assert.rejects(
-      quotas.run(
-        "codex",
-        config.roles.implementation.models.codex,
+      scheduler.run(
+        scheduler.reserve("codex", config.roles.implementation.models.codex),
         async (current) => {
           signal = current;
           try {
@@ -477,7 +479,7 @@ test("runner propagates stop condition polling failures during implementation an
         };
         const conditions = await loadStopConditions(root, configured);
         const { runner } = fixture(configured);
-        runner.quotas = new Quotas(
+        runner.scheduler.quotas = new Quotas(
           configured,
           async () => usage(50),
           conditions,
@@ -489,9 +491,11 @@ test("runner propagates stop condition polling failures during implementation an
               stdout: "Implementation done",
               verification: "",
             };
-          return runner.quotas.run(
-            provider,
-            configured.roles[currentRole].models[provider],
+          return runner.scheduler.run(
+            runner.scheduler.reserve(
+              provider,
+              configured.roles[currentRole].models[provider],
+            ),
             (signal) => {
               (globalThis as any).__stopPollFail = true;
               return new Promise<never>((_, reject) =>
@@ -528,7 +532,7 @@ test("runner reports a fatal stop condition when the same poll cancels a stage",
     const conditions = await loadStopConditions(root, configured);
     let running = false;
     const { runner } = fixture(configured);
-    runner.quotas = new Quotas(
+    runner.scheduler.quotas = new Quotas(
       configured,
       async () => usage(running ? 4 : 50),
       conditions,
@@ -628,7 +632,10 @@ test("project ranker drives the implementer choice", async () => {
   const quotas = new Quotas(configured, async () => usage(50));
   await quotas.refresh();
   assert.equal(
-    assignments([issue(1)], () => true, configured, quotas, ranker)[0].provider,
+    new Scheduler({ config: configured, quotas, ranker }).pick(
+      "implementation",
+      issue(1),
+    )!.provider,
     "claude",
   );
 });
@@ -659,7 +666,11 @@ test("project ranker failures stop scheduling and identify the module", async ()
     const quotas = new Quotas(configured, async () => usage(50));
     await quotas.refresh();
     assert.throws(
-      () => assignments([issue(1)], () => true, configured, quotas, ranker),
+      () =>
+        new Scheduler({ config: configured, quotas, ranker }).pick(
+          "implementation",
+          issue(1),
+        ),
       (error: Error) => error.message.includes(path),
     );
   }
@@ -676,7 +687,10 @@ test("project ranker is not called with one available candidate", async () => {
   const quotas = new Quotas(configured, async () => usage(50));
   await quotas.refresh();
   assert.equal(
-    assignments([issue(1)], () => true, configured, quotas, ranker)[0].provider,
+    new Scheduler({ config: configured, quotas, ranker }).pick(
+      "implementation",
+      issue(1),
+    )!.provider,
     "codex",
   );
 });
@@ -776,81 +790,15 @@ const report = (verdict = "approved") =>
     validation: "Checks passed",
   })}</sandcastle-review>`;
 
-test("one issue prefers Codex; fallback and explicit independent parallel issues", () => {
-  assert.equal(
-    assignments([issue(1)], () => true, config)[0].provider,
-    "codex",
-  );
-  assert.equal(
-    assignments([issue(1)], (name) => name === "claude", config)[0].provider,
-    "claude",
-  );
-  assert.equal(assignments([issue(1), issue(2)], () => true, config).length, 1);
-  assert.deepEqual(
-    assignments(
-      [issue(1, ["parallel-safe"]), issue(2, ["parallel-safe"])],
-      () => true,
-      config,
-    ).map(({ issue, provider }) => [issue.number, provider]),
-    [
-      [1, "codex"],
-      [2, "claude"],
-    ],
-  );
-  assert.equal(
-    assignments([issue(1, ["blocked"]), issue(2)], () => true, config)[0].issue
-      .number,
-    2,
-  );
-  assert.equal(assignments([issue(1)], () => false, config).length, 0);
-});
-test("opposite-provider review, same-provider fallback, no reviewer when exhausted", () => {
-  assert.equal(
-    reviewer("codex", () => true),
-    "claude",
-  );
-  assert.equal(
-    reviewer("claude", () => true),
-    "codex",
-  );
-  assert.equal(
-    reviewer("claude", (name) => name === "claude"),
-    "claude",
-  );
-  assert.equal(
-    reviewer("claude", () => false),
-    undefined,
-  );
-});
-test("configured order assigns both parallel issues and single provider is the only one read", async () => {
-  const configured = {
-    ...config,
-    providers: ["claude", "codex"] as Provider[],
-    ranking: "order" as const,
-  };
+test("a single provider is the only one read", async () => {
   const reads: Provider[] = [];
-  const quotas = new Quotas(configured, async (provider) => {
-    reads.push(provider);
-    return usage(provider === "codex" ? 90 : 40);
-  });
-  await quotas.refresh();
-  assert.deepEqual(
-    assignments(
-      [issue(1, ["parallel-safe"]), issue(2, ["parallel-safe"])],
-      () => true,
-      configured,
-      quotas,
-    ).map((a) => a.provider),
-    ["claude", "codex"],
-  );
   const single = new Quotas(
-    { ...configured, providers: ["claude"] },
+    { ...config, providers: ["claude"] },
     async (provider) => {
       reads.push(provider);
       return usage(50);
     },
   );
-  reads.length = 0;
   await single.refresh();
   assert.deepEqual(reads, ["claude"]);
   assert.equal(single.available("codex"), false);
@@ -1077,19 +1025,22 @@ test("a model stop aborts only sessions on that model", async () => {
     ...usage(50),
     weeklyByModel: { Fable: { remainingPercent: remaining, resetsAt: null } },
   }));
+  const scheduler = new Scheduler({ config: scopedConfig, quotas });
   let reviewSignal!: AbortSignal;
   let implementationSignal!: AbortSignal;
   let finish!: () => void;
   const pending = new Promise<void>((resolve) => {
     finish = resolve;
   });
-  const review = quotas.run("claude", "claude-fable", async (signal) => {
-    reviewSignal = signal;
-    await pending;
-  });
-  const implementation = quotas.run(
-    "claude",
-    "claude-sonnet",
+  const review = scheduler.run(
+    scheduler.reserve("claude", "claude-fable"),
+    async (signal) => {
+      reviewSignal = signal;
+      await pending;
+    },
+  );
+  const implementation = scheduler.run(
+    scheduler.reserve("claude", "claude-sonnet"),
     async (signal) => {
       implementationSignal = signal;
       await pending;
@@ -1127,10 +1078,11 @@ test("at 5% both roles stop; no automatic reset/restart within a run", async () 
 });
 test("live quota drop aborts every active role of that provider, leaving the other usable", async () => {
   let codexRemaining = 50;
-  const quotas = new Quotas(
-    { ...config, pollIntervalMs: 10 },
-    async (provider) => usage(provider === "codex" ? codexRemaining : 50),
+  const polling = { ...config, pollIntervalMs: 10 };
+  const quotas = new Quotas(polling, async (provider) =>
+    usage(provider === "codex" ? codexRemaining : 50),
   );
+  const scheduler = new Scheduler({ config: polling, quotas });
   let entered = 0;
   const action = (signal: AbortSignal) =>
     new Promise((resolve, reject) => {
@@ -1141,8 +1093,14 @@ test("live quota drop aborts every active role of that provider, leaving the oth
       if (entered === 2) codexRemaining = 4;
     });
   const results = await Promise.allSettled([
-    quotas.run("codex", config.roles.implementation.models.codex, action),
-    quotas.run("codex", config.roles.review.models.codex, action),
+    scheduler.run(
+      scheduler.reserve("codex", config.roles.implementation.models.codex),
+      action,
+    ),
+    scheduler.run(
+      scheduler.reserve("codex", config.roles.review.models.codex),
+      action,
+    ),
   ]);
   assert.equal(
     results.every((result) => result.status === "rejected"),
@@ -1218,7 +1176,7 @@ function fixture(
           ? { ref: `local issue ${item.number}`, closes: "" }
           : { ref: `#${item.number}`, closes: `Closes #${item.number}\n\n` },
     },
-    wait: async () => {},
+    clock: { now: () => Date.now(), wait: async () => {} },
     forge: {
       base: async (branch = "main") => {
         events.push(["base", branch]);
@@ -1468,13 +1426,6 @@ test("pull request reports verification passed without including its output", as
 test("a long verify failure keeps its last lines in attention.detail", async () => {
   const { runner, state, quotas } = fixture({ verify: "npm test" });
   runner.stage = Runner.prototype.stage;
-  Object.assign(quotas, {
-    run: async (
-      _p: Provider,
-      _m: string,
-      action: (s: AbortSignal) => unknown,
-    ) => action(new AbortController().signal),
-  });
   const agent = (model: string) => ({
     model,
     buildPrintCommand: () => ({ command: "cli", stdin: "" }),
@@ -1918,7 +1869,7 @@ test("fake forge: deliver, waiting until auto-merge lands it, and only then do d
     return result;
   };
   const waits: number[] = [];
-  runner.wait = async (ms) => {
+  runner.clock.wait = async (ms) => {
     waits.push(ms);
   };
   const { lines } = await summary(() => runner.run("main"));
@@ -2066,7 +2017,7 @@ test("fake forge: landing polls every landingPollSeconds and an interrupt ends t
     delivered,
   );
   const waits: number[] = [];
-  runner.wait = (ms, signal) => {
+  runner.clock.wait = (ms, signal) => {
     waits.push(ms);
     return new Promise((resolve) =>
       signal!.addEventListener("abort", () => resolve()),
@@ -2249,7 +2200,7 @@ function githubLanding(
     return { state: "waiting", url: "pr" };
   };
   runner.forge = github;
-  runner.wait = async () => {
+  runner.clock.wait = async () => {
     merged = true;
   };
   return { runner, state, delivered };
@@ -2377,15 +2328,9 @@ function mergeFixRun(
   const seen: { role: string; mergeHead: string; work: string }[] = [];
   const out = { runner, state, delivered, moved, seen, git, reviewPrompt: "" };
   runner.stage = Runner.prototype.stage;
+  runner.scheduler.run = (_reservation, action) =>
+    action(new AbortController().signal);
   Object.assign(runner, {
-    quotas: fake({
-      ...runner.quotas,
-      run: async (
-        _p: Provider,
-        _m: string,
-        action: (s: AbortSignal) => unknown,
-      ) => action(new AbortController().signal),
-    }),
     authentication: { codex: async () => "", claude: async () => "" },
   });
   const agent = (model: string) => ({
@@ -2707,7 +2652,7 @@ test("merge fix caps: past maxMergeFixRounds is merge-fix-cap; review rejections
 });
 test("merge fixes take a free slot ahead of fresh issues", async () => {
   const { runner, state } = fixture();
-  runner.maxParallelIssues = 1;
+  runner.scheduler.config = { ...config, maxParallelIssues: 1 };
   runner.tracker.issues = async () => [issue(2), issue(1)];
   state.jobs[1] = approvedJob(1, {
     status: "implementation",
@@ -2912,63 +2857,33 @@ test("malformed review and changed reviewed SHA cannot push or open a PR", async
     );
   }
 });
-test("run waits for a parallel stage before reporting a fallback ranking failure", async () => {
+test("a ranking failure while filling stops the run and releases every reservation", async () => {
   const { loadRanker } = await import("../src/policy.ts");
   const path = "tests/fixtures/ranking/throw.js";
   const configured = { ...config, ranking: path };
   const throwingRanker = await loadRanker(process.cwd(), configured);
   const { runner, state } = fixture(configured);
-  let staged = false;
-  // The fallback ranking fails inside issue 2's work, once issue 1's stage is running.
-  runner.ranker = (input) =>
-    input.issue.number === 2 && staged
+  // Issue 1 gets its provider; ranking then fails for issue 2 in the same fill.
+  runner.scheduler.ranker = (input) =>
+    input.issue.number === 2
       ? throwingRanker(input)
       : input.candidates.map(({ provider }) => provider);
   runner.candidates = async () => [
     issue(1, ["parallel-safe"]),
     issue(2, ["parallel-safe"]),
   ];
-  state.jobs[2] = {
-    number: 2,
-    branch: "toddler/issue-2",
-    baseBranch: "main",
-    baseSha: "base",
-    status: "implementation",
-    reviewRounds: 0,
-    mergeFixRounds: 0,
-    implementer: fake<Provider>("unavailable"),
-  };
-  let release!: () => void;
-  let started!: () => void;
-  const stageStarted = new Promise<void>((resolve) => (started = resolve));
-  const stageGate = new Promise<void>((resolve) => (release = resolve));
-  runner.stage = async (_job, _provider, role) => {
+  let staged = false;
+  runner.stage = async () => {
     staged = true;
-    started();
-    await stageGate;
-    return {
-      sha: "reviewed",
-      stdout: role === "review" ? report() : "done",
-      verification: "",
-    };
+    throw new Error("unexpected stage");
   };
-  const context = runner.context.bind(runner);
-  runner.context = async (current, job) => {
-    if (current.number === 2) await stageStarted;
-    return context(current, job);
-  };
-  let settled = false;
-  const result = runner.run("main").finally(() => (settled = true));
-  void result.catch(() => {});
-  await stageStarted;
-  await new Promise((resolve) => setImmediate(resolve));
-  try {
-    assert.equal(settled, false);
-  } finally {
-    release();
-  }
-  await assert.rejects(result, (error: Error) => error.message.includes(path));
-  assert.equal(state.jobs[2].attention, undefined);
+  await assert.rejects(runner.run("main"), (error: Error) =>
+    error.message.includes(path),
+  );
+  assert.equal(staged, false);
+  assert.equal(state.jobs[2], undefined);
+  for (const provider of providers)
+    assert.equal(runner.scheduler.running(provider), 0);
 });
 test("no available issue or quota terminates without starting agents", async () => {
   const { runner, events, quotas } = fixture();
@@ -3007,8 +2922,8 @@ test("run ends when every configured model is stopped by scoped weekly readings"
       },
     },
   };
-  runner.config = scopedConfig;
-  runner.quotas = new Quotas(scopedConfig, async (provider) => ({
+  runner.config = runner.scheduler.config = scopedConfig;
+  runner.scheduler.quotas = new Quotas(scopedConfig, async (provider) => ({
     ...usage(50),
     weeklyByModel: Object.fromEntries(
       (provider === "codex" ? ["codex-a", "codex-b"] : ["Fable"]).map(
@@ -3044,11 +2959,7 @@ test("implementation stages run the formatter and commit its changes before veri
     root: fileURLToPath(new URL("../../", import.meta.url)),
     config: { ...config, format: "npm run format" },
     quotas: fake({
-      run: async (
-        _p: Provider,
-        _m: string,
-        action: (s: AbortSignal) => unknown,
-      ) => action(new AbortController().signal),
+      refresh: async () => {},
     }),
     state: { repository: config.repository, jobs: {} },
     save: () => {},
@@ -3129,11 +3040,7 @@ test("Sandcastle stage uses the requested model, runs the verify command in Seat
       root,
       config,
       quotas: fake({
-        run: async (
-          _provider: Provider,
-          _model: string,
-          action: (signal: AbortSignal) => unknown,
-        ) => action(new AbortController().signal),
+        refresh: async () => {},
       }),
       state: { repository: config.repository, jobs: {} },
       save: () => {},
@@ -3246,11 +3153,7 @@ test("reviewer commit mutation is rejected and sandbox is closed", async () => {
       root: "/fixture",
       config,
       quotas: {
-        run: async (
-          _provider: Provider,
-          _model: string,
-          action: (signal: AbortSignal) => unknown,
-        ) => action(new AbortController().signal),
+        refresh: async () => {},
       },
       state: { jobs: {} },
       save: () => {},

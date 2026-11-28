@@ -27,6 +27,11 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
       load({ repository: "a/b", landingPollSeconds: 10 }).landingPollSeconds,
       10,
     );
+    assert.equal(load({ repository: "a/b" }).maxParallelIssues, 2);
+    assert.equal(
+      load({ repository: "a/b", maxParallelIssues: 3 }).maxParallelIssues,
+      3,
+    );
     // Ignored without a forge.
     assert.equal(load({ forge: "none", landingPollSeconds: 1 }).forge, "none");
     assert.ok(
@@ -42,6 +47,8 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
       [{ forge: "other", repository: "a/b" }, /forge/],
       [{ issues: "other", repository: "a/b" }, /issues/],
       [{ autoMerge: "true", repository: "a/b" }, /autoMerge/],
+      [{ maxParallelIssues: 0, repository: "a/b" }, /maxParallelIssues/],
+      [{ maxParallelIssues: 1.5, repository: "a/b" }, /maxParallelIssues/],
       [{ landingPollSeconds: 9, repository: "a/b" }, /landingPollSeconds/],
       [{ landingPollSeconds: "60", repository: "a/b" }, /landingPollSeconds/],
       [
