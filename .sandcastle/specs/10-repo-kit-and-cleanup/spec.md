@@ -27,10 +27,11 @@ A spec, ready to break into toddler issues, for the third reshape area: `setup` 
 - [Planning kit templates and the toddler block](issues/108-planning-kit-templates.md): templates follow to-spec (spec sections) and to-tickets (issue template), with toddler's label (`Sandcastle` for `ready-for-agent`), paths/numbering and blocker format replacing the skills' tracker steps; labels baked in from config and re-rendered each `setup`; usage notes in a top comment; a ~3-line block pointing agents (and those skills) at the templates.
 - [setup as a toddler command: kit step, login steps and glab](issues/109-setup-command.md): TypeScript in `main.ts`, `setup.sh` deleted; login steps follow `forge` and the roles' providers; glab's host comes from glab; commits kit paths git reports changed (skipping ones with prior uncommitted edits, none on detached HEAD); kit → commit → logins → doctor.
 - [doctor row for spec children missing issueLabel](issues/110-doctor-missing-issue-label.md): a FAIL row in each forge's `doctorChecks` naming open children of open specs without `issueLabel` (≤10 numbers); children with `blockedLabels` or the new `adultLabel` (`adult`, never picked on any tracker) are skipped; wayfinder tickets move `on-hold` → `adult` when it ships.
+- [How toddler reaps a stage's leftover processes](issues/113-reap-stage-stragglers.md): toddler strips sandcastle's signal listeners after each `createSandbox` so Ctrl+C/SIGTERM cancels stages through `stopAgent`; before every `close()` (stages and landing) a host `lsof` cwd sweep SIGKILLs processes under the worktree or private root, logged in one line; crashes stay a known gap; tested with a real seatbelt sandbox and a fake agent.
 
 ## Not yet specified
 
-- README/GLOSSARY sweep: what changes falls out of the other tickets (`scripts/setup.sh` is deleted per the setup ticket); likely implementation only.
+- README/GLOSSARY sweep: what changes falls out of the other tickets (`scripts/setup.sh` is deleted per the setup ticket; the crash note from the reaping ticket); likely implementation only.
 
 ## Out of scope
 
