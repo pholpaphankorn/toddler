@@ -6,9 +6,7 @@
       "branch": "toddler/issue-1",
       "status": "approved",
       "reviewRounds": 1,
-      "mergeFixRounds": 0,
-      "rounds": 5,
-      "lastError": "kept"
+      "mergeFixRounds": 0
     }
   }
 }

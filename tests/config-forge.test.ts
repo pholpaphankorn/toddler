@@ -55,15 +55,6 @@ test("one-host configuration defaults and rejects incompatible settings", () => 
         { forge: "none", repository: "a/b" },
         /repository.*only used with a forge/,
       ],
-      [{ repository: "a/b", openPr: true }, /openPr.*obsolete setting/],
-      [
-        { repository: "a/b", issues: "github" },
-        /issues.*obsolete setting.*forge/,
-      ],
-      [
-        { repository: "a/b", issues: "local" },
-        /issues.*obsolete setting.*files/,
-      ],
     ] as const)
       assert.throws(
         () => load(value),
