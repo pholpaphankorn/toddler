@@ -9,7 +9,7 @@ import {
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Issue } from "./policy.ts";
+import { type Issue, ready } from "./policy.ts";
 import { command, type Command } from "./process.ts";
 import { type Config } from "./config.ts";
 import { logTails } from "./logtail.ts";
@@ -237,6 +237,29 @@ interface GitHubRequest {
     detailsUrl?: string;
     targetUrl?: string;
   }[];
+}
+// Open spec children toddler would never pick: no issueLabel, and not adult/blocked on purpose.
+function specChildren(
+  config: Config,
+  children: { number: number; labels: string[] }[],
+): string {
+  const checked = children.filter((child) =>
+    ready({ labels: child.labels } as Issue, config),
+  );
+  const missing = checked
+    .filter((child) => !child.labels.includes(config.issueLabel))
+    .map((child) => child.number)
+    .sort((a, b) => a - b);
+  if (!missing.length)
+    return `${checked.length} open, all labelled ${config.issueLabel}`;
+  throw new Error(
+    `${missing.length} missing ${config.issueLabel}: ${missing
+      .slice(0, 10)
+      .map((number) => `#${number}`)
+      .join(
+        ", ",
+      )}${missing.length > 10 ? ` (+${missing.length - 10} more)` : ""}`,
+  );
 }
 export class GitHubForge implements Forge {
   tracker: Tracker;
@@ -544,6 +567,40 @@ export class GitHubForge implements Forge {
                   `repos/${config.repository}/labels/${encodeURIComponent(config.issueLabel)}`,
                 ]);
                 return config.issueLabel;
+              },
+            ] as [string, () => Promise<string>],
+            [
+              "Spec children",
+              async () => {
+                const [owner, name] = config.repository.split("/");
+                const pages: any[] = JSON.parse(
+                  await this.gh([
+                    "api",
+                    "graphql",
+                    "--paginate",
+                    "--slurp",
+                    "-f",
+                    `query=query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { issues(states: OPEN, first: 100, after: $endCursor) { nodes { number labels(first: 100) { nodes { name } } parent { number state } } pageInfo { hasNextPage endCursor } } } }`,
+                    "-f",
+                    `owner=${owner}`,
+                    "-f",
+                    `name=${name}`,
+                  ]),
+                );
+                const errors = pages.flatMap((page) => page.errors ?? []);
+                if (errors.length) throw new Error(JSON.stringify(errors));
+                return specChildren(
+                  config,
+                  pages
+                    .flatMap((page) => page.data.repository.issues.nodes)
+                    .filter((issue: any) => issue.parent?.state === "OPEN")
+                    .map((issue: any) => ({
+                      number: issue.number,
+                      labels: issue.labels.nodes.map(
+                        (label: { name: string }) => label.name,
+                      ),
+                    })),
+                );
               },
             ] as [string, () => Promise<string>],
           ]
@@ -896,6 +953,38 @@ export class GitLabForge implements Forge {
                   `${this.project}/labels/${encodeURIComponent(config.issueLabel)}`,
                 );
                 return config.issueLabel;
+              },
+            ] as [string, () => Promise<string>],
+            [
+              "Spec children",
+              async () => {
+                const issues = (
+                  await this.list(
+                    `${this.project}/issues?state=opened&per_page=100`,
+                  )
+                ).map((item) => ({
+                  number: item.iid as number,
+                  labels: item.labels as string[],
+                  specs: (item.description ?? "")
+                    .split(/\r?\n/)
+                    .flatMap((line: string) => {
+                      const match = /^Spec:\s*#(\d+)\s*$/i.exec(line);
+                      return match ? [Number(match[1])] : [];
+                    }) as number[],
+                }));
+                const open = new Map<number, boolean>();
+                for (const id of new Set(issues.flatMap((item) => item.specs)))
+                  open.set(
+                    id,
+                    (await this.api(`${this.project}/issues/${id}`)).state ===
+                      "opened",
+                  );
+                return specChildren(
+                  config,
+                  issues.filter((item) =>
+                    item.specs.some((id) => open.get(id)),
+                  ),
+                );
               },
             ] as [string, () => Promise<string>],
           ]

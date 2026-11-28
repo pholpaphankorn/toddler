@@ -121,6 +121,66 @@ test("doctor checks the configured issue label only for forge issues", async () 
   assert.equal(await present.doctorChecks(config)[1][1](), "ready now");
 });
 
+test("GitHub doctor fails on open spec children missing the issue label", async () => {
+  const node = (number: number, labels: string[], parent?: string) => ({
+    number,
+    labels: { nodes: labels.map((name) => ({ name })) },
+    parent: parent ? { number: 1, state: parent } : null,
+  });
+  const page = (nodes: unknown[]) => ({
+    data: { repository: { issues: { nodes } } },
+  });
+  let pages: unknown = [];
+  const calls: string[][] = [];
+  const forge = new GitHubForge(
+    "/repo",
+    config,
+    async () => "",
+    async (_, args = []) => {
+      calls.push(args);
+      if (pages instanceof Error) throw pages;
+      return JSON.stringify(pages);
+    },
+  );
+  const [name, check] = forge.doctorChecks(config)[2];
+  assert.equal(name, "Spec children");
+  pages = [
+    page([
+      node(1, [], "OPEN"), // nested: the spec is itself a child
+      node(2, ["ready now"], "OPEN"),
+      node(3, [], "CLOSED"), // closed spec
+      node(4, []), // no spec
+      node(5, ["adult"], "OPEN"),
+      node(6, ["Blocked"], "OPEN"),
+    ]),
+    page([node(7, [], "OPEN")]),
+  ];
+  await assert.rejects(check(), {
+    message: "2 missing ready now: #1, #7",
+  });
+  assert.deepEqual(calls[0].slice(0, 4), [
+    "api",
+    "graphql",
+    "--paginate",
+    "--slurp",
+  ]);
+  pages = [
+    page(
+      Array.from({ length: 13 }, (_, index) => node(20 + index, [], "OPEN")),
+    ),
+  ];
+  await assert.rejects(check(), {
+    message:
+      "13 missing ready now: #20, #21, #22, #23, #24, #25, #26, #27, #28, #29 (+3 more)",
+  });
+  pages = [page([node(2, ["ready now"], "OPEN"), node(5, ["adult"], "OPEN")])];
+  assert.equal(await check(), "1 open, all labelled ready now");
+  pages = new Error("gh: rate limit exceeded");
+  await assert.rejects(check(), /rate limit exceeded/);
+  pages = [{ errors: [{ message: "Field 'parent' doesn't exist" }] }];
+  await assert.rejects(check(), /Field 'parent' doesn't exist/);
+});
+
 test("GitHub tracker normalizes issues and checks all native blockers and comments", async () => {
   const calls: string[][] = [];
   const gh = async (_: string, args: string[] = []) => {

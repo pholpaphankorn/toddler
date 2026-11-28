@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configPath, loadConfig, offline, type Config } from "./config.ts";
 import { command, codexRpc } from "./process.ts";
+import { onStopSignal } from "./agents.ts";
 import {
   readUsage,
   codexAuth,
@@ -218,7 +219,7 @@ async function main() {
   const ranker = await loadRanker(root, config);
   const stopConditions = await loadStopConditions(root, config);
   const statePath = join(root, ".sandcastle/state.json");
-  const state = loadState(statePath, config.repository, config.autoMerge);
+  const state = loadState(statePath, config.repository);
   const quotas = new Quotas(config, undefined, stopConditions);
   const runner = new Runner({
     root,
@@ -265,18 +266,20 @@ async function main() {
       "Runner lock exists. Check the PID in .sandcastle/runner.lock before removing a stale lock",
     );
   }
-  // Sandcastle's own Ctrl+C handler calls process.exit() mid-stage, which skips the finally below.
+  // A second Ctrl+C exits at once, which skips the finally below.
   const unlock = () => rmSync(lockPath, { force: true });
   process.on("exit", unlock);
+  let stopping = false;
   const stop = () => {
+    if (stopping) process.exit(130);
+    stopping = true;
     runner.interrupted = true;
     quotas.stop();
     process.exitCode = 130;
   };
+  const offStop = onStopSignal(stop);
   try {
     await lock.writeFile(`${process.pid}\n`);
-    process.on("SIGINT", stop);
-    process.on("SIGTERM", stop);
     const { seatbelt } = await import("@ai-hero/sandcastle/sandboxes/seatbelt");
     // Sandcastle imports declared .env keys into the sandbox. These belong to
     // the host only; agents use their private homes and subscription credentials.
@@ -315,8 +318,7 @@ async function main() {
     }
     await runner.run(baseBranch);
   } finally {
-    process.removeListener("SIGINT", stop);
-    process.removeListener("SIGTERM", stop);
+    offStop();
     process.removeListener("exit", unlock);
     await lock.close();
     await rm(lockPath, { force: true });

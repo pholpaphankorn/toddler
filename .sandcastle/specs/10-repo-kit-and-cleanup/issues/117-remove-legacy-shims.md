@@ -3,7 +3,7 @@ title: Remove legacy config and state shims
 labels: []
 blocked_by: []
 parent: 10
-status: open
+status: closed
 ---
 Old config values and old `state.json` fields get no special handling: an old config value fails ordinary validation, and old state fields are not read. Anyone upgrading fixes files by hand (phol, 2026-11-26, see [spec 10](../spec.md) notes).
 

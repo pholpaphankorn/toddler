@@ -18,7 +18,12 @@ import { command, type Command } from "./process.ts";
 import { claudeToken, codexAuth, type Quotas } from "./quota.ts";
 import { limitSignal, type LimitSignal } from "./limits.ts";
 import { Scheduler, type Clock, type Reservation } from "./scheduler.ts";
-import { privateHomeAgent, stopAgent } from "./agents.ts";
+import {
+  privateHomeAgent,
+  stopAgent,
+  stripSignalListeners,
+  sweepSandbox,
+} from "./agents.ts";
 import { skillLinks, skillLoadLine } from "./skills.ts";
 import { connect, type Tracker, type Forge } from "./forge.ts";
 import { AttentionError, Landing } from "./landing.ts";
@@ -103,33 +108,11 @@ export interface RunnerOptions {
 const own = (name: string) =>
   fileURLToPath(new URL(`../prompts/${name}`, import.meta.url));
 
-export function loadState(
-  path: string,
-  repository: string,
-  autoMerge = false,
-): State {
+export function loadState(path: string, repository: string): State {
   if (!existsSync(path)) return { repository, jobs: {} };
   const state = JSON.parse(readFileSync(path, "utf8"));
   if (state.repository !== repository || !state.jobs)
     throw new Error("State belongs to another repository or is invalid");
-  for (const job of Object.values(state.jobs) as any[]) {
-    if (job.mergeFixRounds !== undefined) continue;
-    if (job.status === "done") job.status = "landed";
-    if (job.status === "pr") job.status = autoMerge ? "landing" : "approved";
-    job.reviewRounds = job.rounds ?? 0;
-    job.mergeFixRounds = 0;
-    if (job.lastError)
-      job.attention = {
-        reason: "stage-failed",
-        detail: job.lastError,
-        at: new Date().toISOString(),
-      };
-    if (job.conflictBase)
-      job.mergeFix = { trigger: "conflict", base: job.conflictBase };
-    delete job.rounds;
-    delete job.lastError;
-    delete job.conflictBase;
-  }
   return state;
 }
 export function saveState(path: string, state: State): void {
@@ -350,6 +333,7 @@ export class Runner {
         baseBranch: job.baseSha,
         sandbox: this.sandboxProvider!,
       });
+      stripSignalListeners();
       try {
         signal.throwIfAborted();
         // Each stage gets a fresh worktree without ignored files such as node_modules, so install from the committed lockfile.
@@ -489,7 +473,7 @@ export class Runner {
                 return false;
               },
             );
-          if (job.reviewedSha && !(await contains(job.reviewedSha)))
+          if (!(await contains(job.reviewedSha!)))
             throw new Error(
               `Merge fix round dropped approved work: ${job.reviewedSha} is not in the new head`,
             );
@@ -504,11 +488,7 @@ export class Runner {
           // --remerge-diff skips octopus merges.
           if (
             await this.git(
-              [
-                "rev-list",
-                "--min-parents=3",
-                `${job.reviewedSha ?? job.baseSha}..${after}`,
-              ],
+              ["rev-list", "--min-parents=3", `${job.reviewedSha}..${after}`],
               sandbox.worktreePath,
             )
           )
@@ -561,6 +541,7 @@ export class Runner {
       } finally {
         // A no-op unless the agent is still running (cancel, timeout, failure).
         await stopAgent(sandbox, provider);
+        await sweepSandbox(sandbox, job.number);
         const closed = await sandbox.close();
         if (closed.preservedWorktreePath)
           console.log(
@@ -691,9 +672,8 @@ export class Runner {
                 prompt +
                   this.skillInstructions(provider, "review", job) +
                   context +
-                  // A legacy conflictBase job may not have been approved yet: it gets the full review.
                   // Every commit not in the approved head or the pinned base shows, so nothing rides in on a merge.
-                  (job.mergeFix && job.reviewedSha
+                  (job.mergeFix
                     ? `\nMerge fix round ${job.mergeFixRounds} (trigger: ${job.mergeFix.trigger}): the complete diff was approved at ${job.reviewedSha}; review only this delta to ${job.branch}, merges shown as remerge diffs:\n${fence(await this.git(["log", "-p", "--remerge-diff", `${job.reviewedSha}..${job.branch}`, ...[job.mergeFix.base, job.mergeFix.from].filter(Boolean).map((sha) => `^${sha}`)]))}\n`
                     : ""),
                 reservation,
